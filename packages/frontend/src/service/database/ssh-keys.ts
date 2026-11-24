@@ -15,12 +15,14 @@ import type { CredentialRef } from '@/service/credential-boundary'
 import { vaultSecretProvider } from '@/service/vault-secret-provider'
 import { executeQuery, select } from './connection'
 import {
+  credentialRefUnreadable,
   discardKeyVersion,
   persistKeySecrets,
   readKeyCredentialRef,
+  readKeyCredentialRefState,
   retireKeyVersion,
 } from './ssh-key-credentials'
-import { keyIdExists, keyOwnsNoRow, withKeyWriteLock } from './key-write-lock'
+import { withKeyWriteLock } from './key-write-lock'
 import type { SSHKeyRecord } from './types'
 
 export { readKeyCredentialRef } from './ssh-key-credentials'
@@ -37,8 +39,15 @@ export async function getSSHKeySecret(
 ): Promise<string | undefined> {
   const key = await getSSHKeyById(id)
   if (!key) return undefined
-  const ref = readKeyCredentialRef(key.credential_ref)
-  if (ref === null) return undefined
+  const read = readKeyCredentialRefState(key.credential_ref)
+  // RC04: a damaged reference is not "this key stores nothing". Returning undefined
+  // here made the connection authenticate with empty material instead of reporting the
+  // real problem.
+  if (read.state === 'CORRUPT_OR_UNSUPPORTED') {
+    throw credentialRefUnreadable('SSH key', id, read.problem)
+  }
+  if (read.state === 'ABSENT') return undefined
+  const ref = read.ref
   if (!ref.kinds.includes(kind)) return undefined
   return vaultSecretProvider.read({ type: 'ssh-key', id }, refVersion(ref), kind)
 }
@@ -56,57 +65,7 @@ export async function getSSHKeyCredentials(id: string): Promise<{
   return result
 }
 
-export async function createSSHKey(
-  key: Omit<SSHKeyRecord, 'created_at' | 'updated_at'>,
-): Promise<string> {
-  /*
-   * RC03: same per-key lock as the host path, and for the same measured reason. A
-   * duplicate id would write version 1 over the live key's generation and then have
-   * `discardKeyVersion` delete it — the surviving row keeps `credential_ref` and loses
-   * its private key (`privateKeyStillReadable: undefined`, `vaultAfter: {}`).
-   */
-  return withKeyWriteLock(key.id, () => createSSHKeyLocked(key))
-}
-
-async function createSSHKeyLocked(
-  key: Omit<SSHKeyRecord, 'created_at' | 'updated_at'>,
-): Promise<string> {
-  const now = Date.now()
-  if (await keyIdExists(key.id)) {
-    throw new Error(
-      `An SSH key with id ${key.id} already exists; refusing to overwrite its credentials`,
-    )
-  }
-  const persisted = await persistKeySecrets(
-    key.id,
-    { privateKey: key.private_key, passphrase: key.passphrase },
-    null,
-  )
-  try {
-    await executeQuery(
-      `INSERT INTO ssh_keys (id, name, key_type, private_key, public_key, certificate, passphrase, credential_ref, is_encrypted, created_at, updated_at)
-     VALUES (?, ?, ?, NULL, ?, ?, NULL, ?, ?, ?, ?)`,
-      [
-        key.id,
-        key.name,
-        key.key_type,
-        key.public_key,
-        key.certificate,
-        persisted.ref === null ? null : serializeCredentialRef(persisted.ref),
-        key.is_encrypted,
-        now,
-        now,
-      ],
-    )
-  } catch (error) {
-    // Only when nothing owns the id: a racing create that won reads this very version.
-    if (persisted.ref && (await keyOwnsNoRow(key.id))) {
-      await discardKeyVersion(key.id, persisted.ref)
-    }
-    throw error
-  }
-  return key.id
-}
+export { createSSHKey } from './key-write-lock'
 
 /**
  * Update a key's metadata and, when new secret material is supplied, move it into
@@ -144,7 +103,16 @@ async function updateSSHKeyLocked(
   let previousRef: CredentialRef | null = null
   let newRef: CredentialRef | null = null
   if (hasSecrets) {
-    const current = readKeyCredentialRef(existing.credential_ref)
+    /*
+     * RC04: `nextKeyVersion(null) === 1`, so collapsing a damaged reference to `null`
+     * makes this save land on version 1 — possibly the only generation the user can
+     * still recover by hand. Refuse instead, and say why.
+     */
+    const read = readKeyCredentialRefState(existing.credential_ref)
+    if (read.state === 'CORRUPT_OR_UNSUPPORTED') {
+      throw credentialRefUnreadable('SSH key', id, read.problem)
+    }
+    const current = read.ref
     const persisted = await persistKeySecrets(
       id,
       { privateKey: updates.private_key, passphrase: updates.passphrase },
@@ -241,9 +209,23 @@ export async function clearSSHKeyCredential(id: string): Promise<void> {
   // The row no longer names it, so a failure here is orphaned ciphertext rather
   // than a dangling reference. `retireKeyVersion` already swallows and documents
   // that; repeating the guard would imply it does not.
-  const ref = readKeyCredentialRef(existing.credential_ref)
-  if (!ref) return
-  await retireKeyVersion(id, ref)
+  /*
+   * RC04: clearing is the **user's** escape hatch, so it must work on a damaged
+   * reference too.
+   *
+   * `ssh-keys-lifecycle.test.ts` already pinned this ("clears a damaged reference
+   * without needing to parse it"): a row holding something this build cannot name
+   * leaves the user unable to read, use or replace the secret, and nulling the column
+   * is the only way back to a key that works. Throwing here — which an earlier version
+   * of this fix did — would lock that user out permanently.
+   *
+   * Nothing can be retired, because a damaged reference names no version. That is
+   * recorded rather than thrown: the ciphertext stays under a version this build cannot
+   * name, which is orphaned data, not a dangling pointer.
+   */
+  const read = readKeyCredentialRefState(existing.credential_ref)
+  if (read.state !== 'VALID') return
+  await retireKeyVersion(id, read.ref)
 }
 
 export async function deleteSSHKey(id: string): Promise<void> {

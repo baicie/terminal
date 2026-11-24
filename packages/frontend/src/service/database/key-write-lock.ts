@@ -25,7 +25,10 @@
  *
  * 进程内、按 id。跨进程由单实例锁与 SQLite 事务保证，不是这个模块的职责。
  */
-import { select } from './connection'
+import { serializeCredentialRef } from '@/service/credential-boundary'
+import { executeQuery, select } from './connection'
+import { discardKeyVersion, persistKeySecrets } from './ssh-key-credentials'
+import type { SSHKeyRecord } from './types'
 
 const locks = new Map<string, Promise<unknown>>()
 
@@ -76,4 +79,61 @@ export async function keyIdExists(id: string): Promise<boolean> {
 export async function keyOwnsNoRow(id: string): Promise<boolean> {
   const rows = await select('SELECT credential_ref FROM ssh_keys WHERE id = ?', [id])
   return !(Array.isArray(rows) && rows.length > 0)
+}
+
+/**
+ * Create a key row and the vault generation it owns.
+ *
+ * Lives beside the guards rather than in `ssh-keys.ts` because all of it answers one
+ * question — what this create is allowed to touch — and that file is at its line limit.
+ * The SQL is unchanged from what shipped; only its location moved.
+ *
+ * RC03 measured why the lock and both guards are here: without them a duplicate id
+ * overwrites the live key's generation and the cleanup deletes it, leaving a row that
+ * names a private key the vault no longer holds.
+ */
+export async function createSSHKey(
+  key: Omit<SSHKeyRecord, 'created_at' | 'updated_at'>,
+): Promise<string> {
+  return withKeyWriteLock(key.id, () => createSSHKeyLocked(key))
+}
+
+async function createSSHKeyLocked(
+  key: Parameters<typeof createSSHKey>[0],
+): Promise<string> {
+  const now = Date.now()
+  if (await keyIdExists(key.id)) {
+    throw new Error(
+      `An SSH key with id ${key.id} already exists; refusing to overwrite its credentials`,
+    )
+  }
+  const persisted = await persistKeySecrets(
+    key.id,
+    { privateKey: key.private_key, passphrase: key.passphrase },
+    null,
+  )
+  try {
+    await executeQuery(
+      `INSERT INTO ssh_keys (id, name, key_type, private_key, public_key, certificate, passphrase, credential_ref, is_encrypted, created_at, updated_at)
+     VALUES (?, ?, ?, NULL, ?, ?, NULL, ?, ?, ?, ?)`,
+      [
+        key.id,
+        key.name,
+        key.key_type,
+        key.public_key,
+        key.certificate,
+        persisted.ref === null ? null : serializeCredentialRef(persisted.ref),
+        key.is_encrypted,
+        now,
+        now,
+      ],
+    )
+  } catch (error) {
+    // Only when nothing owns the id: a racing create that won reads this very version.
+    if (persisted.ref && (await keyOwnsNoRow(key.id))) {
+      await discardKeyVersion(key.id, persisted.ref)
+    }
+    throw error
+  }
+  return key.id
 }
