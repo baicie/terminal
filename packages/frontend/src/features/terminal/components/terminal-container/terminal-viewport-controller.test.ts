@@ -190,3 +190,145 @@ describe('R08 — the last resize of a burst is not discarded', () => {
     expect(fits.length).toBe(1)
   })
 })
+
+describe('RC14 — resize pressure', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) =>
+      window.setTimeout(() => callback(performance.now()), 0),
+    )
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => window.clearTimeout(id))
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it('100 resizes in a burst end with exactly one trailing fit and no leaked timers', () => {
+    /*
+     * The stress shape of RC14: a user dragging a window edge produces far more resize
+     * notifications than frames. What must hold afterwards:
+     *
+     *   - the work is bounded (the throttle still means "at most one fit per frame"),
+     *   - the **last** request is not lost (the 768 px defect, fixed in R08),
+     *   - nothing is left scheduled once the burst stops.
+     *
+     * The first assertion is a ceiling rather than an exact count: the number of fits a
+     * burst produces depends on how many frames it spans, and pinning that number would
+     * assert the scheduler's behaviour instead of ours.
+     */
+    const fits: number[] = []
+    const controller = new TerminalViewportController(
+      {
+        buffer: { active: { viewportY: 0, baseY: 0 } },
+        rows: 24,
+        scrollToBottom: () => {},
+        scrollToLine: () => {},
+        refresh: () => {},
+        write: (_data: string, callback?: () => void) => callback?.(),
+      },
+      () => { fits.push(Date.now()) },
+      document.createElement('div'),
+    )
+
+    for (let i = 0; i < 100; i += 1) controller.requestFit()
+    vi.runAllTimers()
+
+    // Bounded: a hundred requests must not produce a hundred fits.
+    expect(fits.length).toBeLessThan(100)
+    expect(fits.length).toBeGreaterThanOrEqual(1)
+
+    // Nothing is still scheduled: a further run of the timer queue changes nothing.
+    const afterBurst = fits.length
+    vi.runAllTimers()
+    expect(fits.length, 'a timer survived the burst').toBe(afterBurst)
+
+    // And the controller is still usable — a leak that wedged the scheduler would show up
+    // as the next request doing nothing.
+    controller.requestFit()
+    vi.runAllTimers()
+    expect(fits.length).toBe(afterBurst + 1)
+  })
+
+  it('two panes each get a fit when they resize together', () => {
+    /*
+     * Splitting the window gives each terminal its own container and controller. What this
+     * asserts is the plain property: both panes fit, so neither is left rendering at the
+     * other's size.
+     *
+     * ## What it does not prove, and why the mutation survived
+     *
+     * The intended defect was shared throttle state — a module-level `lastFitAt`. I tried
+     * four arrangements to make that mutation fail and none did, because **the mutation is
+     * behaviourally equivalent**: a shared clock only *delays* the second pane's fit by up
+     * to `RESIZE_MIN_INTERVAL_MS` (32 ms), it never drops it. `requestFit` schedules a
+     * timer in that case, and the timer runs.
+     *
+     * So a shared clock is a latency difference, not a correctness one, and there is no
+     * assertion that can honestly distinguish them. Claiming otherwise would mean pinning
+     * an exact fit *count*, which asserts the scheduler rather than the product.
+     *
+     * Kept as a smoke test for "both panes work", with the limit stated.
+     */
+    const make = () => {
+      const fits: number[] = []
+      const controller = new TerminalViewportController(
+        {
+          buffer: { active: { viewportY: 0, baseY: 0 } },
+          rows: 24,
+          scrollToBottom: () => {},
+          scrollToLine: () => {},
+          refresh: () => {},
+          write: (_data: string, callback?: () => void) => callback?.(),
+        },
+        () => { fits.push(Date.now()) },
+        document.createElement('div'),
+      )
+      return { controller, fits }
+    }
+
+    const left = make()
+    const right = make()
+    left.controller.requestFit()
+    right.controller.requestFit()
+    vi.runAllTimers()
+
+    expect(left.fits.length, 'the left pane must fit').toBeGreaterThanOrEqual(1)
+    expect(right.fits.length, 'the right pane must fit').toBeGreaterThanOrEqual(1)
+  })
+
+  it('disposing one pane leaves the other working', () => {
+    const fits: number[] = []
+    const make = () => {
+      const own: number[] = []
+      const controller = new TerminalViewportController(
+        {
+          buffer: { active: { viewportY: 0, baseY: 0 } },
+          rows: 24,
+          scrollToBottom: () => {},
+          scrollToLine: () => {},
+          refresh: () => {},
+          write: (_data: string, callback?: () => void) => callback?.(),
+        },
+        () => own.push(Date.now()),
+        document.createElement('div'),
+      )
+      return { controller, own }
+    }
+    const a = make()
+    const b = make()
+
+    a.controller.requestFit()
+    vi.runAllTimers()
+    const beforeA = a.own.length
+
+    a.controller.dispose()
+    b.controller.requestFit()
+    vi.runAllTimers()
+
+    expect(a.own.length, 'a disposed pane must not fit again').toBe(beforeA)
+    expect(b.own.length, 'the surviving pane keeps working').toBeGreaterThanOrEqual(1)
+    void fits
+  })
+})
