@@ -18,6 +18,7 @@ import { hostRowToHost } from '@/store/host-mappers'
 import { vaultSecretProvider } from '@/service/vault-secret-provider'
 import { executeQuery, selectStrict } from './connection'
 import type { HostRecord } from './types'
+import { withHostWriteLock } from './host-write-lock'
 
 export async function getHostById(id: string): Promise<Host | null> {
   // Strict: this answer decides which credential a connection uses, and "the database
@@ -30,6 +31,20 @@ export async function getHostById(id: string): Promise<Host | null> {
 }
 
 export async function deleteHost(id: string): Promise<void> {
+  /*
+   * RC02: the same per-id lock `updateHost` and `createHost` take.
+   *
+   * Without it, a recreate that lands between this function's row read and its vault
+   * cleanup writes version 1 again — and the cleanup then retires "version 1", removing
+   * the **new** host's secret. Measured: the recreated row survived with
+   * `credential_ref = {version: 1}` and its ciphertext gone.
+   *
+   * Per id, not global: deleting host A must not wait for a save on host B.
+   */
+  return withHostWriteLock(`host:${id}`, () => deleteHostLocked(id))
+}
+
+async function deleteHostLocked(id: string): Promise<void> {
   // Row first, then the vault: a failure between the two leaves an unreferenced
   // secret (wasteful) rather than a host whose secret is already gone (broken).
   // The reverse order would make the host unrecoverable if the delete failed.

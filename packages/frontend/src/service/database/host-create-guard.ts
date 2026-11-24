@@ -30,6 +30,7 @@
  * is why {@link ownsNoRow} guards the cleanup as well. A lock spanning create and update
  * is RC02's subject, not this module's.
  */
+import type { CredentialKind } from '@/service/credential-boundary'
 import { select } from './connection'
 
 /**
@@ -121,4 +122,30 @@ export function insertHostStatement(
       now,
     ],
   }
+}
+
+/**
+ * Remove the generation a failed create wrote, if nothing owns the id.
+ *
+ * The guard is the point: `persisted.ref.version` is `1`, and a racing create that won
+ * the INSERT is reading **that same version**. Deleting it by version alone turns the
+ * loser's cleanup into the winner's data loss — measured before RC02: one row survived
+ * and `vaultKeys` was empty.
+ *
+ * Returns whether anything was removed, so the caller can log a real outcome rather
+ * than assume one.
+ */
+export async function discardFailedCreate(
+  id: string,
+  persisted: { ref: { version?: number; kinds: CredentialKind[] } | null },
+): Promise<boolean> {
+  if (persisted.ref === null || persisted.ref.version === undefined) return false
+  if (!(await ownsNoRow(id))) return false
+  const { vaultSecretProvider } = await import('@/service/vault-secret-provider')
+  await vaultSecretProvider.removeVersion(
+    { type: 'host', id },
+    persisted.ref.version,
+    persisted.ref.kinds,
+  )
+  return true
 }

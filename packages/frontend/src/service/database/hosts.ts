@@ -17,9 +17,9 @@ import {
 } from './host-credentials'
 import { assertRowUpdated } from './host-update-guard'
 import {
+  discardFailedCreate,
   hostIdExists,
   insertHostStatement,
-  ownsNoRow,
 } from './host-create-guard'
 import { hostUpdateArgs } from './host-update-args'
 import { deleteHost, getHostById } from './host-rows-lifecycle'
@@ -33,6 +33,18 @@ export async function getHosts(): Promise<Host[]> {
 }
 
 export async function createHost(
+  host: Omit<Host, 'createdAt' | 'updatedAt'>,
+): Promise<void> {
+  /*
+   * RC02: the same per-id lock `updateHost` takes. Without it, two measured interleavings
+   * lose data — create/create leaves `vaultKeys: []` beside a live row, and delete-then-
+   * recreate lets the delete retire the new host's version 1. Per id, not global; see
+   * `host-create-guard.ts` for the measurements.
+   */
+  return withHostWriteLock(`host:${host.id}`, () => createHostLocked(host))
+}
+
+async function createHostLocked(
   host: Omit<Host, 'createdAt' | 'updatedAt'>,
 ): Promise<void> {
   const now = Date.now()
@@ -72,17 +84,7 @@ export async function createHost(
      */
     // Only when nothing owns the id: whoever won a racing create reads the version this
     // attempt wrote, so removing it would be the same loss by a narrower door.
-    if (
-      (await ownsNoRow(host.id)) &&
-      persisted.ref &&
-      persisted.ref.version !== undefined
-    ) {
-      await vaultSecretProvider.removeVersion(
-        { type: 'host', id: host.id },
-        persisted.ref.version,
-        persisted.ref.kinds,
-      )
-    }
+    await discardFailedCreate(host.id, persisted)
     throw error
   }
 }
