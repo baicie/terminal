@@ -140,18 +140,31 @@ async function readPresentations() {
         : leftAny
           ? 'column'
           : 'none'
+    /*
+     * ## A local, because the object key is not a variable
+     *
+     * The first version of the `rightCostsWidth` fix below was written as
+     * `rightCostsWidth: right === 'column'`, meaning to refer to the value computed on the
+     * next line. There is no `right` binding in this function — only an object key — so the
+     * browser threw `Can't find variable: right` on **every** `execute/sync`, the resize
+     * wait spun for its full 10 s and the Linux job failed.
+     *
+     * It passed nothing locally because it was never executed here (the local GUI run was
+     * held back); CI is where it surfaced. Naming the presentation once removes the room
+     * for that mistake.
+     */
+    const rightPresentation = rightPanel
+      ? (rightPanel.getAttribute('data-presentation') ?? 'column')
+      : 'none'
     return {
       left,
       leftColumnWidth: leftAny ? Math.round(leftAny.getBoundingClientRect().width) : 0,
-      right: rightPanel
-        ? (rightPanel.getAttribute('data-presentation') ?? 'column')
-        : 'none',
+      right: rightPresentation,
       rightWidth: rightPanel ? Math.round(rightPanel.getBoundingClientRect().width) : 0,
       // A drawer or overlay costs the terminal nothing, so only a *column* counts
       // against the terminal's width.
       leftCostsWidth: left === 'column',
       /*
-       * `right` is computed above and already distinguishes `'none'` from a presentation.
        * The earlier form — `rightPanel?.getAttribute(...) !== 'overlay'` — is `true` when
        * `rightPanel` is null, because `undefined !== 'overlay'`. With the dock closed the
        * pair then read `rightCostsWidth: true, rightWidth: 0`: a panel that costs 300 px of
@@ -160,7 +173,7 @@ async function readPresentations() {
        * that was not there — and any future assertion reading `rightCostsWidth` alone
        * would have been wrong.
        */
-      rightCostsWidth: right === 'column',
+      rightCostsWidth: rightPresentation === 'column',
       terminalWidth: rect ? Math.round(rect.width) : 0,
       cssWidth: document.documentElement.clientWidth,
       devicePixelRatio: window.devicePixelRatio,
