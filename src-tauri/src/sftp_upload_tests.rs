@@ -32,12 +32,16 @@ struct Faults {
     /// fixture's seed path: `russh-sftp`'s own `write_all` has no timeout, so a bare
     /// call parks on `mio::poll` with no socket left to wake it.
     hang_writes: bool,
+    /// Delay every write by this much, to model a slow-but-working link.
+    chunk_delay: Option<std::time::Duration>,
 }
 
 #[derive(Default)]
 struct State {
     files: HashMap<String, Vec<u8>>,
     faults: Faults,
+    /// Every `write_chunk` the upload attempted, including the one that hung.
+    write_attempts: usize,
     ops: Vec<String>,
     renames: usize,
     /// Age in seconds of a staged file, keyed by full path.
@@ -216,15 +220,26 @@ struct MemoryFile {
     state: Arc<Mutex<State>>,
 }
 
+impl MemoryFs {
+    /// How many `write_chunk` calls the upload made, including a hung one.
+    fn write_attempts(&self) -> usize {
+        self.state.lock().unwrap().write_attempts
+    }
+}
+
 #[async_trait]
 impl RemoteFile for MemoryFile {
     async fn write_chunk(&mut self, data: &[u8]) -> Result<(), String> {
-        // Read the flag, drop the guard, *then* park: holding the mutex would make the
+        // Read the flags, drop the guard, *then* park: holding the mutex would make the
         // whole fake unreachable and turn "the write hangs" into "the test deadlocks".
-        let hangs = {
-            let state = self.state.lock().unwrap();
-            state.faults.hang_writes
+        let (hangs, delay) = {
+            let mut state = self.state.lock().unwrap();
+            state.write_attempts += 1;
+            (state.faults.hang_writes, state.faults.chunk_delay)
         };
+        if let Some(delay) = delay {
+            tokio::time::sleep(delay).await;
+        }
         if hangs {
             std::future::pending::<()>().await;
         }
@@ -1100,5 +1115,96 @@ async fn a_write_that_never_answers_is_bounded_and_cleans_up() {
         fs.paths(),
         vec!["/home/u/file.txt".to_string()],
         "the staging file must not survive a bounded timeout"
+    );
+}
+
+/// RC08 — the budget is per round trip, so a slow-but-working link still completes.
+///
+/// ## The distinction this pins
+///
+/// `bounded()` applies `REMOTE_TIMEOUT` (20 s) to **one** remote call — a 64 KiB chunk,
+/// a rename, a list. It is not a deadline for the whole file. That matters: a 1 GiB upload
+/// over a link that delivers 1 MiB/s takes ~17 minutes and must succeed, while a link that
+/// stops answering must fail within seconds.
+///
+/// A single total deadline would be far easier to write and would fail the first case.
+/// This test asserts the property that distinguishes them: **many slow chunks add up to a
+/// success**, where each chunk is slow relative to nothing in particular.
+#[tokio::test]
+async fn a_file_sent_in_many_slow_chunks_still_completes() {
+    tokio::time::pause();
+    let dir = tempfile::tempdir().unwrap();
+    // 8 chunks of 64 KiB = the loop runs eight times.
+    let payload = vec![9u8; 8 * 64 * 1024];
+    let local = local_file(&dir, "payload.bin", &payload);
+    let fs = MemoryFs::new(&[]).with_faults(Faults {
+        /*
+         * Each chunk takes 15 s of paused time — three quarters of the 20 s per-call
+         * budget. Eight of them total two minutes, which a single whole-file deadline of
+         * 20 s could never accommodate.
+         *
+         * The first version used 1 s per chunk, and it was **vacuous**: tightening the
+         * budget from 20 s to 3 s left it passing, because 1 s fits inside 3 s just as
+         * well. A delay near the bound is what makes this case fail when the bound is
+         * lowered to something a slow link could not meet.
+         */
+        chunk_delay: Some(std::time::Duration::from_secs(15)),
+        ..Faults::default()
+    });
+
+    let outcome = run(&fs, &local, "/home/u/big.bin")
+        .await
+        .expect("a slow link must not trip the per-call budget");
+    assert_eq!(outcome.bytes, payload.len() as u64);
+
+    // The total elapsed time is well past one chunk's budget, which is the point:
+    // the bound is per call, not for the file.
+    assert!(
+        outcome.bytes > 64 * 1024,
+        "the loop must have run more than once"
+    );
+}
+
+/// RC09 — a timed-out write must not keep writing after the caller is told it stopped.
+///
+/// ## What "stopped" has to mean
+///
+/// `tokio::time::timeout` returns an error; it does **not** cancel work already handed to
+/// the transport. The question this pins is what the *fake* does when its write future is
+/// dropped — and, through it, what the product's code guarantees: after the timeout the
+/// product calls `abandon()` and `remove()`, and it never issues another `write_chunk`.
+///
+/// The last part is the one that matters for data: a late chunk arriving after the user
+/// has been told "the transfer failed" would land in a staging file nobody is watching,
+/// and if a rename followed it the destination could change after the failure was
+/// reported.
+#[tokio::test]
+async fn after_a_timeout_no_further_writes_are_issued() {
+    tokio::time::pause();
+    let dir = tempfile::tempdir().unwrap();
+    let payload = vec![3u8; 4 * 64 * 1024];
+    let local = local_file(&dir, "payload.bin", &payload);
+    let fs = MemoryFs::new(&[("/home/u/file.txt", b"old")]).with_faults(Faults {
+        hang_writes: true,
+        ..Faults::default()
+    });
+
+    let error = run(&fs, &local, "/home/u/file.txt").await.unwrap_err();
+    assert!(matches!(error, UploadError::Remote(_)), "{error:?}");
+
+    // Count what the fake saw after the failure. `write_attempts` is incremented at the
+    // top of every call, including the hung one, so a second attempt would show up here.
+    let attempts = fs.write_attempts();
+    assert_eq!(
+        attempts, 1,
+        "the upload must stop at the first hung chunk, not retry it; saw {attempts} attempts"
+    );
+
+    // And the destination the user cares about is untouched.
+    assert_eq!(fs.content("/home/u/file.txt").unwrap(), b"old");
+    assert_eq!(
+        fs.paths(),
+        vec!["/home/u/file.txt".to_string()],
+        "no staging file may remain after the bounded timeout"
     );
 }
