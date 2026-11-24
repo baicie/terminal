@@ -1,0 +1,542 @@
+//! SSH12–SSH15 — the jump path against two real OpenSSH daemons.
+//!
+//! ## Why this is its own file
+//!
+//! It is a `#[cfg(test)] mod …;` declaration resolved from `ssh.rs`, which is what
+//! keeps it out of the source fingerprint (`check-verification-evidence.mjs` excludes
+//! only files reachable through such a declaration — the `_tests.rs` suffix alone does
+//! not count). Written inline it made every acceptance-evidence file stale on each
+//! edit, and re-capturing six evidence documents to add a test is a cost with no
+//! benefit.
+//!
+//! ## What only this can prove
+//!
+//! SSH07–SSH09 attach `hop`/`stage` at three places in `connect_via_jump_inner`. A mock
+//! cannot fail the way a real bastion does: it has no `direct-tcpip` channel to refuse,
+//! no host key to disagree about, and no handshake that times out halfway.
+//!
+//! ## Level
+//!
+//! This drives `SshSession::connect_via_jump`, the function `session_create_ssh_jump`
+//! calls. It does **not** cover the Tauri command wrapper or the frontend.
+//!
+//! ## Ignored by default
+//!
+//! They need two real daemons. `scripts/verify-install/ssh-jump-e2e.mjs` starts them and
+//! sets `SSH_JUMP_E2E_*`; without it the cases skip rather than fail, the same
+//! convention `sftp_command_e2e_tests` uses.
+
+use super::{
+    disconnect_jump_connections_with_shutdown, interactive_ssh_config, ConnectionHop,
+    ConnectionStage, JumpHostConfig, JumpTarget, SessionError, SshSession,
+};
+use std::sync::Arc;
+
+struct Fixture {
+    bastion_port: u16,
+    target_port: u16,
+    user: String,
+    bastion_key: String,
+    target_key: String,
+    target_host_key: String,
+    bastion_host_key: String,
+}
+
+/// The fixture, or an explanation of exactly which part is missing.
+///
+/// ## Why this does not return `Option`
+///
+/// It did, and every failure answered the same question — `None` — so a harness that
+/// set the ports and forgot the keys printed "SSH_JUMP_E2E_* not set" and the case
+/// passed. Measured: the variables were set and the run still skipped, and the
+/// message pointed at the one thing that was not wrong.
+///
+/// A missing fixture and a malformed fixture are different problems for the person
+/// running this, and the harness needs to tell them apart from the test's own output.
+enum FixtureLookup {
+    Ready(Fixture),
+    /// Nothing is configured — the harness is not running. Skip, do not fail.
+    NotConfigured,
+    /// Configured and unusable — a harness bug that must be loud.
+    Broken(String),
+}
+
+fn fixture() -> FixtureLookup {
+    const REQUIRED: &[&str] = &[
+        "SSH_JUMP_E2E_BASTION_PORT",
+        "SSH_JUMP_E2E_TARGET_PORT",
+        "SSH_JUMP_E2E_USER",
+        "SSH_JUMP_E2E_BASTION_KEY",
+        "SSH_JUMP_E2E_TARGET_KEY",
+        "SSH_JUMP_E2E_TARGET_HOST_KEY",
+        "SSH_JUMP_E2E_BASTION_HOST_KEY",
+    ];
+    if REQUIRED.iter().all(|name| std::env::var(name).is_err()) {
+        return FixtureLookup::NotConfigured;
+    }
+    let missing: Vec<&str> = REQUIRED
+        .iter()
+        .copied()
+        .filter(|name| std::env::var(name).is_err())
+        .collect();
+    if !missing.is_empty() {
+        return FixtureLookup::Broken(format!("missing {missing:?}"));
+    }
+    let port = |name: &str| -> Result<u16, String> {
+        std::env::var(name)
+            .map_err(|_| format!("{name} unset"))?
+            .parse()
+            .map_err(|error| format!("{name} is not a port: {error}"))
+    };
+    let key = |name: &str| -> Result<String, String> {
+        let value = std::env::var(name).map_err(|_| format!("{name} unset"))?;
+        // The harness hands over the key's **contents**; a path here means the
+        // harness and the test disagree about the contract, which is worth failing
+        // on rather than reading a file the test was never told about.
+        if !value.contains("PRIVATE KEY") {
+            return Err(format!("{name} does not contain a private key"));
+        }
+        Ok(value)
+    };
+    // The host key arrives as OpenSSH text, matching the private keys above: the
+    // harness owns the fixture directory and may have removed it by the time a
+    // retried case runs, so nothing here reads a path.
+    let host_key = |name: &str| -> Result<String, String> {
+        let value = std::env::var(name).map_err(|_| format!("{name} unset"))?;
+        if !(value.contains("ssh-ed25519") || value.contains("ssh-rsa")) {
+            return Err(format!("{name} is not an OpenSSH public key line"));
+        }
+        Ok(value)
+    };
+    match (|| -> Result<Fixture, String> {
+        Ok(Fixture {
+            bastion_port: port("SSH_JUMP_E2E_BASTION_PORT")?,
+            target_port: port("SSH_JUMP_E2E_TARGET_PORT")?,
+            user: std::env::var("SSH_JUMP_E2E_USER").map_err(|e| e.to_string())?,
+            bastion_key: key("SSH_JUMP_E2E_BASTION_KEY")?,
+            target_key: key("SSH_JUMP_E2E_TARGET_KEY")?,
+            target_host_key: host_key("SSH_JUMP_E2E_TARGET_HOST_KEY")?,
+            bastion_host_key: host_key("SSH_JUMP_E2E_BASTION_HOST_KEY")?,
+        })
+    })() {
+        Ok(fixture) => FixtureLookup::Ready(fixture),
+        Err(reason) => FixtureLookup::Broken(reason),
+    }
+}
+
+fn jump_config(fixture: &Fixture) -> JumpHostConfig {
+    JumpHostConfig {
+        host: "127.0.0.1".to_string(),
+        port: fixture.bastion_port,
+        username: fixture.user.clone(),
+        auth_type: "key".to_string(),
+        password: None,
+        private_key: Some(fixture.bastion_key.clone()),
+        certificate: None,
+        // Pinned, not looked up: the fixture's daemon is brand new and its key is
+        // in no known_hosts file. Leaving this `None` made every case fail at the
+        // bastion with `key not found in known_hosts` — which is the *correct*
+        // product behaviour, and the wrong fixture.
+        expected_host_key: Some(fixture.bastion_host_key.clone()),
+        target_auth_type: Some("key".to_string()),
+    }
+}
+
+/// The happy path, and the reason the attribution work is testable at all: with
+/// both daemons healthy the connection must succeed and name no hop.
+///
+/// A hop on a successful connection would be a bug the unit tests cannot see —
+/// there is no `SessionFailure` to inspect when `Ok` comes back, so only a real
+/// run proves the success path stays context-free.
+#[tokio::test]
+#[ignore = "needs scripts/verify-install/ssh-jump-e2e.mjs to start two daemons"]
+async fn a_real_two_hop_connection_authenticates_both_legs() {
+    let fixture = match fixture() {
+        FixtureLookup::Ready(fixture) => fixture,
+        FixtureLookup::NotConfigured => {
+            eprintln!("SSH_JUMP_E2E_* not set; skipping");
+            return;
+        }
+        // A configured-but-broken harness must fail, not skip: skipping here is how
+        // the first version of this file reported PASS without connecting.
+        FixtureLookup::Broken(reason) => panic!("the harness is not usable: {reason}"),
+    };
+    let target = JumpTarget {
+        host: "127.0.0.1".to_string(),
+        port: fixture.target_port,
+        username: fixture.user.clone(),
+        password: None,
+        private_key: Some(fixture.target_key.clone()),
+        certificate: None,
+        // Pinned to the target's real key, so a wrong-host connection cannot pass.
+        expected_host_key: Some(public_key(&fixture.target_host_key)),
+        use_agent: false,
+        allow_agent_forwarding: false,
+    };
+    let result = SshSession::connect_via_jump(
+        Arc::new(interactive_ssh_config()),
+        target,
+        jump_config(&fixture),
+        tokio::time::Instant::now() + std::time::Duration::from_secs(20),
+    )
+    .await;
+
+    match result {
+        Ok((target_handle, jump_handle, _guard, _slot)) => {
+            // Both handles exist, which means both handshakes completed.
+            drop(target_handle);
+            drop(jump_handle);
+        }
+        Err(failure) => panic!(
+            "a healthy two-hop connection must succeed, got {:?} at {:?}/{:?}: {}",
+            failure.error, failure.hop, failure.stage, failure.error
+        ),
+    }
+}
+
+/// SSH09 — a target that refuses the credential must be attributed to the target.
+///
+/// This is the case the whole feature exists for: the bastion worked, so the login
+/// the user has to fix is the one on the host behind it.
+#[tokio::test]
+#[ignore = "needs scripts/verify-install/ssh-jump-e2e.mjs to start two daemons"]
+async fn a_target_refusal_is_attributed_to_the_target() {
+    let fixture = match fixture() {
+        FixtureLookup::Ready(fixture) => fixture,
+        FixtureLookup::NotConfigured => {
+            eprintln!("SSH_JUMP_E2E_* not set; skipping");
+            return;
+        }
+        // A configured-but-broken harness must fail, not skip: skipping here is how
+        // the first version of this file reported PASS without connecting.
+        FixtureLookup::Broken(reason) => panic!("the harness is not usable: {reason}"),
+    };
+    let target = JumpTarget {
+        host: "127.0.0.1".to_string(),
+        port: fixture.target_port,
+        username: fixture.user.clone(),
+        password: None,
+        // The bastion's key, offered to the target: a credential the target has
+        // never seen. The bastion itself accepted this same key, so a failure here
+        // cannot be blamed on a broken key.
+        private_key: Some(fixture.bastion_key.clone()),
+        certificate: None,
+        expected_host_key: Some(public_key(&fixture.target_host_key)),
+        use_agent: false,
+        allow_agent_forwarding: false,
+    };
+    let result = SshSession::connect_via_jump(
+        Arc::new(interactive_ssh_config()),
+        target,
+        jump_config(&fixture),
+        tokio::time::Instant::now() + std::time::Duration::from_secs(30),
+    )
+    .await;
+
+    let failure = result
+        .err()
+        .expect("the target must refuse a key it does not know");
+    assert_eq!(
+        failure.hop,
+        Some(ConnectionHop::Target),
+        "the bastion authenticated, so the refusal is the target's: {:?}",
+        failure.error
+    );
+    assert_eq!(failure.stage, Some(ConnectionStage::Authentication));
+}
+
+/// SSH13 — a bastion that refuses the credential is attributed to the bastion.
+///
+/// The pair to `a_target_refusal_is_attributed_to_the_target`. Together they are the
+/// whole point of the feature: the same `kind` on two machines means two different
+/// logins to fix, and only the hop says which.
+///
+/// The bastion is given the **target's** key — one it has never seen — while the
+/// target would accept it. So the refusal cannot be blamed on the far end.
+#[tokio::test]
+#[ignore = "needs scripts/verify-install/ssh-jump-e2e.mjs to start two daemons"]
+async fn a_bastion_refusal_is_attributed_to_the_bastion() {
+    let fixture = match fixture() {
+        FixtureLookup::Ready(fixture) => fixture,
+        FixtureLookup::NotConfigured => {
+            eprintln!("SSH_JUMP_E2E_* not set; skipping");
+            return;
+        }
+        FixtureLookup::Broken(reason) => panic!("the harness is not usable: {reason}"),
+    };
+    let mut jump = jump_config(&fixture);
+    // The target's key, offered to the bastion. The target accepts it, so if this
+    // were attributed to the target the test would be describing a connection that
+    // never reached it.
+    jump.private_key = Some(fixture.target_key.clone());
+
+    let target = JumpTarget {
+        host: "127.0.0.1".to_string(),
+        port: fixture.target_port,
+        username: fixture.user.clone(),
+        password: None,
+        private_key: Some(fixture.target_key.clone()),
+        certificate: None,
+        expected_host_key: Some(public_key(&fixture.target_host_key)),
+        use_agent: false,
+        allow_agent_forwarding: false,
+    };
+    let result = SshSession::connect_via_jump(
+        Arc::new(interactive_ssh_config()),
+        target,
+        jump,
+        tokio::time::Instant::now() + std::time::Duration::from_secs(30),
+    )
+    .await;
+
+    let failure = result
+        .err()
+        .expect("the bastion must refuse a key it does not know");
+    assert_eq!(
+        failure.hop,
+        Some(ConnectionHop::Bastion),
+        "the target never saw this connection: {:?}",
+        failure.error
+    );
+    assert_eq!(failure.stage, Some(ConnectionStage::Authentication));
+}
+
+/// SSH13 — a bastion whose host key is not the pinned one is refused before any
+/// credential is offered.
+///
+/// This is the case that had no producer before SSH11: the refusal came back as
+/// `connection_failed`, so the pane could not tell a changed server identity from a
+/// network fault. It is asserted here on a real handshake, not a mock, because the
+/// side channel that carries it lives inside `check_server_key`.
+#[tokio::test]
+#[ignore = "needs scripts/verify-install/ssh-jump-e2e.mjs to start two daemons"]
+async fn a_bastion_host_key_mismatch_is_refused_as_its_own_kind() {
+    let fixture = match fixture() {
+        FixtureLookup::Ready(fixture) => fixture,
+        FixtureLookup::NotConfigured => {
+            eprintln!("SSH_JUMP_E2E_* not set; skipping");
+            return;
+        }
+        FixtureLookup::Broken(reason) => panic!("the harness is not usable: {reason}"),
+    };
+    let mut jump = jump_config(&fixture);
+    // The *target's* host key, pinned as the bastion's. A real server presenting a
+    // key the client did not expect is exactly what a changed identity looks like.
+    jump.expected_host_key = Some(fixture.target_host_key.clone());
+
+    let target = JumpTarget {
+        host: "127.0.0.1".to_string(),
+        port: fixture.target_port,
+        username: fixture.user.clone(),
+        password: None,
+        private_key: Some(fixture.target_key.clone()),
+        certificate: None,
+        expected_host_key: Some(public_key(&fixture.target_host_key)),
+        use_agent: false,
+        allow_agent_forwarding: false,
+    };
+    let result = SshSession::connect_via_jump(
+        Arc::new(interactive_ssh_config()),
+        target,
+        jump,
+        tokio::time::Instant::now() + std::time::Duration::from_secs(30),
+    )
+    .await;
+
+    let failure = result.err().expect("the pinned key is not the bastion's");
+    assert!(
+        matches!(failure.error, SessionError::HostKeyRejected(_)),
+        "a changed identity must keep its own kind, got {:?}",
+        failure.error
+    );
+    assert_eq!(failure.hop, Some(ConnectionHop::Bastion));
+}
+
+/// SSH14 — a target whose host key is not the pinned one is refused, and the
+/// refusal is the **target's**.
+///
+/// The tunnel opened and the bastion authenticated, so a failure here says nothing
+/// about the bastion. This is the case a user actually needs to see: "the host
+/// behind the bastion has a different identity than the one you approved" is a
+/// security decision, and blaming the bastion would send them to change the wrong
+/// known_hosts entry.
+#[tokio::test]
+#[ignore = "needs scripts/verify-install/ssh-jump-e2e.mjs to start two daemons"]
+async fn a_target_host_key_mismatch_is_attributed_to_the_target() {
+    let fixture = match fixture() {
+        FixtureLookup::Ready(fixture) => fixture,
+        FixtureLookup::NotConfigured => {
+            eprintln!("SSH_JUMP_E2E_* not set; skipping");
+            return;
+        }
+        FixtureLookup::Broken(reason) => panic!("the harness is not usable: {reason}"),
+    };
+    let target = JumpTarget {
+        host: "127.0.0.1".to_string(),
+        port: fixture.target_port,
+        username: fixture.user.clone(),
+        password: None,
+        private_key: Some(fixture.target_key.clone()),
+        certificate: None,
+        // The bastion's key, pinned as the target's. The bastion is unaffected: its
+        // own pin is correct, which is what makes the attribution unambiguous.
+        expected_host_key: Some(public_key(&fixture.bastion_host_key)),
+        use_agent: false,
+        allow_agent_forwarding: false,
+    };
+    let result = SshSession::connect_via_jump(
+        Arc::new(interactive_ssh_config()),
+        target,
+        jump_config(&fixture),
+        tokio::time::Instant::now() + std::time::Duration::from_secs(30),
+    )
+    .await;
+
+    let failure = result
+        .err()
+        .expect("the target's key is not the pinned one");
+    assert!(
+        matches!(failure.error, SessionError::HostKeyRejected(_)),
+        "a target identity mismatch must keep its own kind, got {:?}",
+        failure.error
+    );
+    assert_eq!(
+        failure.hop,
+        Some(ConnectionHop::Target),
+        "the bastion authenticated with its own correct key, so this is the target"
+    );
+}
+
+/// SSH15 — disconnecting a jump connection closes **both** transports.
+///
+/// ## Why this needs a real daemon
+///
+/// The leak it guards against is invisible in a unit test: `disconnect_jump_connections`
+/// takes the target handle and the bastion handle and must finish both. A mock has no
+/// socket to leave open, so "the session ended" and "the bastion is still connected"
+/// look identical.
+///
+/// The assertion is on the server side, not on the client's own bookkeeping: after the
+/// disconnect, the fixture must report the bastion as no longer having a live session.
+/// Reading the client's own handle would only prove the client stopped caring.
+#[tokio::test]
+#[ignore = "needs scripts/verify-install/ssh-jump-e2e.mjs to start two daemons"]
+async fn disconnecting_a_jump_session_releases_both_legs() {
+    let fixture = match fixture() {
+        FixtureLookup::Ready(fixture) => fixture,
+        FixtureLookup::NotConfigured => {
+            eprintln!("SSH_JUMP_E2E_* not set; skipping");
+            return;
+        }
+        FixtureLookup::Broken(reason) => panic!("the harness is not usable: {reason}"),
+    };
+    let target = JumpTarget {
+        host: "127.0.0.1".to_string(),
+        port: fixture.target_port,
+        username: fixture.user.clone(),
+        password: None,
+        private_key: Some(fixture.target_key.clone()),
+        certificate: None,
+        expected_host_key: Some(public_key(&fixture.target_host_key)),
+        use_agent: false,
+        allow_agent_forwarding: false,
+    };
+    let (target_handle, jump_handle, guard, _slot) = SshSession::connect_via_jump(
+        Arc::new(interactive_ssh_config()),
+        target,
+        jump_config(&fixture),
+        tokio::time::Instant::now() + std::time::Duration::from_secs(20),
+    )
+    .await
+    .expect("the healthy fixture must connect");
+
+    /*
+     * The control: *before* disconnecting, the bastion really does have this
+     * session. Without it the loop below passes against a `count_established` that
+     * always returns 0 — measured by mutation, which is exactly what was happening:
+     * the assertion could not fail, so it proved nothing.
+     */
+    /*
+     * The control, and the reason it exists: the first version of this test
+     * asserted "nothing is connected afterwards" against an `lsof` counter that
+     * returned 0 at every point in the run — measured by mutation, the assertion
+     * could not fail. `lsof` in the cargo child cannot see those sockets, so the
+     * whole check was decoration.
+     *
+     * So the evidence is the bastion's own TCP port: while the session is live, a
+     * connect to it succeeds and is accepted; once the client disconnects, the
+     * daemon has released it. A refused/timed-out connect after the disconnect is
+     * the server-side statement that the session is gone.
+     */
+    assert!(
+        established_connections(fixture.bastion_port) > 0,
+        "the bastion must show an established session before the disconnect, or this \
+             check cannot tell a released session from a counter that sees nothing"
+    );
+
+    disconnect_jump_connections_with_shutdown(
+        target_handle,
+        jump_handle,
+        guard,
+        "test disconnect",
+        tokio::time::Instant::now() + std::time::Duration::from_secs(10),
+    )
+    .await;
+
+    /*
+     * The daemons are asked, not the client. A lingering bastion session after the
+     * target closed is the exact shape of the leak: the user closed one tab and the
+     * jump host kept an authenticated connection to it.
+     *
+     * `sshd` releases the session within a moment, so this polls rather than
+     * sampling once.
+     */
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        if established_connections(fixture.bastion_port) == 0 {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the bastion still has an established session after disconnect"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}
+
+/// Established TCP connections involving a loopback port, read from `netstat`.
+///
+/// ## Why not `lsof`, and why not "can I connect?"
+///
+/// `lsof -iTCP:<port>` inside the cargo test child returned **empty at every point in
+/// the run**, including while the session was demonstrably live — measured. An
+/// assertion built on it could not fail, which is the vacuous-guard shape this
+/// repository keeps meeting.
+///
+/// A plain `TcpStream::connect` is also the wrong question: the daemon keeps
+/// *listening* after a session ends, because the listening socket belongs to the
+/// process, not the session. Measured — that version failed with "still accepts
+/// connections after disconnect", which is correct behaviour being reported as a leak.
+///
+/// What is actually being counted is ESTABLISHED sockets, which is the only thing
+/// that says "somebody still has a session here".
+fn established_connections(port: u16) -> usize {
+    let output = std::process::Command::new("netstat")
+        .args(["-an", "-p", "tcp"])
+        .output();
+    let text = match output {
+        Ok(output) => String::from_utf8_lossy(&output.stdout).to_string(),
+        Err(error) => panic!("netstat is required to check for leaked sessions: {error}"),
+    };
+    let needle = format!(".{port} ");
+    text.lines()
+        .filter(|line| line.contains("ESTABLISHED"))
+        .filter(|line| line.contains(&needle) || line.contains(&format!(".{port}\t")))
+        .count()
+}
+
+/// Reads a public key from the fixture's `.pub` text.
+fn public_key(value: &str) -> russh::keys::PublicKey {
+    russh::keys::PublicKey::from_openssh(value.trim())
+        .expect("the fixture writes a valid OpenSSH public key")
+}
