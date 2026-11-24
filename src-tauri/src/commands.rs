@@ -9,7 +9,8 @@ use crate::session::ssh::{
 };
 use crate::session::terminal_output::{ack_session_output, finish_session_output};
 use crate::session::{
-    get_session_manager, ExecResult, KeyGenResult, SessionError, SessionInfo, SessionState,
+    get_session_manager, ExecResult, KeyGenResult, SessionError, SessionFailure, SessionInfo,
+    SessionState,
 };
 use tauri::AppHandle;
 
@@ -176,6 +177,7 @@ pub async fn session_create_ssh_password(
             profile,
             connection_deadline,
         ),
+        || SessionError::ConnectionCancelled,
     )
     .await?;
     let session_id = session.session_id().to_string();
@@ -246,6 +248,7 @@ pub async fn session_create_ssh_key(
             profile,
             connection_deadline,
         ),
+        || SessionError::ConnectionCancelled,
     )
     .await?;
     let session_id = session.session_id().to_string();
@@ -306,6 +309,7 @@ pub async fn session_create_ssh_agent(
             profile,
             connection_deadline,
         ),
+        || SessionError::ConnectionCancelled,
     )
     .await?;
     let session_id = session.session_id().to_string();
@@ -385,6 +389,7 @@ pub async fn session_create_ssh_cert(
             profile,
             connection_deadline,
         ),
+        || SessionError::ConnectionCancelled,
     )
     .await?;
     let session_id = session.session_id().to_string();
@@ -416,7 +421,15 @@ pub async fn session_create_ssh_jump(
     profile: Option<crate::session::TerminalProfile>,
     attempt_id: Option<String>,
     connection_timeout_ms: Option<u64>,
-) -> Result<String, SessionError> {
+) -> Result<String, SessionFailure> {
+    /*
+     * SSH05/SSH06 — the first command whose return type carries connection context.
+     *
+     * This is the one path that can fail at two different machines, so it is the one that
+     * gains `hop`/`stage`. The other five `session_create_ssh_*` commands are direct
+     * connections and keep `Result<_, SessionError>` until SSH07–SSH09 wire their stages;
+     * widening them now would claim a hop they cannot have.
+     */
     let attempt = register_connection_attempt(attempt_id.as_deref());
     let connection_deadline = ssh_connection_deadline_with_timeout(connection_timeout_ms);
     let session = run_cancellable_connection(
@@ -437,13 +450,14 @@ pub async fn session_create_ssh_jump(
             profile,
             connection_deadline,
         ),
+        || SessionFailure::bare(SessionError::ConnectionCancelled),
     )
     .await?;
     let session_id = session.session_id().to_string();
 
     let manager = get_session_manager();
     if !manager.register_session(SessionState::Ssh(session)).await {
-        return Err(SessionError::ConnectionCancelled);
+        return Err(SessionFailure::bare(SessionError::ConnectionCancelled));
     }
 
     Ok(session_id)
@@ -703,7 +717,7 @@ mod ssh_command_future_tests {
     use super::{
         agent_forwarding_enabled, session_create_ssh_agent, session_create_ssh_cert,
         session_create_ssh_jump, session_create_ssh_key, session_create_ssh_password, AppHandle,
-        SessionError,
+        SessionError, SessionFailure,
     };
     use crate::session::{JumpHostConfig, TerminalProfile};
     use std::future::Future;
@@ -714,6 +728,22 @@ mod ssh_command_future_tests {
             where
                 F: FnOnce($($argument),+) -> Fut,
                 Fut: Future<Output = Result<String, SessionError>> + Send + 'static,
+            {
+            }
+        };
+    }
+    /*
+     * The jump command returns `SessionFailure` (SSH06). It gets its own assertion rather
+     * than a loosened shared one: the point of these macros is that each command's future
+     * is `Send` with the error type it actually has, and a `SessionFailure` that stopped
+     * being `Send` would be caught here and nowhere else.
+     */
+    macro_rules! assert_send_failure_command {
+        ($assertion:ident, ($($argument:ty),+)) => {
+            fn $assertion<F, Fut>(_: F)
+            where
+                F: FnOnce($($argument),+) -> Fut,
+                Fut: Future<Output = Result<String, SessionFailure>> + Send + 'static,
             {
             }
         };
@@ -789,7 +819,7 @@ mod ssh_command_future_tests {
             Option<u64>
         )
     );
-    assert_send_command!(
+    assert_send_failure_command!(
         jump_command_future_is_send,
         (
             AppHandle,

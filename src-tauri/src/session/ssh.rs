@@ -11,7 +11,8 @@ use super::ssh_writer::{
 };
 use super::terminal_output::{emit_terminal_error, spawn_session_output_pump, TerminalOutputChunk};
 use super::types::{
-    validate_terminal_size, ExecResult, JumpHostConfig, SessionError, SessionType, TerminalProfile,
+    validate_terminal_size, ExecResult, JumpHostConfig, SessionError, SessionFailure, SessionType,
+    TerminalProfile,
 };
 use futures::task::AtomicWaker;
 use russh::client;
@@ -34,6 +35,14 @@ use crate::state::ClientHandler;
 type SshSessions = Arc<Mutex<HashMap<String, Arc<client::Handle<ClientHandler>>>>>;
 /// Erases nested russh futures so Tauri commands stay `Send` on every target.
 type BoxedSshFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, SessionError>> + Send + 'a>>;
+
+/// A connection future that can name the hop and stage it failed at.
+///
+/// A separate alias rather than widening `BoxedSshFuture`: that one is used by the
+/// authentication helpers, which have no connection context to report, and changing it
+/// would push `SessionFailure` into eight call sites that would only wrap and unwrap.
+type BoxedConnectionFuture<'a, T> =
+    Pin<Box<dyn Future<Output = Result<T, SessionFailure>> + Send + 'a>>;
 
 const SSH_CHANNEL_OPEN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 const SSH_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
@@ -227,14 +236,29 @@ fn connection_cancelled_error() -> SessionError {
 /// cancels its attempt. Dropping the in-flight russh future closes any socket
 /// that has not yet been published to the session manager; once a handle has
 /// been returned, the caller's generation check performs the final cleanup.
-pub(crate) async fn run_cancellable_connection<T>(
+/// Drive a connection future with a cancellation race.
+///
+/// ## Why the error type is generic
+///
+/// This used to fix `SessionError`, which meant a caller whose connection already carried
+/// `hop`/`stage` had to flatten it to pass through here — and the flatten is exactly the
+/// silent context loss `SessionFailure` exists to prevent (SSH04).
+///
+/// Making it generic is the small change: this function never inspects the error, only
+/// returns it or substitutes the cancellation one. `cancel` supplies that substitute, so
+/// the two arms agree in type.
+pub(crate) async fn run_cancellable_connection<T, E, F>(
     cancellation: ConnectionCancellation,
-    future: impl Future<Output = Result<T, SessionError>> + Send,
-) -> Result<T, SessionError> {
+    future: F,
+    cancel: impl FnOnce() -> E,
+) -> Result<T, E>
+where
+    F: Future<Output = Result<T, E>> + Send,
+{
     tokio::select! {
         biased;
         result = future => result,
-        _ = cancellation.cancelled() => Err(connection_cancelled_error()),
+        _ = cancellation.cancelled() => Err(cancel()),
     }
 }
 
@@ -1535,7 +1559,9 @@ impl SshSession {
         rows: u16,
         profile: Option<TerminalProfile>,
         deadline: tokio::time::Instant,
-    ) -> BoxedSshFuture<'static, Self> {
+    ) -> BoxedConnectionFuture<'static, Self> {
+        // SSH06: this is the one constructor that can fail at two machines, so it is the
+        // one whose future carries `SessionFailure`.
         Box::pin(Self::new_with_jump_inner(
             app,
             target_host,
@@ -1570,7 +1596,7 @@ impl SshSession {
         rows: u16,
         profile: Option<TerminalProfile>,
         deadline: tokio::time::Instant,
-    ) -> Result<Self, SessionError> {
+    ) -> Result<Self, SessionFailure> {
         validate_jump_auth_config(
             &jump_host,
             target_key.as_deref(),
@@ -1597,6 +1623,13 @@ impl SshSession {
             deadline,
         )
         .await
+        /*
+         * `create` returns the bare error: it is shared with the direct-connection paths,
+         * which have no hop. The jump path wraps here, so errors from shared code arrive
+         * context-free (`hop: None`) rather than with an invented one. SSH07–SSH09 attach
+         * the real context inside `connect_via_jump_inner`, where the hop is known.
+         */
+        .map_err(SessionFailure::from)
     }
 
     /// 内部创建方法
@@ -3408,6 +3441,7 @@ mod tests {
                 let _probe = probe;
                 std::future::pending::<Result<(), SessionError>>().await
             },
+            || SessionError::ConnectionCancelled,
         ));
 
         tokio::task::yield_now().await;
@@ -3425,9 +3459,11 @@ mod tests {
     async fn completed_connection_result_wins_a_same_tick_cancel() {
         let registration = register_connection_attempt(Some("completed-cancel-attempt"));
         registration.cancellation.cancel();
-        let result = run_cancellable_connection(registration.cancellation(), async {
-            Ok::<_, SessionError>("session-ready")
-        })
+        let result = run_cancellable_connection(
+            registration.cancellation(),
+            async { Ok::<_, SessionError>("session-ready") },
+            || SessionError::ConnectionCancelled,
+        )
         .await;
         assert_eq!(
             result.expect("completed future should win"),
@@ -3440,9 +3476,11 @@ mod tests {
         let attempt_id = "racing-cancel-attempt";
         assert!(!cancel_connection_attempt(attempt_id));
         let registration = register_connection_attempt(Some(attempt_id));
-        let result = run_cancellable_connection(registration.cancellation(), async {
-            std::future::pending::<Result<(), SessionError>>().await
-        })
+        let result = run_cancellable_connection(
+            registration.cancellation(),
+            async { std::future::pending::<Result<(), SessionError>>().await },
+            || SessionError::ConnectionCancelled,
+        )
         .await;
         assert!(matches!(result, Err(SessionError::ConnectionCancelled)));
         drop(registration);
