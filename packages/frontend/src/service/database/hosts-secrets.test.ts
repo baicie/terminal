@@ -90,8 +90,19 @@ beforeEach(() => {
     },
   )
   // `updateHost` merges onto the stored row, so it reads it first.
-  mocks.select.mockResolvedValue([
-    {
+  //
+  // ## Two different questions, one mock
+  //
+  // `createHost` and `updateHost` both call `select`, and since RC01 they ask it
+  // different things: `updateHost` wants the stored row to merge onto, `createHost` asks
+  // whether the id is already taken. A blanket `mockResolvedValue([row])` answered the
+  // existence probe with "yes", so every create here failed with
+  // `A host with id host-1 already exists` — the mock described only one of the two
+  // callers.
+  //
+  // Dispatching on the statement keeps both answers honest: the existence probe sees an
+  // empty table (these cases are all first-time creates), everything else sees the row.
+  const storedRow = {
       id: 'host-1',
       name: 'prod',
       hostname: 'prod.example.test',
@@ -115,8 +126,12 @@ beforeEach(() => {
       shell_integration: 'off',
       created_at: 0,
       updated_at: 0,
-    },
-  ])
+  }
+  mocks.select.mockImplementation(async (sql: string) => {
+    // The RC01 existence probe. These cases all create a fresh id.
+    if (/^\s*SELECT id FROM hosts WHERE id = \?/i.test(sql)) return []
+    return [storedRow]
+  })
 })
 
 describe('createHost keeps secrets out of SQLite', () => {

@@ -63,6 +63,8 @@ import {
   __resetTargetsForTests,
   activeTargetCount,
   beginWrite,
+  isContended,
+  localKeyOf,
   targetKeyOf,
 } from './sftp-transfer-target'
 
@@ -422,5 +424,59 @@ describe('R01 — the registry does not grow without bound', () => {
     expect(activeTargetCount()).toBe(1)
     second.release()
     expect(activeTargetCount()).toBe(0)
+  })
+})
+
+describe('RC12 — a download is written to two places', () => {
+  it('two downloads of different remote files onto one local path are a conflict', () => {
+    /*
+     * The gap this closes: the key is built from the **remote** side only, so
+     * `/srv/a.bin → /tmp/same.bin` and `/srv/b.bin → /tmp/same.bin` had two different
+     * keys and neither integrity check could see the other's write. Whichever download
+     * finished last replaced the other's bytes, and both could report `verified`.
+     *
+     * A download now holds both keys. The assertion is on what a check sees while the
+     * other write is still running, which is the only moment the difference matters.
+     */
+    __resetTargetsForTests()
+    const coords = { hostname: 'h.example.com', port: 22, username: 'u' }
+    const a = { ...coords, remotePath: '/srv/a.bin', localPath: '/tmp/same.bin' }
+    const b = { ...coords, remotePath: '/srv/b.bin', localPath: '/tmp/same.bin' }
+
+    // Distinct remote keys — the reason the defect was invisible.
+    expect(targetKeyOf(a)).not.toBe(targetKeyOf(b))
+
+    beginWrite(a)
+    expect(
+      isContended(localKeyOf(b)!, 'writers'),
+      'the shared local destination must be contended while A is still writing',
+    ).toBe(true)
+
+    // A download to a *different* local file is not affected.
+    const c = { ...coords, remotePath: '/srv/c.bin', localPath: '/tmp/other.bin' }
+    expect(isContended(localKeyOf(c)!, 'writers')).toBe(false)
+  })
+
+  it('an upload has no local side, so it never contends on a local key', () => {
+    // Uploads do not touch this machine, and inventing a local key for them would make
+    // unrelated uploads interfere.
+    __resetTargetsForTests()
+    const upload = { hostname: 'h', port: 22, username: 'u', remotePath: '/srv/x.bin' }
+    expect(localKeyOf(upload)).toBeNull()
+    const hold = beginWrite(upload)
+    // Exactly one entry was created — the remote key.
+    expect(activeTargetCount()).toBe(1)
+    hold.release()
+    expect(activeTargetCount()).toBe(0)
+  })
+
+  it('releasing a download frees both keys', () => {
+    // A leaked local hold would make every later download to that file look contended.
+    __resetTargetsForTests()
+    const t = { hostname: 'h', port: 22, username: 'u', remotePath: '/srv/a.bin', localPath: '/tmp/x' }
+    const hold = beginWrite(t)
+    expect(activeTargetCount()).toBe(2)
+    hold.release()
+    expect(activeTargetCount(), 'both keys must be reclaimed').toBe(0)
   })
 })

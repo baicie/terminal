@@ -20,6 +20,7 @@ import { useTransferQueue } from '@/store/transfer-queue'
 import { claimSession } from './sftp-session-claim'
 import {
   beginRead,
+  localKeyOf,
   completionsOf,
   isContended,
   releaseIfIdle,
@@ -159,9 +160,24 @@ export function handOffVerification(
    *     the race, which a live counter alone cannot see because the writer released its
    *     hold before the check looked.
    */
+  /*
+   * RC12: a download is written to **two** places — the remote file it names and the local
+   * file it lands in. The remote key is the one `targetKey` describes; the local key is a
+   * second, independent conflict axis, because two downloads of different remote files
+   * onto one local path overwrite each other's bytes on this machine.
+   *
+   * `readHold` already covers both (it holds the pair), so the check below inspects both.
+   * Without the local half, `/srv/a.bin → /tmp/x` and `/srv/b.bin → /tmp/x` would each
+   * report `verified` while whichever finished last replaced the other's file.
+   */
+  const localKey = target === null ? null : localKeyOf(target)
   const contendedAtStart =
-    target !== null && isContended(targetKeyOf(target), 'writers')
-  const completionsAtStart = targetKey ? completionsOf(targetKey) : 0
+    target !== null &&
+    (isContended(targetKeyOf(target), 'writers') ||
+      (localKey !== null && isContended(localKey, 'writers')))
+  const completionsAtStart =
+    (targetKey ? completionsOf(targetKey) : 0) +
+    (localKey ? completionsOf(localKey) : 0)
 
   const task = verifier(id, args)
   // Not verifying this transfer: nothing to hold the session for.
@@ -186,11 +202,29 @@ export function handOffVerification(
        * began before this check and is still going; without it, a long write that started
        * first would be invisible to a short check that ran entirely inside it.
        */
+      /*
+       * `target === null` is decided **before** anything dereferences it.
+       *
+       * The previous shape computed `completionsOf(targetKeyOf(target))` first, so a
+       * missing target threw a `TypeError` inside the verifier — which the `.catch`
+       * above turns into a failure with a thrown-error message. The verdict still read
+       * `indeterminate`, which is why it looked fine until the local key changed the
+       * order of evaluation; the reason string, however, was the wrong one, and this
+       * test exists precisely to distinguish "no identity" from "the verifier crashed".
+       */
+      const hasTarget = target !== null
+      const remoteContended =
+        hasTarget && isContended(targetKeyOf(target), 'writers')
+      const localContended = localKey !== null && isContended(localKey, 'writers')
+      const completionsNow =
+        (hasTarget ? completionsOf(targetKeyOf(target)) : 0) +
+        (localKey ? completionsOf(localKey) : 0)
       const contested =
-        target === null ||
+        !hasTarget ||
         contendedAtStart ||
-        isContended(targetKeyOf(target), 'writers') ||
-        completionsOf(targetKeyOf(target)) > completionsAtStart
+        remoteContended ||
+        localContended ||
+        completionsNow > completionsAtStart
       if (contested) {
         useTransferQueue.getState().setChecksumResult(id, 'remote', {
           success: false,

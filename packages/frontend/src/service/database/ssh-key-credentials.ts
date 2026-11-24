@@ -19,22 +19,17 @@
  * generation stays intact rather than carrying a hole forward.
  */
 
-import {
-  parseCredentialRef,
-  refVersion,
-  serializeCredentialRef,
-} from '@/service/credential-boundary'
+import { refVersion, serializeCredentialRef } from '@/service/credential-boundary'
 import type { CredentialKind, CredentialRef } from '@/service/credential-boundary'
+
+export {
+  credentialRefUnreadable,
+  readKeyCredentialRef,
+  readKeyCredentialRefState,
+} from './key-credential-ref-state'
+export type { KeyCredentialRefState } from './key-credential-ref-state'
 import { vaultSecretProvider } from '@/service/vault-secret-provider'
 import { vaultUnavailableMessage } from '@/service/vault-unavailable-message'
-
-/** The reference stored on a key row, read the same way hosts read theirs. */
-export function readKeyCredentialRef(
-  raw: string | null | undefined,
-): CredentialRef | null {
-  const parsed = parseCredentialRef(raw)
-  return parsed.ok ? parsed.ref : null
-}
 
 /** The generation after the one the row points at. Never the same number. */
 export function nextKeyVersion(current: CredentialRef | null): number {
@@ -155,3 +150,4 @@ export async function discardKeyVersion(
 }
 
 export { serializeCredentialRef }
+

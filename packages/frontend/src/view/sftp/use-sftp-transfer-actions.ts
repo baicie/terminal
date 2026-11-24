@@ -125,13 +125,21 @@ export function useSftpTransferActions(args: {
 }): SftpTransferActions {
   const { sessionId, remotePath, connection } = args
   const targetFor = useCallback(
-    (path: string) =>
+    /**
+     * A transfer's identity, optionally with the local file it lands in.
+     *
+     * `localPath` is what makes two downloads onto one local destination visible to each
+     * other (RC12): their remote paths differ, so without it their keys differ too and
+     * neither check can see the other's write.
+     */
+    (path: string, localPath?: string) =>
       connection
         ? {
             hostname: connection.hostname,
             port: connection.port,
             username: connection.username,
             remotePath: path,
+            ...(localPath ? { localPath } : {}),
           }
         : undefined,
     [connection],
@@ -165,7 +173,7 @@ export function useSftpTransferActions(args: {
         localPath: target,
         displayName: fileName,
         bytesTotal: file.size,
-        target: targetFor(file.path),
+        target: targetFor(file.path, target),
       })
     },
     [sessionId, targetFor],

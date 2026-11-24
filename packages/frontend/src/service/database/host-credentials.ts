@@ -269,5 +269,27 @@ function droppedKindsForSwitch(
   if (switchedFromPassword && !currentKinds.includes('passphrase')) {
     dropped.add('password')
   }
+  /*
+   * ## The other direction, which this function did not handle
+   *
+   * RC05, measured on a real database: `key → password` left the old private key in the
+   * new generation. The reference then named `['password', 'privateKey']` and the vault
+   * still held the PEM.
+   *
+   * The rule this file states — "only drop what the *previous* method's secret no longer
+   * has a role in" — applies symmetrically, and only one half had been implemented (the
+   * Phase 10.3 fix was written from the password → key report).
+   *
+   * `passphrase` is deliberately **not** dropped: it belongs to the key, and a host on
+   * `key` legitimately stores it in the same field the password form uses. Dropping it
+   * here would delete a passphrase the user never asked to remove.
+   */
+  const switchedToPassword =
+    previousAuthType !== undefined &&
+    previousAuthType !== 'password' &&
+    authType === 'password'
+  if (switchedToPassword) {
+    dropped.add('privateKey')
+  }
   return dropped
 }

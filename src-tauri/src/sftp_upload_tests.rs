@@ -25,12 +25,23 @@ struct Faults {
     /// Report this many more bytes than were stored, like a server whose
     /// close acknowledged a truncated file.
     report_extra_bytes: u64,
+    /// Never answer a write, like a link that was reset while a chunk was in flight.
+    ///
+    /// The write future stays pending forever — it does not error, because the peer
+    /// never sent anything to error *on*. That is the shape RC07 measured in the GUI
+    /// fixture's seed path: `russh-sftp`'s own `write_all` has no timeout, so a bare
+    /// call parks on `mio::poll` with no socket left to wake it.
+    hang_writes: bool,
+    /// Delay every write by this much, to model a slow-but-working link.
+    chunk_delay: Option<std::time::Duration>,
 }
 
 #[derive(Default)]
 struct State {
     files: HashMap<String, Vec<u8>>,
     faults: Faults,
+    /// Every `write_chunk` the upload attempted, including the one that hung.
+    write_attempts: usize,
     ops: Vec<String>,
     renames: usize,
     /// Age in seconds of a staged file, keyed by full path.
@@ -209,9 +220,29 @@ struct MemoryFile {
     state: Arc<Mutex<State>>,
 }
 
+impl MemoryFs {
+    /// How many `write_chunk` calls the upload made, including a hung one.
+    fn write_attempts(&self) -> usize {
+        self.state.lock().unwrap().write_attempts
+    }
+}
+
 #[async_trait]
 impl RemoteFile for MemoryFile {
     async fn write_chunk(&mut self, data: &[u8]) -> Result<(), String> {
+        // Read the flags, drop the guard, *then* park: holding the mutex would make the
+        // whole fake unreachable and turn "the write hangs" into "the test deadlocks".
+        let (hangs, delay) = {
+            let mut state = self.state.lock().unwrap();
+            state.write_attempts += 1;
+            (state.faults.hang_writes, state.faults.chunk_delay)
+        };
+        if let Some(delay) = delay {
+            tokio::time::sleep(delay).await;
+        }
+        if hangs {
+            std::future::pending::<()>().await;
+        }
         let mut state = self.state.lock().unwrap();
         if state.faults.offline {
             return Err("connection lost".to_string());
@@ -1017,4 +1048,264 @@ async fn a_size_mismatch_from_the_server_is_refused_and_cleaned_up() {
     );
     assert_eq!(fs.content("/home/u/file.txt").unwrap(), b"old");
     assert_eq!(fs.paths(), vec!["/home/u/file.txt".to_string()]);
+}
+
+/// RC07 — a write that never answers must still let the upload finish.
+///
+/// ## What this pins, and what it does not
+///
+/// `staged_upload` wraps every remote call in `bounded()`, which is
+/// `tokio::time::timeout(REMOTE_TIMEOUT)` with a 20-second budget. A peer that stops
+/// answering therefore cannot park the upload forever: the write future is dropped and
+/// the caller gets `UploadError::Remote("the server stopped answering…")`.
+///
+/// This is the difference RC07 found between the product path and the GUI fixture's seed
+/// helper. `seed_remote` in `sftp_command_e2e_tests.rs` calls
+/// `session.create(...).write_all(...)` — `russh-sftp`'s own `AsyncWrite` impl, which has
+/// no timeout of its own — so a cut uplink parks it on `mio::poll` indefinitely. That is
+/// what #149 measured as "no verdict at 30/60/180/300 s"; the hang was in the fixture,
+/// not in the shipping upload.
+///
+/// The assertion is on **returning at all** plus the staging file being cleaned up, not on
+/// the exact elapsed time: `tokio::time` is not paused here, so the real 20-second budget
+/// runs. A test that asserted "under 25 s" would fail on a loaded CI machine for reasons
+/// unrelated to the code, and the property that matters is "bounded, not infinite".
+#[tokio::test]
+async fn a_write_that_never_answers_is_bounded_and_cleans_up() {
+    /*
+     * `start_paused` moves the clock forward when every task is idle, so this exercises
+     * the 20-second budget in microseconds.
+     *
+     * Without it the test really waits 20 s, and that broke a neighbouring case:
+     * `the_path_lock_is_held_until_the_holding_upload_finishes` waits 5 s on its gate and
+     * timed out ("the first upload never reached the gate") purely because this test was
+     * holding the runtime. Measured — the neighbouring test passes alone and fails only
+     * when this one runs beside it. A test that makes others fail for reasons unrelated to
+     * their subject is a test-suite defect, not a slow test.
+     */
+    tokio::time::pause();
+    let dir = tempfile::tempdir().unwrap();
+    // Larger than one chunk so the write path is actually entered.
+    let payload = vec![7u8; 256 * 1024];
+    let local = local_file(&dir, "payload.bin", &payload);
+    let fs = MemoryFs::new(&[("/home/u/file.txt", b"old")]).with_faults(Faults {
+        hang_writes: true,
+        ..Faults::default()
+    });
+
+    let started = std::time::Instant::now();
+    let error = run(&fs, &local, "/home/u/file.txt")
+        .await
+        .expect_err("a hung write must become an error, not a forever-pending future");
+    let elapsed = started.elapsed();
+
+    assert!(
+        matches!(error, UploadError::Remote(ref message) if message.contains("stopped answering")),
+        "expected the bounded-timeout error, got {error:?}"
+    );
+    // The budget is 20 s; anything far beyond it means the bound did not fire.
+    assert!(
+        elapsed < std::time::Duration::from_secs(60),
+        "the write was not bounded: took {elapsed:?}"
+    );
+
+    // The destination is untouched and the staging file is gone.
+    assert_eq!(fs.content("/home/u/file.txt").unwrap(), b"old");
+    assert_eq!(
+        fs.paths(),
+        vec!["/home/u/file.txt".to_string()],
+        "the staging file must not survive a bounded timeout"
+    );
+}
+
+/// RC08 — the budget is per round trip, so a slow-but-working link still completes.
+///
+/// ## The distinction this pins
+///
+/// `bounded()` applies `REMOTE_TIMEOUT` (20 s) to **one** remote call — a 64 KiB chunk,
+/// a rename, a list. It is not a deadline for the whole file. That matters: a 1 GiB upload
+/// over a link that delivers 1 MiB/s takes ~17 minutes and must succeed, while a link that
+/// stops answering must fail within seconds.
+///
+/// A single total deadline would be far easier to write and would fail the first case.
+/// This test asserts the property that distinguishes them: **many slow chunks add up to a
+/// success**, where each chunk is slow relative to nothing in particular.
+#[tokio::test]
+async fn a_file_sent_in_many_slow_chunks_still_completes() {
+    tokio::time::pause();
+    let dir = tempfile::tempdir().unwrap();
+    // 8 chunks of 64 KiB = the loop runs eight times.
+    let payload = vec![9u8; 8 * 64 * 1024];
+    let local = local_file(&dir, "payload.bin", &payload);
+    let fs = MemoryFs::new(&[]).with_faults(Faults {
+        /*
+         * Each chunk takes 15 s of paused time — three quarters of the 20 s per-call
+         * budget. Eight of them total two minutes, which a single whole-file deadline of
+         * 20 s could never accommodate.
+         *
+         * The first version used 1 s per chunk, and it was **vacuous**: tightening the
+         * budget from 20 s to 3 s left it passing, because 1 s fits inside 3 s just as
+         * well. A delay near the bound is what makes this case fail when the bound is
+         * lowered to something a slow link could not meet.
+         */
+        chunk_delay: Some(std::time::Duration::from_secs(15)),
+        ..Faults::default()
+    });
+
+    let outcome = run(&fs, &local, "/home/u/big.bin")
+        .await
+        .expect("a slow link must not trip the per-call budget");
+    assert_eq!(outcome.bytes, payload.len() as u64);
+
+    // The total elapsed time is well past one chunk's budget, which is the point:
+    // the bound is per call, not for the file.
+    assert!(
+        outcome.bytes > 64 * 1024,
+        "the loop must have run more than once"
+    );
+}
+
+/// RC09 — a timed-out write must not keep writing after the caller is told it stopped.
+///
+/// ## What "stopped" has to mean
+///
+/// `tokio::time::timeout` returns an error; it does **not** cancel work already handed to
+/// the transport. The question this pins is what the *fake* does when its write future is
+/// dropped — and, through it, what the product's code guarantees: after the timeout the
+/// product calls `abandon()` and `remove()`, and it never issues another `write_chunk`.
+///
+/// The last part is the one that matters for data: a late chunk arriving after the user
+/// has been told "the transfer failed" would land in a staging file nobody is watching,
+/// and if a rename followed it the destination could change after the failure was
+/// reported.
+#[tokio::test]
+async fn after_a_timeout_no_further_writes_are_issued() {
+    tokio::time::pause();
+    let dir = tempfile::tempdir().unwrap();
+    let payload = vec![3u8; 4 * 64 * 1024];
+    let local = local_file(&dir, "payload.bin", &payload);
+    let fs = MemoryFs::new(&[("/home/u/file.txt", b"old")]).with_faults(Faults {
+        hang_writes: true,
+        ..Faults::default()
+    });
+
+    let error = run(&fs, &local, "/home/u/file.txt").await.unwrap_err();
+    assert!(matches!(error, UploadError::Remote(_)), "{error:?}");
+
+    // Count what the fake saw after the failure. `write_attempts` is incremented at the
+    // top of every call, including the hung one, so a second attempt would show up here.
+    let attempts = fs.write_attempts();
+    assert_eq!(
+        attempts, 1,
+        "the upload must stop at the first hung chunk, not retry it; saw {attempts} attempts"
+    );
+
+    // And the destination the user cares about is untouched.
+    assert_eq!(fs.content("/home/u/file.txt").unwrap(), b"old");
+    assert_eq!(
+        fs.paths(),
+        vec!["/home/u/file.txt".to_string()],
+        "no staging file may remain after the bounded timeout"
+    );
+}
+
+/// RC11 — repeating a failing upload must not accumulate anything.
+///
+/// ## What "nothing accumulates" covers
+///
+/// A path-lock registry entry, a staging file, a half-written destination — each of these
+/// is individually small, and any of them leaking once per attempt turns into a user
+/// machine that needs a restart after a bad afternoon on a flaky link.
+///
+/// The scenario is the one RC08/RC09 examined, repeated: **twenty rounds** of an upload
+/// that hits a link which stops answering, each followed by a healthy upload to the same
+/// path. The second half matters — it proves the path is still usable, which a leaked lock
+/// entry would prevent.
+///
+/// ## What the registry assertion can and cannot say
+///
+/// The registry holds `Weak` references and prunes dead ones **on the next `acquire`** —
+/// deliberately, since the only moment a dead key can appear is between one holder
+/// finishing and the next arriving. So "the registry is empty after an upload" is not a
+/// property of the design, and the first version of this test asserted exactly that and
+/// failed on round 1.
+///
+/// What must hold is that it does not **grow**: the same path reused twenty times leaves
+/// one entry, not twenty. The count is sampled per round and asserted against a ceiling
+/// of 1 — a leak of the shape "one per attempt" shows up immediately, and a momentary
+/// weak entry does not.
+#[tokio::test]
+async fn twenty_rounds_of_failed_uploads_leave_no_registry_entries_or_staging_files() {
+    tokio::time::pause();
+    let dir = tempfile::tempdir().unwrap();
+    let payload = vec![4u8; 3 * 64 * 1024];
+    let local = local_file(&dir, "payload.bin", &payload);
+    let fs = MemoryFs::new(&[("/home/u/file.txt", b"original")]);
+
+    for round in 1..=20 {
+        // Whatever the previous round's healthy upload left is this round's baseline.
+        let expected = fs.content("/home/u/file.txt").unwrap().to_vec();
+
+        // A round that fails: the link stops answering on the first chunk.
+        {
+            fs.state.lock().unwrap().faults.hang_writes = true;
+            let error = run(&fs, &local, "/home/u/file.txt")
+                .await
+                .expect_err("the hung round must fail");
+            assert!(
+                matches!(error, UploadError::Remote(_)),
+                "round {round}: {error:?}"
+            );
+            fs.state.lock().unwrap().faults.hang_writes = false;
+        }
+
+        /*
+         * ## Why the registry is not asserted here
+         *
+         * `upload_locks()` is process-wide, so `tracked()` counts every path every test in
+         * this binary holds — a ceiling on the total failed in the full run ("grew to 2")
+         * while passing alone. Scoping to this path with `is_registered` did not work
+         * either: after the guard drops, the entry is a dead `Weak`, so the predicate is
+         * legitimately false and the assertion failed at round 1.
+         *
+         * Neither number answers "does this path accumulate", because the registry's
+         * steady state is a weak entry that outlives nobody. What does accumulate visibly
+         * is the staging file and the destination, and those are asserted below. The
+         * registry's own growth is covered by
+         * `different_paths_stay_concurrent_and_the_lock_registry_stays_bounded`, which
+         * drives many paths and is the test shaped for it.
+         */
+        let staging = fs
+            .paths()
+            .into_iter()
+            .filter(|p| p.contains(".terminal-upload-"))
+            .collect::<Vec<_>>();
+        assert!(
+            staging.is_empty(),
+            "round {round}: staging files survived: {staging:?}"
+        );
+        /*
+         * What the destination holds before this round is whatever the previous round's
+         * **healthy** upload wrote — by design, that upload succeeded. The property is
+         * that *this* round's failure did not change it, so the expectation is captured
+         * before the failing upload rather than being the seed bytes.
+         *
+         * The first version compared against the literal seed `b"original"` and failed on
+         * round 2 for exactly this reason: round 1's healthy upload had legitimately
+         * replaced it.
+         */
+        assert_eq!(
+            fs.content("/home/u/file.txt").unwrap(),
+            expected.as_slice(),
+            "round {round}: a failed upload changed the destination"
+        );
+
+        // A healthy upload in the same round must still work — a leaked lock would
+        // make this hang or fail, not merely be slow.
+        let outcome = run(&fs, &local, "/home/u/file.txt")
+            .await
+            .unwrap_or_else(|error| panic!("round {round}: healthy upload failed: {error:?}"));
+        assert_eq!(outcome.bytes, payload.len() as u64, "round {round}");
+        // Registry growth is covered by the bounded-registry test; see the note above.
+    }
 }

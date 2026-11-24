@@ -70,25 +70,40 @@ beforeEach(() => {
     },
   )
   // `updateSSHKey` reads the stored row before deciding the next version.
-  mocks.select.mockResolvedValue([
-    {
-      id: 'key-1',
-      name: 'deploy',
-      key_type: 'ssh-ed25519',
-      private_key: null,
-      public_key: null,
-      certificate: null,
-      passphrase: null,
-      credential_ref: JSON.stringify({
-        kinds: ['privateKey'],
-        provider: 'vault',
-        version: 1,
-      }),
-      is_encrypted: 1,
-      created_at: 0,
-      updated_at: 0,
-    },
-  ])
+  /*
+   * ## Two different questions, one mock
+   *
+   * `updateSSHKey` reads the stored row before deciding the next version; `createSSHKey`
+   * (since RC03) asks whether the id is already taken. A blanket
+   * `mockResolvedValue([row])` answers the existence probe with "yes", so every create
+   * here failed with `An SSH key with id key-1 already exists` — the mock only described
+   * one of the two callers.
+   *
+   * Dispatching on the statement keeps both answers honest: these cases all create fresh
+   * ids, so the probe sees an empty table and everything else sees the row.
+   */
+  const storedKeyRow = {
+    id: 'key-1',
+    name: 'deploy',
+    key_type: 'ssh-ed25519',
+    private_key: null,
+    public_key: null,
+    certificate: null,
+    passphrase: null,
+    credential_ref: JSON.stringify({
+      kinds: ['privateKey'],
+      provider: 'vault',
+      version: 1,
+    }),
+    is_encrypted: 1,
+    created_at: 0,
+    updated_at: 0,
+  }
+  mocks.select.mockImplementation(async (sql: string) => {
+    // The RC03 existence probe. These cases all create a fresh id.
+    if (/^\s*SELECT id FROM ssh_keys WHERE id = \?/i.test(sql)) return []
+    return [storedKeyRow]
+  })
   mocks.vaultAvailable.mockResolvedValue(true)
 })
 

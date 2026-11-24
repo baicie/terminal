@@ -83,14 +83,33 @@ describe('the real transfer entry points carry the server identity', () => {
 
     expect(mocks.downloadFile).toHaveBeenCalledTimes(1)
     const calls = mocks.downloadFile.mock.calls as unknown as Array<
-      [{ target?: { hostname: string; port: number; username: string; remotePath: string } }]
+      [
+        {
+          target?: {
+            hostname: string
+            port: number
+            username: string
+            remotePath: string
+            localPath?: string
+          }
+        },
+      ]
     >
+    /*
+     * `localPath` is part of the identity since RC12: two downloads of different remote
+     * files onto one local destination overwrite each other, and without the local half
+     * their keys differ so neither check can see the other. Asserting the whole object
+     * (`toEqual`, not `toMatchObject`) is what keeps that field from disappearing in a
+     * future refactor.
+     */
     expect(calls[0][0].target).toEqual({
       hostname: 'deploy.example.com',
       port: 2222,
       username: 'deploy',
       // The per-file path, not the directory the pane is showing.
       remotePath: '/srv/reports/report.pdf',
+      // Where the bytes land on this machine — the second destination.
+      localPath: '/tmp/landing.bin',
     })
   })
 
