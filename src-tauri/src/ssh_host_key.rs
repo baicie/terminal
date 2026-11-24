@@ -300,6 +300,8 @@ pub async fn ssh_host_key_probe(
         handler,
         deadline,
         "connect host-key probe",
+        // The probe reports its own typed errors; it never needs the side channel.
+        None,
     )
     .await
     .map_err(map_session_error)?;
@@ -347,7 +349,13 @@ pub async fn ssh_host_key_probe_via_jump(
     let (jump_handle, jump_shutdown) =
         connect_authenticated_jump_host_with_shutdown(config.clone(), &jump_host, Some(deadline))
             .await
-            .map_err(map_session_error)?;
+            /*
+             * The TOFU probe answers "is this host key trusted", not "which machine
+             * failed", so it reports `SshHostKeyError` and has nowhere to put a hop.
+             * Taking `.error` writes that loss at the call site instead of hiding it in a
+             * conversion — the ADR's rule for a genuine boundary.
+             */
+            .map_err(|failure| map_session_error(failure.error))?;
     let target_channel = match open_jump_host_tunnel(
         &jump_handle,
         &jump_host,
@@ -379,6 +387,7 @@ pub async fn ssh_host_key_probe_via_jump(
         deadline,
         "inspect host key through jump host",
         Some(&jump_shutdown),
+        None,
     )
     .await
     {

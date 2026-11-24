@@ -62,6 +62,9 @@ export function useTerminalBodyProps(args: {
     reconnectReason: session.reason,
     reconnectRetryable: session.retryable,
     credentialKind: session.credentialKind,
+    // SSH11: this line is the whole reason the field exists. SSH10 carried the context
+    // all the way to the hook result and it stopped there, because nothing read it.
+    diagnosis: session.diagnosis,
     isMobile,
     active: terminalIsActive,
     isFullscreen: ui.isFullscreen,

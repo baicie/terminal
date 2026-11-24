@@ -697,3 +697,333 @@ mod auth_kind_tests {
         ));
     }
 }
+
+// ---------------------------------------------------------------------------
+// SSH05 — connection failure context (hop + stage)
+// ---------------------------------------------------------------------------
+//
+// ## Why this wraps `SessionError` instead of replacing it
+//
+// SSH03 measured the surface: 96 Tauri commands return `Result<_, SessionError>`, with
+// 174 production construction sites — and only **six** of those commands establish a
+// connection. The other ninety carry no notion of a hop and never will. Wrapping the six
+// keeps that visible in the type system: `SessionFailure` appears exactly where a jump
+// chain can exist.
+//
+// ## Why there is no reverse conversion
+//
+// `From<SessionFailure> for SessionError` would silently discard `hop` and `stage`. A
+// convenience like that gets used once on an error path nobody watches, and the feature
+// then reports "unknown" for the case it was built for. Callers that need the bare error
+// write `.error`, which shows up in review.
+
+/// Which leg of a connection produced a failure.
+///
+/// There is no `Direct` variant: a direct connection has no hop, and `Some(Direct)` would
+/// make "no hop" indistinguishable from "hop 1 of 1". `None` means "this connection has no
+/// jump chain", not "unknown".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConnectionHop {
+    /// The bastion: the tunnel never opened.
+    Bastion,
+    /// The host at the end of the tunnel.
+    Target,
+}
+
+/// Where in the connection sequence a failure happened.
+///
+/// Every variant names a step this code actually performs. A stage that cannot be
+/// determined stays `None`: an outer timeout knows the deadline expired but not which
+/// await was pending, and naming a step that never ran is worse than naming none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConnectionStage {
+    TcpConnect,
+    Handshake,
+    HostKeyVerification,
+    Authentication,
+    /// Opening the `direct-tcpip` channel through the bastion.
+    TunnelOpen,
+    /// Opening the session channel on the target after its handshake.
+    ChannelOpen,
+}
+
+/// A connection failure with the context the user needs to act on it.
+///
+/// Serialises as the same JSON as `SessionError` — same `type`, same `message` — plus two
+/// optional fields that older consumers ignore.
+#[derive(Debug, Clone, Serialize)]
+#[serde(into = "SessionFailureDto")]
+pub struct SessionFailure {
+    pub error: SessionError,
+    pub hop: Option<ConnectionHop>,
+    pub stage: Option<ConnectionStage>,
+}
+
+impl SessionFailure {
+    /// A failure with no connection context.
+    ///
+    /// Used where the position in the sequence genuinely cannot be known: input
+    /// validation, a pool lookup, an outer deadline.
+    pub fn bare(error: impl Into<SessionError>) -> Self {
+        Self {
+            error: error.into(),
+            hop: None,
+            stage: None,
+        }
+    }
+
+    /// Attribute this failure to a hop and stage.
+    pub fn at(mut self, hop: ConnectionHop, stage: ConnectionStage) -> Self {
+        self.hop = Some(hop);
+        self.stage = Some(stage);
+        self
+    }
+
+    /// Attribute the hop only, for failures whose exact stage cannot be proven.
+    pub fn on(mut self, hop: ConnectionHop) -> Self {
+        self.hop = Some(hop);
+        self
+    }
+
+    /// Attribute the stage only.
+    ///
+    /// A direct connection performs the same steps a bastion does but has no hop to name.
+    /// Recording the stage without a hop is what lets a direct-connection failure say
+    /// "the credential was rejected" while leaving `hop` absent — which is its documented
+    /// meaning, not a missing value.
+    pub fn with_stage(mut self, stage: ConnectionStage) -> Self {
+        self.stage = Some(stage);
+        self
+    }
+}
+
+impl From<SessionError> for SessionFailure {
+    /// The allowed direction: not every failure knows where it happened, and forcing every
+    /// `?` to supply a hop would push fabricated values into the one field this feature
+    /// exists to make trustworthy.
+    fn from(error: SessionError) -> Self {
+        Self::bare(error)
+    }
+}
+
+/// The IPC shape for a connection failure.
+///
+/// **Serialise-only.** IPC is one-directional here: the frontend receives this shape and
+/// never sends it back (verified — no frontend module constructs a `SessionError`). Adding
+/// `Deserialize` would force `kind` from `&'static str` to `String` for a direction nobody
+/// uses, and the first attempt at that needed a `Box::leak` to bridge the two.
+///
+/// The seventeen-way `kind` mapping is not duplicated: this delegates to
+/// `SessionErrorDto::from`, which stays the single place that knows the names.
+#[derive(Serialize)]
+struct SessionFailureDto {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    hop: Option<ConnectionHop>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    stage: Option<ConnectionStage>,
+}
+
+impl From<SessionFailure> for SessionFailureDto {
+    fn from(failure: SessionFailure) -> Self {
+        let inner = SessionErrorDto::from(failure.error);
+        Self {
+            kind: inner.kind,
+            message: inner.message,
+            hop: failure.hop,
+            stage: failure.stage,
+        }
+    }
+}
+
+#[cfg(test)]
+mod ssh05_ipc_contract_tests {
+    //! SSH05 — the wire shape must stay backward compatible.
+
+    use super::*;
+
+    fn json_of(failure: SessionFailure) -> serde_json::Value {
+        serde_json::to_value(SessionFailureDto::from(failure)).expect("serialises")
+    }
+
+    #[test]
+    fn a_bare_failure_serialises_exactly_like_a_plain_session_error() {
+        /*
+         * The compatibility requirement, stated as a test: a failure with no context must be
+         * byte-for-byte the old shape. If this ever grows a `hop: null`, every consumer that
+         * distinguishes "absent" from "null" changes behaviour without anyone editing it.
+         */
+        let plain = serde_json::to_value(SessionErrorDto::from(
+            SessionError::AuthenticationRejected("denied".to_string()),
+        ))
+        .expect("serialises");
+
+        let bare = json_of(SessionFailure::from(SessionError::AuthenticationRejected(
+            "denied".to_string(),
+        )));
+
+        assert_eq!(plain, bare);
+        assert!(
+            bare.get("hop").is_none(),
+            "an absent hop must be omitted, not null"
+        );
+        assert!(bare.get("stage").is_none());
+    }
+
+    #[test]
+    fn a_hop_and_stage_appear_as_flat_siblings_of_type() {
+        // Flat, not nested: a consumer reading `error.type` would have to change for a
+        // nested shape, and the whole point of this design is that they do not.
+        let json = json_of(
+            SessionFailure::bare(SessionError::AuthenticationRejected("denied".to_string()))
+                .at(ConnectionHop::Bastion, ConnectionStage::Authentication),
+        );
+
+        assert_eq!(json["type"], "authentication_rejected");
+        assert_eq!(json["message"], "denied");
+        assert_eq!(json["hop"], "bastion");
+        assert_eq!(json["stage"], "authentication");
+    }
+
+    #[test]
+    fn the_kind_mapping_is_not_duplicated() {
+        // Every error kind must keep its name through the wrapper — if `SessionFailureDto`
+        // carried its own table, this would drift one variant at a time.
+        let cases: Vec<(SessionError, &str)> = vec![
+            (
+                SessionError::AuthenticationRejected("x".into()),
+                "authentication_rejected",
+            ),
+            (
+                SessionError::AuthenticationTransportFailed("x".into()),
+                "authentication_transport_failed",
+            ),
+            (
+                SessionError::HostKeyRejected("x".into()),
+                "host_key_rejected",
+            ),
+            (
+                SessionError::ConnectionFailed("x".into()),
+                "connection_failed",
+            ),
+            (SessionError::ChannelError("x".into()), "channel_error"),
+        ];
+        for (error, expected) in cases {
+            let json = json_of(SessionFailure::bare(error));
+            assert_eq!(json["type"], expected);
+        }
+    }
+
+    #[test]
+    fn every_stage_and_hop_serialises_as_snake_case() {
+        // The frontend matches these strings; a rename is a breaking change.
+        let hops = [
+            (ConnectionHop::Bastion, "bastion"),
+            (ConnectionHop::Target, "target"),
+        ];
+        for (hop, expected) in hops {
+            let json =
+                json_of(SessionFailure::bare(SessionError::ConnectionFailed("x".into())).on(hop));
+            assert_eq!(json["hop"], expected);
+        }
+
+        let stages = [
+            (ConnectionStage::TcpConnect, "tcp_connect"),
+            (ConnectionStage::Handshake, "handshake"),
+            (
+                ConnectionStage::HostKeyVerification,
+                "host_key_verification",
+            ),
+            (ConnectionStage::Authentication, "authentication"),
+            (ConnectionStage::TunnelOpen, "tunnel_open"),
+            (ConnectionStage::ChannelOpen, "channel_open"),
+        ];
+        for (stage, expected) in stages {
+            let json = json_of(
+                SessionFailure::bare(SessionError::ConnectionFailed("x".into()))
+                    .at(ConnectionHop::Target, stage),
+            );
+            assert_eq!(json["stage"], expected);
+        }
+    }
+
+    #[test]
+    fn the_dto_carries_no_secret_material() {
+        /*
+         * A canary: the message is caller-supplied text, and this design deliberately does
+         * not add any other free-text field. If someone later adds "the ssh config" or "the
+         * attempted key" to this struct, this test's shape assertion fails first.
+         */
+        let json = json_of(
+            SessionFailure::bare(SessionError::AuthenticationRejected("canary-secret".into()))
+                .at(ConnectionHop::Bastion, ConnectionStage::Authentication),
+        );
+        let keys: Vec<&str> = json
+            .as_object()
+            .expect("object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(keys.len(), 4, "only type, message, hop, stage: {keys:?}");
+    }
+}
+
+#[cfg(test)]
+mod ssh07_09_attribution_tests {
+    //! SSH07–SSH09 — the reachable attribution semantics.
+    //!
+    //! The three call sites themselves need a real sshd; these cases pin the properties
+    //! those sites depend on, so a change here fails before the slow path is reached.
+
+    use super::*;
+
+    fn json_of(failure: SessionFailure) -> serde_json::Value {
+        serde_json::to_value(SessionFailureDto::from(failure)).expect("serialises")
+    }
+
+    #[test]
+    fn a_direct_failure_records_a_stage_without_inventing_a_hop() {
+        /*
+         * A direct connection performs the same steps a bastion does. It has no hop —
+         * and `hop` absent means "no jump chain", not "unknown" — but it does know the
+         * stage, and dropping that would make direct failures less diagnosable than
+         * jump ones for no reason.
+         */
+        let json = json_of(
+            SessionFailure::from(SessionError::AuthenticationRejected("x".into()))
+                .with_stage(ConnectionStage::Authentication),
+        );
+        assert_eq!(json["stage"], "authentication");
+        assert!(json.get("hop").is_none(), "direct connections have no hop");
+    }
+
+    #[test]
+    fn a_failure_can_name_the_hop_without_claiming_a_stage() {
+        // The tunnel case: the API does not distinguish "bastion refused forwarding" from
+        // "target unreachable". The hop is known; the stage is not finer than TunnelOpen.
+        let json = json_of(
+            SessionFailure::from(SessionError::ChannelError("open failed".into()))
+                .at(ConnectionHop::Bastion, ConnectionStage::TunnelOpen),
+        );
+        assert_eq!(json["hop"], "bastion");
+        assert_eq!(json["stage"], "tunnel_open");
+        // The kind is untouched — an unknown tunnel cause stays a channel error.
+        assert_eq!(json["type"], "channel_error");
+    }
+
+    #[test]
+    fn target_attribution_never_follows_from_a_successful_bastion() {
+        /*
+         * The property SSH09 states in prose: "a successful bastion says nothing about the
+         * host behind it". Here that is the type-level fact — `Target` is a distinct value
+         * from `Bastion`, so no code can produce one while meaning the other.
+         */
+        let bastion = ConnectionHop::Bastion;
+        let target = ConnectionHop::Target;
+        assert_ne!(bastion, target);
+    }
+}

@@ -2,6 +2,7 @@ import type { Terminal as XTerminal } from '@baicie/xterm'
 import type { SearchAddon } from '@xterm/addon-search'
 import type { RefObject, TouchEventHandler } from 'react'
 import type { Host, Tab } from '@/types'
+import type { TerminalFailureDiagnosis } from '../../services/terminal-failure-diagnostic'
 import { TerminalContextMenu } from './terminal-context-menu'
 import { TerminalErrorOverlay } from './terminal-error-overlay'
 import { TerminalMobileMenu } from './terminal-mobile-menu'
@@ -13,6 +14,8 @@ interface TerminalSurfaceProps {
   status: string
   readableError: string | null
   credentialKind?: string
+  /** SSH11: the situation worth naming, resolved here rather than at the manager. */
+  diagnosis?: TerminalFailureDiagnosis
   errorDismissed: boolean
   isMobile: boolean
   term: XTerminal | null
@@ -81,6 +84,7 @@ export function TerminalSurface(props: TerminalSurfaceProps) {
           status={props.status}
           errorMessage={props.readableError}
           credentialKind={props.credentialKind}
+          diagnosis={props.diagnosis}
           onRetry={props.onReconnect}
           onDismiss={props.onDismissError}
         />

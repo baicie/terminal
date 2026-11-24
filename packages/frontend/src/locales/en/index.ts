@@ -18,6 +18,7 @@ import snippets from './snippets'
 import startup from './startup'
 import teams from './teams'
 import terminalStatus from './terminalStatus'
+import terminalDiagnostic from './terminalDiagnostic'
 import vaults from './vaults'
 import workspace from './workspace'
 
@@ -42,6 +43,7 @@ export default {
   ...startup,
   ...teams,
   ...terminalStatus,
+  ...terminalDiagnostic,
   ...vaults,
   ...workspace,
 }

@@ -50,6 +50,9 @@ export function useTerminal(
     retryable?: boolean
     recovery?: UseTerminalResult['recovery']
     credentialKind?: string
+    hop?: UseTerminalResult['hop']
+    stage?: UseTerminalResult['stage']
+    diagnosis?: UseTerminalResult['diagnosis']
   }>({})
   const bindingRef = useRef<TerminalSessionBinding | null>(null)
   const outputSchedulerRef = useRef<TerminalOutputScheduler | null>(null)
@@ -178,6 +181,13 @@ export function useTerminal(
             // so the header had nothing but the sentence to work with.
             recovery: snapshot.recovery,
             credentialKind: snapshot.credentialKind,
+            // SSH11: the connection context has to reach the pane, and the snapshot
+            // is the only place it exists. It was carried this far by SSH10 and then
+            // stopped here — which is exactly the shape this repository keeps
+            // finding: a field with a producer and no consumer.
+            hop: snapshot.hop,
+            stage: snapshot.stage,
+            diagnosis: snapshot.diagnosis,
           })
         },
       },

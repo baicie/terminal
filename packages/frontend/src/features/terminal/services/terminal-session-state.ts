@@ -44,12 +44,42 @@ export function updateTerminalState(
     // the vault" for the drop. Each failure states its own cause or none.
     record.credentialKind = null
   }
+  /*
+   * SSH10 — the same rule for the connection context, and for the same reason.
+   *
+   * A direct failure that follows a bastion failure must not inherit `hop: 'bastion'`:
+   * the pane would tell the user to check a bastion account on a connection that has no
+   * bastion. Each failure states its own context or none.
+   */
+  if (next.hop !== undefined) {
+    record.hop = next.hop
+  } else if (next.status === 'error' || next.status === 'reconnecting') {
+    record.hop = null
+  }
+  if (next.stage !== undefined) {
+    record.stage = next.stage
+  } else if (next.status === 'error' || next.status === 'reconnecting') {
+    record.stage = null
+  }
+  /*
+   * SSH11 — same rule once more. A diagnosis is a claim about *which machine* refused;
+   * inheriting "check the bastion's account" onto a failure that has no bastion would
+   * send the user to the wrong machine, which is worse than saying nothing.
+   */
+  if (next.diagnosis !== undefined) {
+    record.diagnosis = next.diagnosis
+  } else if (next.status === 'error' || next.status === 'reconnecting') {
+    record.diagnosis = null
+  }
   if (next.status !== undefined && leavesFailureBehind(next.status)) {
     // A retryable flag with no failure behind it keeps advertising a recovery
     // nothing is going to perform. Cleared here rather than at each call site.
     record.retryable = null
     record.recovery = null
     record.credentialKind = null
+    record.hop = null
+    record.stage = null
+    record.diagnosis = null
   }
   const snapshot = getTerminalSnapshot(record)
   record.audience.publishState(snapshot)

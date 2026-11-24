@@ -5,6 +5,28 @@ import type { TerminalSessionOutputBuffer } from './terminal-session-output-buff
 import { updateTerminalState } from './terminal-session-state'
 import type { TerminalRecord } from './terminal-session-manager-types'
 
+import {
+  HOPS,
+  STAGES,
+  readContext,
+  type TerminalFailureHop,
+  type TerminalFailureStage,
+} from './terminal-failure-context'
+import {
+  diagnoseFailure,
+  type TerminalFailureDiagnosis,
+} from './terminal-failure-diagnostic'
+import {
+  CREDENTIAL_RECOVERY,
+  NON_RETRYABLE_KINDS,
+  NON_RETRYABLE_MESSAGES,
+  TRANSIENT_AGENT_FAILURES,
+  TRANSIENT_AUTHENTICATION_MESSAGES,
+} from './terminal-failure-classification'
+
+export type { TerminalFailureHop, TerminalFailureStage } from './terminal-failure-context'
+export type { TerminalFailureDiagnosis } from './terminal-failure-diagnostic'
+
 export interface TerminalFailure {
   error: string
   retryable: boolean
@@ -24,6 +46,23 @@ export interface TerminalFailure {
    * credential) instead of a generic "retry".
    */
   credentialKind?: string
+  /**
+   * SSH10: which leg of a jump chain failed. Absent for a direct connection — and absent
+   * is **not** "the target failed". Never consulted for retry: that is decided by `kind`.
+   */
+  hop?: TerminalFailureHop
+  /** SSH10: where in the connection sequence it failed. Same rules as `hop`. */
+  stage?: TerminalFailureStage
+  /**
+   * SSH11: the situation this failure is, when it can be said better than the raw
+   * message can.
+   *
+   * Decided here because this is the only function that holds `kind`, `hop` and `stage`
+   * at once. Stored as an enum rather than a sentence so the pane renders it in the
+   * user's current language instead of the language that was active when the connection
+   * dropped. Absent for every failure the plain message already covers.
+   */
+  diagnosis?: TerminalFailureDiagnosis
 }
 
 /** The three ways a failed connection can become a working one. */
@@ -34,99 +73,6 @@ export type TerminalFailureRecovery =
   | 'manual'
   /** Blocked on the vault; retry is meaningful only once the vault is usable. */
   | 'after-vault'
-
-const NON_RETRYABLE_KINDS = new Set([
-  'authentication_failed',
-  // The server evaluated the credential and refused it. Retrying resends a secret it
-  // has already rejected; the user has to change something.
-  'authentication_rejected',
-  // `known_hosts` disagrees with the server. Nothing about a retry can fix that.
-  'host_key_rejected',
-  'connection_cancelled',
-  'invalid_input',
-  'key_parse_failed',
-  'certificate_parse_failed',
-])
-
-const NON_RETRYABLE_MESSAGES = [
-  'authentication failed',
-  'credentials rejected',
-  'host key verification failed',
-  'host key changed',
-  'known_hosts',
-  'key parse failed',
-  'certificate parse failed',
-  'frontend output ack timed out',
-  'terminal output queue exceeded',
-  'terminal output byte count does not match',
-  'xterm rejected terminal output',
-  'terminal input queue exceeded',
-  // Fallbacks for errors that reach this classifier without the structured
-  // wrapper — a record serialised before this change, or a path that still throws
-  // a plain Error. These sentences are constants this repository owns, not input.
-  'which is locked. unlock the vault',
-  'no vault has been set up yet',
-  'the vault could not be read',
-  'this build cannot read',
-]
-
-// russh reports a transport failure that happens during authentication as
-// `authentication_failed`, even when the credentials were never evaluated.
-// Keep credential and host-key failures terminal, but let a transient network
-// boundary (VPN/cellular switch, route black hole, or a sleeping host) retry.
-/**
- * Authentication failures that are really *local environment* failures.
- *
- * Every entry is produced by this application's own SSH-agent code, never echoed from a
- * server, so a credential rejection cannot accidentally match one. See the comment in
- * `classifyTerminalFailure` for why the list had to shrink.
- */
-/** Transient conditions that can occur before a credential is ever presented. */
-const TRANSIENT_AUTHENTICATION_MESSAGES = [
-  'timed out',
-  'timeout',
-  'connection reset',
-  'connection refused',
-  'connection aborted',
-  'connection closed',
-  'network is unreachable',
-  'no route to host',
-  'broken pipe',
-  'transport closed',
-]
-
-const TRANSIENT_AGENT_FAILURES = [
-  'failed to connect ssh agent',
-  'agent auth failed',
-  'ssh agent has no available identities',
-  'windows openssh authentication agent is unavailable',
-]
-
-/**
- * Credential failures and what a retry would take.
- *
- * These arrive as `CredentialFailure` from the launcher, so the decision is made
- * on the kind rather than on the message. None of them may spend the automatic
- * reconnect budget: waiting cannot unlock a vault, create one, or repair a
- * reference, and the budget is then unavailable for the network outage that might
- * genuinely follow.
- *
- * They are not all the same situation, though. A vault problem is fixed on the
- * Vaults page and the connection becomes worth retrying immediately afterwards;
- * a damaged reference or an unbound key path needs the host edited first.
- */
-const CREDENTIAL_RECOVERY: Record<string, TerminalFailureRecovery> = {
-  'vault-locked': 'after-vault',
-  'vault-uninitialized': 'after-vault',
-  'vault-unusable': 'after-vault',
-  // A decrypt that failed is retried by unlocking or repairing the vault, not by
-  // reconnecting. It used to be the one credential kind treated as transient,
-  // which is how a vault failure reached the network retry loop.
-  'credential-read-failed': 'after-vault',
-  'credential-corrupt-reference': 'manual',
-  'credential-not-bound': 'manual',
-  'credential-missing': 'manual',
-}
 
 export function classifyTerminalFailure(error: unknown): TerminalFailure {
   const credential = asCredentialFailure(error)
@@ -151,56 +97,40 @@ export function classifyTerminalFailure(error: unknown): TerminalFailure {
       ? (error as Record<string, unknown>)
       : undefined
   const kind = record?.type ?? record?.kind
+  // SSH10: read from the raw IPC object — below this point everything is a sentence.
+  const hop = readContext(record?.hop, HOPS)
+  const stage = readContext(record?.stage, STAGES)
   const normalized = formatted.toLowerCase()
   /*
    * ## A rejected credential is terminal; a broken path to the server is not
    *
-   * The previous rule made `authentication_failed` retryable whenever the message
-   * contained a transient-looking word ("timed out", "connection reset", …). Measured
-   * against the real classifier:
-   *
-   *     "authentication failed: password my-timeout-secret rejected"  → retryable = true
-   *
-   * — a rejected password that happens to contain a transient word, retried five times
-   * with the whole backoff, resending a secret the server has already refused. The user
-   * waits out the ladder to be told something the first attempt established.
-   *
-   * The rule cannot be fixed lexically, because the message includes a server's or a
-   * library's own words. What separates the two cases is *where* the failure happened,
-   * and Rust already distinguishes it: a transport, handshake or agent problem surfaces
-   * as `connection_failed`; only the credential check itself produces
-   * `authentication_failed`.
-   *
-   * So `authentication_failed` is terminal, with one narrow exception kept because the
-   * product depends on it: an SSH **agent** that cannot be reached is a local
-   * environment problem that a retry genuinely may resolve (a locked keychain being
-   * unlocked, an agent starting up). That shape is identifiable by its own wording and
-   * is not something a server echoes.
+   * `authentication_failed` used to be retried whenever the message contained a
+   * transient-looking word. Measured: `"authentication failed: password
+   * my-timeout-secret rejected"` → `retryable = true`, so a refused password was resent
+   * five times with the whole backoff. The rule cannot be fixed lexically — the message
+   * carries the server's own words. What separates the two is *where* it happened, which
+   * Rust already distinguishes: transport/handshake/agent problems surface as
+   * `connection_failed`; only the credential check itself produces
+   * `authentication_failed`. One narrow exception remains, because the product depends on
+   * it: an unreachable SSH **agent** is a local problem a retry may genuinely fix, and
+   * that shape is identifiable by its own wording.
    */
   /*
    * ## Why "rejected" wins over "timeout"
    *
-   * A first-connection timeout during auth is transient and must keep retrying
-   * (`keeps the automatic reconnect for a first-connection timeout` pins that). A
-   * credential the server *refused* is not, even when the sentence also mentions a
-   * transient word — measured: `"authentication failed: password my-timeout-secret
-   * rejected"` matched "timeout" and consumed the full five-attempt budget.
-   *
-   * So the rejection is checked first and wins. The server can only say the credential
-   * was refused after the connection succeeded, which is what makes "refused" a stronger
-   * signal than any transport word in the same sentence.
+   * A first-connection timeout during auth is transient and must keep retrying (pinned by
+   * `keeps the automatic reconnect for a first-connection timeout`). A credential the
+   * server *refused* is not, even when the sentence also mentions a transient word — the
+   * server can only refuse after the connection succeeded, which makes "refused" the
+   * stronger signal in the same sentence.
    */
   /*
    * ## Two signals, not one phrase
    *
-   * A single substring cannot carry this: `"password my-timeout-secret rejected"` puts
-   * the credential between the noun and the verb, and `"connection refused"` reuses the
-   * verb for transport. Measured both ways while writing this.
-   *
-   * So the rejection is recognised by a **verb of refusal anywhere** in a message that
-   * also contains a credential noun. `"failed to connect SSH agent: connection refused"`
-   * has the verb but no credential noun, so it keeps retrying; `"password … rejected"`
-   * has both.
+   * A single substring cannot carry this: `"password my-timeout-secret rejected"` puts the
+   * credential between the noun and the verb, and `"connection refused"` reuses the verb
+   * for transport. So a refusal is recognised by a verb of refusal anywhere in a message
+   * whose subject is the credential.
    */
   /*
    * `\b` matters: without it "auth" would match inside "author". Written with the
@@ -249,6 +179,13 @@ export function classifyTerminalFailure(error: unknown): TerminalFailure {
     transientAuthenticationFailure ||
     (!(typeof kind === 'string' && NON_RETRYABLE_KINDS.has(kind)) &&
       !NON_RETRYABLE_MESSAGES.some(message => normalized.includes(message)))
+  // SSH11: the situation, derived once from the raw context above. Both `kind` and the
+  // hop/stage it needs are in scope only here.
+  const diagnosis = diagnoseFailure({
+    kind: typeof kind === 'string' ? kind : undefined,
+    hop,
+    stage,
+  })
   return {
     error: formatted,
     retryable,
@@ -256,6 +193,12 @@ export function classifyTerminalFailure(error: unknown): TerminalFailure {
     // protocol failure. The ones that retry are the transient network cases the
     // ladder exists for; the ones that do not need the user to act.
     recovery: retryable ? 'automatic' : 'manual',
+    // SSH10: carried through, never consulted. `retryable` above is decided by `kind`
+    // alone, so a bastion and a target refusal retry identically — correct, because both
+    // mean "the server said no, stop".
+    ...(hop ? { hop } : {}),
+    ...(stage ? { stage } : {}),
+    ...(diagnosis === undefined ? {} : { diagnosis }),
   }
 }
 
@@ -287,6 +230,12 @@ export function handleTerminalIoError(
     ...(failure.credentialKind !== undefined
       ? { credentialKind: failure.credentialKind }
       : {}),
+    // SSH10/SSH11 — the I/O-error path is a second way a classified failure reaches the
+    // record, and it was dropping the context the classifier had just attached: an
+    // in-flight jump connection that dropped during authentication lost its hop here.
+    ...(failure.hop !== undefined ? { hop: failure.hop } : {}),
+    ...(failure.stage !== undefined ? { stage: failure.stage } : {}),
+    ...(failure.diagnosis !== undefined ? { diagnosis: failure.diagnosis } : {}),
   })
   return failure
 }

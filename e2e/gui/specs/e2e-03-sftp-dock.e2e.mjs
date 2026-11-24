@@ -1187,8 +1187,51 @@ function readDockBinding() {
      * byte-identical rows, so "the panel moved" and "the panel never moved" looked
      * the same.
      */
+    /*
+     * Wait for the dock to be mounted again before reading what it is pinned to.
+     *
+     * ## The race this closes, and what it must NOT be allowed to hide
+     *
+     * Connecting B happens from `/hosts`: the spec navigates there, clicks the card,
+     * and waits only for the new remote tab to appear. The dock lives on `/terminal`,
+     * so it unmounts for that round trip and re-mounts after the tab is activated —
+     * which is *after* the tab count says the connection exists. Reading immediately
+     * therefore samples a moment when the panel is not in the DOM at all.
+     *
+     * Measured on the macOS runner (run 45432150199):
+     *
+     *   after connecting B: {"boundHost":null,"offersFollow":false,
+     *                        "remotePath":null,"rows":[]}
+     *
+     * — every field null, which is "no dock", not "dock on the wrong host". The same
+     * case read `boundHost: "E2E Local"` on the previous green run.
+     *
+     * The wait is on **the panel existing**, deliberately not on the value being
+     * right. Waiting for `"E2E Local"` would turn a real INV-13 regression — the pin
+     * following focus to E2E Second — into a timeout with a misleading message. The
+     * assertions below still have to see the correct host, or they fail.
+     */
+    const dockMounted = await browser
+      .waitUntil(
+        async () =>
+          browser.execute(
+            () => document.querySelector('[data-testid="sftp-bound-host"]') !== null,
+          ),
+        {
+          timeout: 20_000,
+          interval: 100,
+          timeoutMsg: 'the dock never re-mounted after connecting the second host',
+        },
+      )
+      .catch(() => false)
     const underSecond = await readDockBinding()
     notes.push(`after connecting B: ${JSON.stringify(underSecond)}`)
+    if (!dockMounted) {
+      throw new Error(
+        'the dock never re-mounted after connecting the second host, so its pin ' +
+          `cannot be read: ${JSON.stringify(underSecond)}`,
+      )
+    }
     /*
      * "The second host is the active tab" is asserted by `type`, not by the label.
      *

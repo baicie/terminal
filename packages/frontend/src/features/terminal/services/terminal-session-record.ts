@@ -39,6 +39,9 @@ export function createTerminalRecord(
     retryable: null,
     recovery: null,
     credentialKind: null,
+    hop: null,
+    stage: null,
+    diagnosis: null,
     closed: false,
   }
 }

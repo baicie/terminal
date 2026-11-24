@@ -11,7 +11,8 @@ use super::ssh_writer::{
 };
 use super::terminal_output::{emit_terminal_error, spawn_session_output_pump, TerminalOutputChunk};
 use super::types::{
-    validate_terminal_size, ExecResult, JumpHostConfig, SessionError, SessionType, TerminalProfile,
+    validate_terminal_size, ConnectionHop, ConnectionStage, ExecResult, JumpHostConfig,
+    SessionError, SessionFailure, SessionType, TerminalProfile,
 };
 use futures::task::AtomicWaker;
 use russh::client;
@@ -28,12 +29,20 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::{broadcast, Mutex, Notify};
 
 use super::shell_integration::compose_startup_command;
-use crate::state::ClientHandler;
+use crate::state::{ClientHandler, HostKeyRejectionSlot};
 
 /// SSH sessions storage for SFTP and port forwarding
 type SshSessions = Arc<Mutex<HashMap<String, Arc<client::Handle<ClientHandler>>>>>;
 /// Erases nested russh futures so Tauri commands stay `Send` on every target.
 type BoxedSshFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, SessionError>> + Send + 'a>>;
+
+/// A connection future that can name the hop and stage it failed at.
+///
+/// A separate alias rather than widening `BoxedSshFuture`: that one is used by the
+/// authentication helpers, which have no connection context to report, and changing it
+/// would push `SessionFailure` into eight call sites that would only wrap and unwrap.
+type BoxedConnectionFuture<'a, T> =
+    Pin<Box<dyn Future<Output = Result<T, SessionFailure>> + Send + 'a>>;
 
 const SSH_CHANNEL_OPEN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 const SSH_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
@@ -219,22 +228,33 @@ pub(crate) fn cancel_all_connection_attempts() {
     }
 }
 
-fn connection_cancelled_error() -> SessionError {
-    SessionError::ConnectionCancelled
-}
-
 /// Run one SSH creation future until it completes or the owning frontend tab
 /// cancels its attempt. Dropping the in-flight russh future closes any socket
 /// that has not yet been published to the session manager; once a handle has
 /// been returned, the caller's generation check performs the final cleanup.
-pub(crate) async fn run_cancellable_connection<T>(
+/// Drive a connection future with a cancellation race.
+///
+/// ## Why the error type is generic
+///
+/// This used to fix `SessionError`, which meant a caller whose connection already carried
+/// `hop`/`stage` had to flatten it to pass through here — and the flatten is exactly the
+/// silent context loss `SessionFailure` exists to prevent (SSH04).
+///
+/// Making it generic is the small change: this function never inspects the error, only
+/// returns it or substitutes the cancellation one. `cancel` supplies that substitute, so
+/// the two arms agree in type.
+pub(crate) async fn run_cancellable_connection<T, E, F>(
     cancellation: ConnectionCancellation,
-    future: impl Future<Output = Result<T, SessionError>> + Send,
-) -> Result<T, SessionError> {
+    future: F,
+    cancel: impl FnOnce() -> E,
+) -> Result<T, E>
+where
+    F: Future<Output = Result<T, E>> + Send,
+{
     tokio::select! {
         biased;
         result = future => result,
-        _ = cancellation.cancelled() => Err(connection_cancelled_error()),
+        _ = cancellation.cancelled() => Err(cancel()),
     }
 }
 
@@ -552,12 +572,43 @@ fn connection_failure_error(
     SessionError::ConnectionFailed(format!("{operation} failed: {error}"))
 }
 
+/// The same mapping, but a host-key refusal keeps its own kind.
+///
+/// `ClientHandler::check_server_key` returns `anyhow` (that is what `Handler::Error`
+/// is), so by the time a handshake fails here the value is indistinguishable from a
+/// reset or a KEX failure. The handler records *why* it refused in a slot the
+/// connection owner holds a clone of, and this reads it back.
+///
+/// Without this the ONLY thing that ever produced `host_key_rejected` was a sentence
+/// match in the frontend classifier: the variant had a DTO mapping, a `kind` string and
+/// a test, and no producer in the product. A pane could therefore never say which
+/// machine's key changed, because the kind never arrived at all.
+fn handshake_failure_error(
+    operation: &'static str,
+    error: impl std::fmt::Display,
+    rejection: Option<&HostKeyRejectionSlot>,
+) -> SessionError {
+    // `try_lock` rather than `lock`: this runs on the failure path of a handshake that
+    // may have been abandoned mid-callback, and blocking a Tokio worker to read a
+    // diagnostic would trade a wrong message for a stalled runtime. A poisoned or busy
+    // slot falls back to the plain mapping, which is what every build did before.
+    if let Some(rejection) = rejection {
+        if let Ok(slot) = rejection.try_lock() {
+            if let Some(message) = slot.as_ref() {
+                return SessionError::HostKeyRejected(message.clone());
+            }
+        }
+    }
+    connection_failure_error(operation, error)
+}
+
 pub(crate) async fn connect_tcp_with_shutdown<H, A>(
     config: Arc<client::Config>,
     address: A,
     handler: H,
     deadline: tokio::time::Instant,
     operation: &'static str,
+    host_key_rejection: Option<&HostKeyRejectionSlot>,
 ) -> Result<(client::Handle<H>, TcpShutdownGuard), SessionError>
 where
     H: client::Handler + Send + 'static,
@@ -588,7 +639,11 @@ where
 
     match tokio::time::timeout_at(deadline, &mut connection).await {
         Ok(Ok(handle)) => Ok((handle, shutdown_guard)),
-        Ok(Err(error)) => Err(connection_failure_error(operation, error)),
+        Ok(Err(error)) => Err(handshake_failure_error(
+            operation,
+            error,
+            host_key_rejection,
+        )),
         Err(_) => {
             if let Err(error) = shutdown_guard.shutdown() {
                 tracing::warn!(%error, %operation, "failed to interrupt timed-out SSH handshake");
@@ -606,6 +661,7 @@ pub(crate) async fn connect_stream_with_deadline<H, S>(
     deadline: tokio::time::Instant,
     operation: &'static str,
     transport: Option<&TcpShutdownGuard>,
+    host_key_rejection: Option<&HostKeyRejectionSlot>,
 ) -> Result<client::Handle<H>, SessionError>
 where
     H: client::Handler + Send + 'static,
@@ -618,7 +674,11 @@ where
 
     match tokio::time::timeout_at(deadline, &mut connection).await {
         Ok(Ok(handle)) => Ok(handle),
-        Ok(Err(error)) => Err(connection_failure_error(operation, error)),
+        Ok(Err(error)) => Err(handshake_failure_error(
+            operation,
+            error,
+            host_key_rejection,
+        )),
         Err(_) => {
             if let Some(transport) = transport {
                 if let Err(error) = transport.shutdown() {
@@ -1386,7 +1446,7 @@ impl SshSession {
         rows: u16,
         profile: Option<TerminalProfile>,
         deadline: tokio::time::Instant,
-    ) -> BoxedSshFuture<'static, Self> {
+    ) -> BoxedConnectionFuture<'static, Self> {
         Box::pin(Self::create(
             app,
             host,
@@ -1422,7 +1482,7 @@ impl SshSession {
         rows: u16,
         profile: Option<TerminalProfile>,
         deadline: tokio::time::Instant,
-    ) -> BoxedSshFuture<'static, Self> {
+    ) -> BoxedConnectionFuture<'static, Self> {
         Box::pin(Self::create(
             app,
             host,
@@ -1463,7 +1523,7 @@ impl SshSession {
         rows: u16,
         profile: Option<TerminalProfile>,
         deadline: tokio::time::Instant,
-    ) -> BoxedSshFuture<'static, Self> {
+    ) -> BoxedConnectionFuture<'static, Self> {
         Box::pin(Self::create(
             app,
             host,
@@ -1497,7 +1557,7 @@ impl SshSession {
         rows: u16,
         profile: Option<TerminalProfile>,
         deadline: tokio::time::Instant,
-    ) -> BoxedSshFuture<'static, Self> {
+    ) -> BoxedConnectionFuture<'static, Self> {
         Box::pin(Self::create(
             app,
             host,
@@ -1535,7 +1595,9 @@ impl SshSession {
         rows: u16,
         profile: Option<TerminalProfile>,
         deadline: tokio::time::Instant,
-    ) -> BoxedSshFuture<'static, Self> {
+    ) -> BoxedConnectionFuture<'static, Self> {
+        // SSH06: this is the one constructor that can fail at two machines, so it is the
+        // one whose future carries `SessionFailure`.
         Box::pin(Self::new_with_jump_inner(
             app,
             target_host,
@@ -1570,7 +1632,7 @@ impl SshSession {
         rows: u16,
         profile: Option<TerminalProfile>,
         deadline: tokio::time::Instant,
-    ) -> Result<Self, SessionError> {
+    ) -> Result<Self, SessionFailure> {
         validate_jump_auth_config(
             &jump_host,
             target_key.as_deref(),
@@ -1597,6 +1659,16 @@ impl SshSession {
             deadline,
         )
         .await
+        /*
+         * No wrapping here: `create` already returns `SessionFailure`, because the
+         * direct-connection paths inside it have no hop and must say so rather than
+         * inherit one. SSH07–SSH09 attach the real context inside
+         * `connect_via_jump_inner`, where the hop is known.
+         *
+         * This used to be `.map_err(SessionFailure::from)`, which became an identity
+         * conversion once `create`'s signature changed — clippy rejects that under
+         * `-D warnings`.
+         */
     }
 
     /// 内部创建方法
@@ -1619,25 +1691,34 @@ impl SshSession {
         rows: u16,
         profile: Option<TerminalProfile>,
         deadline: tokio::time::Instant,
-    ) -> Result<Self, SessionError> {
-        // 验证输入
+    ) -> Result<Self, SessionFailure> {
+        /*
+         * `create` is shared by the direct and jump constructors, so it carries the wider
+         * error type. A direct connection fails with `hop: None` — the documented meaning
+         * of the field, not "unknown" — and a jump failure keeps the context that
+         * `connect_via_jump_inner` attached.
+         *
+         * The alternative — keeping `SessionError` here and taking `.error` at the jump
+         * call — would attach a hop two frames deeper and then discard it on the way out,
+         * which is the exact shape this feature exists to remove.
+         */
         validate_terminal_size(cols, rows)?;
         let profile = profile.unwrap_or_default();
         profile.validate()?;
         if host.is_empty() {
-            return Err(SessionError::InvalidInput(
+            return Err(SessionFailure::bare(SessionError::InvalidInput(
                 "Host cannot be empty".to_string(),
-            ));
+            )));
         }
         if !(1..=65535).contains(&port) {
-            return Err(SessionError::InvalidInput(
+            return Err(SessionFailure::bare(SessionError::InvalidInput(
                 "Port must be between 1 and 65535".to_string(),
-            ));
+            )));
         }
         if username.is_empty() {
-            return Err(SessionError::InvalidInput(
+            return Err(SessionFailure::bare(SessionError::InvalidInput(
                 "Username cannot be empty".to_string(),
-            ));
+            )));
         }
         let expected_host_key = parse_expected_host_key(expected_host_key)?;
 
@@ -1689,6 +1770,7 @@ impl SshSession {
             let addr = stage_target.clone();
             let (handler, forward_slot) =
                 client_handler(host, port, expected_host_key, agent_forwarding);
+            let host_key_rejection = handler.host_key_rejection_slot();
             forward_listener_slot = forward_slot;
             let (mut direct, direct_shutdown) = connect_tcp_with_shutdown(
                 config,
@@ -1696,6 +1778,7 @@ impl SshSession {
                 handler,
                 stage_deadline(deadline, SSH_CONNECT_TIMEOUT),
                 "connect SSH server",
+                Some(&host_key_rejection),
             )
             .await?;
             crate::startup_trace::stage("ssh-tcp-handshake-done", &stage_target);
@@ -1732,7 +1815,8 @@ impl SshSession {
                     cleanup_deadline(deadline),
                 )
                 .await;
-                return Err(error);
+                // A direct connection has no hop; the stage is known (authentication).
+                return Err(SessionFailure::from(error).with_stage(ConnectionStage::Authentication));
             }
             crate::startup_trace::stage("ssh-auth-done", &stage_target);
             raw_handle = direct;
@@ -1770,7 +1854,8 @@ impl SshSession {
                     )
                     .await;
                 }
-                return Err(error);
+                // Direct path: no hop to name.
+                return Err(SessionFailure::from(error));
             }
         };
 
@@ -1957,7 +2042,7 @@ impl SshSession {
         target: JumpTarget,
         jump_host: JumpHostConfig,
         deadline: tokio::time::Instant,
-    ) -> BoxedSshFuture<
+    ) -> BoxedConnectionFuture<
         'static,
         (
             client::Handle<ClientHandler>,
@@ -1983,7 +2068,7 @@ impl SshSession {
             TcpShutdownGuard,
             crate::state::ForwardListenerSlot,
         ),
-        SessionError,
+        SessionFailure,
     > {
         // 第一步：验证并认证跳板机。主会话与 TOFU 隧道探测共用此路径，
         // 避免 password/key/agent/cert 语义随时间漂移。
@@ -2013,7 +2098,16 @@ impl SshSession {
                     cleanup_deadline(deadline),
                 )
                 .await;
-                return Err(error);
+                /*
+                 * SSH08 — the `direct-tcpip` channel could not be opened.
+                 *
+                 * `Bastion` names the connection that *holds* the channel, not where the
+                 * physical fault is: the bastion may refuse forwarding, or the target
+                 * address may be unreachable from it. This API does not distinguish those,
+                 * so only the stage is claimed — the tunnel never opened.
+                 */
+                return Err(SessionFailure::from(error)
+                    .at(ConnectionHop::Bastion, ConnectionStage::TunnelOpen));
             }
         };
 
@@ -2026,6 +2120,9 @@ impl SshSession {
             target.expected_host_key,
             target.allow_agent_forwarding,
         );
+        // SSH11 — the target's own key refusal has to keep its kind, or the pane can
+        // only say "connection failed" for a host whose identity changed.
+        let target_host_key_rejection = target_handler.host_key_rejection_slot();
         let target_connection = connect_stream_with_deadline(
             config,
             target_stream,
@@ -2033,6 +2130,7 @@ impl SshSession {
             stage_deadline(deadline, SSH_CONNECT_TIMEOUT),
             "connect target host through jump host",
             Some(&jump_shutdown),
+            Some(&target_host_key_rejection),
         )
         .await;
         let mut target_handle = match target_connection {
@@ -2045,7 +2143,10 @@ impl SshSession {
                     cleanup_deadline(deadline),
                 )
                 .await;
-                return Err(error);
+                // SSH09 — the tunnel opened, the host behind it did not complete a
+                // handshake. A successful bastion says nothing about that host.
+                return Err(SessionFailure::from(error)
+                    .at(ConnectionHop::Target, ConnectionStage::Handshake));
             }
         };
 
@@ -2086,7 +2187,9 @@ impl SshSession {
                 cleanup_deadline(deadline),
             )
             .await;
-            return Err(error);
+            // SSH09 — the bastion authenticated; this refusal is the host behind it.
+            return Err(SessionFailure::from(error)
+                .at(ConnectionHop::Target, ConnectionStage::Authentication));
         }
 
         Ok((
@@ -2486,21 +2589,21 @@ pub(crate) async fn connect_authenticated_jump_host_with_shutdown(
     config: Arc<client::Config>,
     jump_host: &JumpHostConfig,
     connection_deadline: Option<tokio::time::Instant>,
-) -> Result<(client::Handle<ClientHandler>, TcpShutdownGuard), SessionError> {
+) -> Result<(client::Handle<ClientHandler>, TcpShutdownGuard), SessionFailure> {
     if jump_host.host.trim().is_empty() {
-        return Err(SessionError::InvalidInput(
+        return Err(SessionFailure::bare(SessionError::InvalidInput(
             "Jump host cannot be empty".to_string(),
-        ));
+        )));
     }
     if jump_host.port == 0 {
-        return Err(SessionError::InvalidInput(
+        return Err(SessionFailure::bare(SessionError::InvalidInput(
             "Jump host port must be between 1 and 65535".to_string(),
-        ));
+        )));
     }
     if jump_host.username.trim().is_empty() {
-        return Err(SessionError::InvalidInput(
+        return Err(SessionFailure::bare(SessionError::InvalidInput(
             "Jump host username cannot be empty".to_string(),
-        ));
+        )));
     }
     validate_auth_config(
         "jump host",
@@ -2513,20 +2616,35 @@ pub(crate) async fn connect_authenticated_jump_host_with_shutdown(
     let connect_deadline = connection_deadline
         .map(|deadline| stage_deadline(deadline, SSH_CONNECT_TIMEOUT))
         .unwrap_or_else(|| tokio::time::Instant::now() + SSH_CONNECT_TIMEOUT);
+    let (bastion_handler, _bastion_forward_slot) = client_handler(
+        jump_host.host.clone(),
+        jump_host.port,
+        expected_host_key,
+        false,
+    );
+    // SSH11 — a changed key on the bastion is its own diagnosis, and the only way to
+    // reach it is to read the handler's refusal record after the handshake fails.
+    let bastion_host_key_rejection = bastion_handler.host_key_rejection_slot();
     let (mut handle, shutdown_guard) = connect_tcp_with_shutdown(
         config,
         (jump_host.host.as_str(), jump_host.port),
-        client_handler(
-            jump_host.host.clone(),
-            jump_host.port,
-            expected_host_key,
-            false,
-        )
-        .0,
+        bastion_handler,
         connect_deadline,
         "connect jump host",
+        Some(&bastion_host_key_rejection),
     )
-    .await?;
+    .await
+    /*
+     * SSH07 — the bastion's TCP connect and SSH handshake.
+     *
+     * `connect_tcp_with_shutdown` performs both under one deadline and does not report
+     * which failed, so `TcpConnect` is the honest label: the tunnel never got far enough
+     * to authenticate. Claiming `Handshake` here would be a guess about an API that does
+     * not distinguish.
+     */
+    .map_err(|error| {
+        SessionFailure::from(error).at(ConnectionHop::Bastion, ConnectionStage::TcpConnect)
+    })?;
 
     let authentication_deadline = connection_deadline
         .map(|deadline| stage_deadline(deadline, SSH_AUTH_TIMEOUT))
@@ -2548,7 +2666,11 @@ pub(crate) async fn connect_authenticated_jump_host_with_shutdown(
             cleanup_at,
         )
         .await;
-        return Err(error);
+        // SSH07 — the bastion refused the credential. `kind` still says which kind of
+        // refusal; this only adds *where*.
+        return Err(
+            SessionFailure::from(error).at(ConnectionHop::Bastion, ConnectionStage::Authentication)
+        );
     }
 
     Ok((handle, shutdown_guard))
@@ -3408,6 +3530,7 @@ mod tests {
                 let _probe = probe;
                 std::future::pending::<Result<(), SessionError>>().await
             },
+            || SessionError::ConnectionCancelled,
         ));
 
         tokio::task::yield_now().await;
@@ -3425,9 +3548,11 @@ mod tests {
     async fn completed_connection_result_wins_a_same_tick_cancel() {
         let registration = register_connection_attempt(Some("completed-cancel-attempt"));
         registration.cancellation.cancel();
-        let result = run_cancellable_connection(registration.cancellation(), async {
-            Ok::<_, SessionError>("session-ready")
-        })
+        let result = run_cancellable_connection(
+            registration.cancellation(),
+            async { Ok::<_, SessionError>("session-ready") },
+            || SessionError::ConnectionCancelled,
+        )
         .await;
         assert_eq!(
             result.expect("completed future should win"),
@@ -3440,9 +3565,11 @@ mod tests {
         let attempt_id = "racing-cancel-attempt";
         assert!(!cancel_connection_attempt(attempt_id));
         let registration = register_connection_attempt(Some(attempt_id));
-        let result = run_cancellable_connection(registration.cancellation(), async {
-            std::future::pending::<Result<(), SessionError>>().await
-        })
+        let result = run_cancellable_connection(
+            registration.cancellation(),
+            async { std::future::pending::<Result<(), SessionError>>().await },
+            || SessionError::ConnectionCancelled,
+        )
         .await;
         assert!(matches!(result, Err(SessionError::ConnectionCancelled)));
         drop(registration);
@@ -3630,6 +3757,7 @@ mod tests {
             tokio::time::Instant::now() + std::time::Duration::from_millis(20),
             "connect stalled SSH stream",
             None,
+            None,
         )
         .await;
         let result_description = match result {
@@ -3683,6 +3811,7 @@ mod tests {
                 client_handler("127.0.0.1".to_string(), address.port(), None, false).0,
                 tokio::time::Instant::now() + std::time::Duration::from_millis(20),
                 "connect stalled SSH server",
+                None,
             ),
         )
         .await
@@ -3762,3 +3891,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod ssh_jump_e2e_tests;
