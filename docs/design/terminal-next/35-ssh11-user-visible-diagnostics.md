@@ -211,3 +211,83 @@ REAL_DUAL_HOP_DIAGNOSIS             = NOT_RUN（需 SSH12 fixture）
 TERMINAL_FAILURE_LOGGED             = NO（发现于本轮，属 SSH22/SSH26）
 TOAST_SHOWS_DIAGNOSIS               = NOT_IMPLEMENTED（有意的范围裁剪）
 ```
+
+---
+
+## 9. SSH12–SSH15 — 真实双跳验证（本轮追加）
+
+本文 §7 说「真实双跳 sshd 上验证诊断 = NOT_RUN」。这一节把它关掉。
+
+### 装置
+
+`scripts/verify-install/ssh-jump-e2e.mjs` 起两个真 OpenSSH：bastion
+（`AllowTcpForwarding yes` + `PermitOpen 127.0.0.1:<target>`）与 target
+（`DisableForwarding yes`，自己的 host key）。驱动 `SshSession::connect_via_jump`，
+也就是 `session_create_ssh_jump` 调的那个函数。
+
+复用既有 `terminal-smoke-sshd.mjs` 的 `role: 'jump'`，不新建 harness。
+
+### 六条用例
+
+| 用例 | 断言 |
+| --- | --- |
+| 健康双跳 | 两侧都认证成功，无 hop |
+| 跳板拒绝（拿目标密钥给跳板） | `hop=Bastion`, `stage=Authentication` |
+| 跳板 HostKey 不符（pin 成目标的） | `HostKeyRejected`, `hop=Bastion` |
+| 目标拒绝（拿跳板密钥给目标） | `hop=Target`, `stage=Authentication` |
+| 目标 HostKey 不符（pin 成跳板的） | `HostKeyRejected`, `hop=Target` |
+| 断开双跳 | 跳板侧无 ESTABLISHED 残留 |
+
+每组都是「另一半正常」的对照：跳板拒绝时目标会接受这把密钥，反之亦然。所以归因
+不可能是猜的。
+
+### 一个被证实的生产者
+
+第一次跑健康双跳时失败了：
+
+```
+HostKeyRejected("host key verification failed for 127.0.0.1:63384:
+ key not found in known_hosts") at Some(Bastion)/Some(TcpConnect)
+```
+
+这恰好证明 §3.1 的侧信道在真实握手中成立——SSH11 之前这条会被压成
+`connection_failed`。变异验证：删掉 `handshake_failure_error` 里的槽位读取，
+`a_bastion_host_key_mismatch_is_refused_as_its_own_kind` 给出的正是修复前的输出：
+
+```
+ConnectionFailed("connect jump host failed: host key verification failed for
+ 127.0.0.1:49222: server key does not match the preflight key")
+```
+
+### 三次写错的断言
+
+SSH15 的「断开后不泄漏」写了三版，每一版都先被变异或控制断言证伪：
+
+1. `lsof -iTCP:<port>` 数 ESTABLISHED —— 在 cargo 子进程里**恒为 0**。加控制断言
+   「断开前必须数得到」后当场失败。这条断言本来是纯装饰。
+2. 改成「断开后端口连不上」—— 失败，但那是**正确行为**：daemon 的监听 socket 属于
+   进程，会话结束后继续 listen。探到的是进程，不是会话。
+3. `netstat -an -p tcp` 数该端口的 ESTABLISHED —— 控制断言通过，变异
+   （`mem::forget` 两个 handle）变红。
+
+### 一个假绿
+
+harness 第一次报 PASS，而两条用例都打印 "skipping" 后 `return`——libtest 把提前
+返回算作 `ok`。现在跳过是独立的 `NOT_RUN` 裁决。
+
+### 判定更新
+
+```
+REAL_DUAL_HOP_DIAGNOSIS             = PASS（6/6，两真 sshd）
+HOST_KEY_REJECTED_END_TO_END        = PASS（真实握手中触发，变异验证）
+JUMP_DISCONNECT_RELEASES_BASTION    = PASS（服务端 ESTABLISHED 计数）
+LEVEL                               = rust-command-level（不含 Tauri 命令包装与前端）
+```
+
+### 仍未覆盖
+
+- **SSH16/17 多跳板池隔离**：`connection_key` 已含 `session_id`，不同会话天然不同键，
+  单测钉住了键的形状。但「同一跳板 + 两个不同目标」需要 fixture 支持多 target，
+  本轮未做，记 `JUMP_MULTI_TARGET_ISOLATION = NOT_RUN`。
+- **Tauri 命令包装**：`session_create_ssh_jump` 的参数校验与 `AppHandle` 未覆盖。
+- **前端渲染**：SSH11 只证明了 diagnosis 到 DOM，没有在真实 GUI 里看过这段文案。
