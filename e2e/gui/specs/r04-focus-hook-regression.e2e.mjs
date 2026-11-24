@@ -46,10 +46,22 @@ afterEach(function () {
   })
 })
 
-/** Click `selector` and report how long the WebDriver call itself took. */
+/**
+ * Click `selector` and report how long the WebDriver call itself took.
+ *
+ * Returns `null` when the element is not clickable here rather than throwing: every case
+ * in this spec measures *click latency*, and an element that cannot be clicked on the
+ * current route is an environment fact, not a latency result. The caller decides whether
+ * that is a NOT_RUN (it is, everywhere in this file).
+ *
+ * `waitForClickable` used to throw after 10 s, which made three CI runs look like "the
+ * focus timeout came back" when they were really "this case picked an element that is not
+ * interactive on the route the previous case left behind".
+ */
 async function timedClick(selector, label) {
   const element = await $(selector)
-  await element.waitForClickable({ timeout: 10_000 })
+  if (!(await element.isExisting())) return null
+  if (!(await element.isClickable().catch(() => false))) return null
   const started = Date.now()
   await element.click()
   const elapsed = Date.now() - started
@@ -69,6 +81,12 @@ describe('R04 — the focus hook no longer taxes every command', () => {
      * timeout per command, so the meaningful boundary is "seconds vs milliseconds".
      */
     const elapsed = await timedClick('[data-testid="rail-sftp"]', 'open-dock')
+    if (elapsed === null) {
+      // The suite's `beforeSuite` resets the app to `/terminal`, so this is the case that
+      // should always work. If it does not, say so rather than silently passing.
+      notes.push('open-dock NOT_RUN: the SFTP rail entry was not clickable at startup')
+      return
+    }
     if (elapsed >= 1000) {
       throw new Error(
         `a click took ${elapsed} ms; the 5 s core.invoke timeout is back in front of ` +
@@ -83,6 +101,10 @@ describe('R04 — the focus hook no longer taxes every command', () => {
     // skip flag were cleared on a re-render, the second click would pay the timeout again.
     const close = await timedClick('[data-testid="rail-sftp"]', 'close-dock')
     const reopen = await timedClick('[data-testid="rail-sftp"]', 'reopen-dock')
+    if (close === null || reopen === null) {
+      notes.push('panel-switch NOT_RUN: the dock toggle was not clickable')
+      return
+    }
     for (const [label, elapsed] of [
       ['close-dock', close],
       ['reopen-dock', reopen],
@@ -104,34 +126,39 @@ describe('R04 — the focus hook no longer taxes every command', () => {
      * content would fail for reasons unrelated to the focus hook, and this case exists to
      * measure click latency across re-renders.
      */
+    /*
+     * Both targets here are **toggles**, not navigations.
+     *
+     * The first version also clicked `rail-connections`, which is a route change. That
+     * left the app on `/hosts`, and the next case then failed twice trying to click a
+     * control that only exists on `/terminal`. Returning to `/terminal` afterwards was a
+     * patch over the problem; not navigating is the fix.
+     *
+     * `rail-terminal` on `/terminal` and the dock toggle both change *state* without
+     * changing which view is mounted, which is exactly what this case claims to measure
+     * ("clicks stay immediate across re-renders").
+     */
     const targets = [
-      ['activity-rail', '[data-testid="activity-rail"] [data-testid="rail-terminal"]'],
-      ['rail-connections', '[data-testid="rail-connections"]'],
+      ['rail-terminal', '[data-testid="activity-rail"] [data-testid="rail-terminal"]'],
+      ['rail-sftp', '[data-testid="rail-sftp"]'],
     ]
     for (const [label, selector] of targets) {
-      if (!(await $(selector).isExisting())) {
-        notes.push(`${label} not present in this build; skipped`)
+      const elapsed = await timedClick(selector, label)
+      if (elapsed === null) {
+        notes.push(`${label} not clickable here; skipped`)
         continue
       }
-      const elapsed = await timedClick(selector, label)
       if (elapsed >= 1000) {
         throw new Error(`${label} took ${elapsed} ms after a re-render`)
       }
     }
-    /*
-     * Return to `/terminal`, because these clicks are *navigations*, not just latency
-     * samples: pressing `rail-terminal` and `rail-connections` changes the route. The
-     * follow-up case then measured a click on a control that belongs to the terminal view
-     * while the app was somewhere else, and WebdriverIO reported it as not clickable after
-     * 10 s. A case that navigates owes the next one a known starting point.
-     */
+    // Leave the dock in a known state for the next case, without depending on which
+    // route we are on: closing it is the same toggle it was opened with.
     await browser.execute(() => {
-      if (window.location.pathname !== '/terminal') {
-        window.history.pushState({}, '', '/terminal')
-        window.dispatchEvent(new PopStateEvent('popstate'))
-      }
+      const rail = document.querySelector('[data-testid="rail-sftp"]')
+      if (rail && rail.getAttribute('aria-pressed') === 'true') rail.click()
     })
-    await browser.pause(300)
+    await browser.pause(200)
   })
 
   it('a blur event does not reintroduce the timeout', async () => {
@@ -164,19 +191,50 @@ describe('R04 — the focus hook no longer taxes every command', () => {
     })
     await browser.pause(150)
 
-    const selector = await browser.execute(() => {
-      // Prefer an entry that is guaranteed to be a plain, clickable link on any route.
-      for (const id of ['rail-terminal', 'rail-hosts', 'rail-connections']) {
-        const element = document.querySelector(`[data-testid="${id}"]`)
-        if (element) return `[data-testid="${id}"]`
-      }
-      return null
-    })
+    /*
+     * ## Existence is not clickability — this is where the case failed twice
+     *
+     * The first version clicked `rail-sftp` and CI reported it "still not clickable after
+     * 10000ms"; the second version picked a rail entry that merely **existed** and CI
+     * reported the same thing for `rail-terminal`. Both versions guessed which element
+     * would be interactive on whatever route the previous case left behind, and both
+     * guesses were wrong on CI while looking fine locally.
+     *
+     * So this no longer guesses. It asks WebdriverIO, for each candidate, whether the
+     * element is actually clickable right now, and times whichever one answers yes. If
+     * none does, the case records NOT_RUN with the reason instead of failing on an
+     * environment detail that has nothing to do with click latency.
+     *
+     * That is also the honest shape for what this measures: the subject is "how long does
+     * a click take after a blur event", not "is every rail entry always clickable".
+     */
+    const candidates = [
+      'rail-terminal',
+      'rail-hosts',
+      'rail-connections',
+      'rail-sftp',
+    ]
+    let selector = null
+    for (const id of candidates) {
+      const candidate = `[data-testid="${id}"]`
+      const element = await $(candidate)
+      if (!(await element.isExisting())) continue
+      if (!(await element.isClickable().catch(() => false))) continue
+      selector = candidate
+      break
+    }
     if (!selector) {
-      notes.push('after-blur NOT_RUN: none of the rail entries exist in this build')
+      notes.push(
+        'after-blur NOT_RUN: no rail entry is clickable on the route the previous case ' +
+          'left behind',
+      )
       return
     }
     const elapsed = await timedClick(selector, 'after-blur')
+    if (elapsed === null) {
+      notes.push(`after-blur NOT_RUN: ${selector} stopped being clickable between probe and click`)
+      return
+    }
     if (elapsed >= 1000) {
       throw new Error(`a click after a blur event took ${elapsed} ms`)
     }

@@ -257,7 +257,35 @@ const budgets = {
   // 657 KB leaves ~0.8 KB — under the ±0.1 KB spread only just, which is stated
   // rather than glossed: the next contributor should expect to justify their own gap
   // instead of assuming headroom exists.
-  totalGzip: 657 * 1024,
+  //
+  // 660 KB (was 657 KB). A **security** upgrade, not a feature: `i18next` 26.0.8 →
+  // 26.7.2 for RUSTSEC-equivalent npm advisory GHSA-6jcc-5g8w-32mx ("deepExtend
+  // recurses into inherited built-ins", patched in >= 26.3.4). `pnpm audit --prod`
+  // went from one moderate finding to "No known vulnerabilities found".
+  //
+  // The library grew. Measured on the same machine, same source tree, only the
+  // lockfile differing:
+  //
+  //   i18next 26.0.8 → Total gzip 656.83 KB   (this is what PR #149 CI measured
+  //                                             on 438261c and accepted)
+  //   i18next 26.7.2 → Total gzip 659.23 KB   (+2.40 KB, first measured on 0f865a8)
+  //
+  // 660 KB leaves ~0.78 KB — the same order of headroom as before (0.8 KB), so the
+  // situation for the next contributor is unchanged rather than quietly loosened.
+  //
+  // What this does NOT do is recover the 2.4 KB by deferring a locale or splitting the
+  // i18n bundle: all three locales are already in one lazy chunk (`locales.*.js`,
+  // 79.55 KB gzip) that is not in the initial graph, and the growth is in the runtime
+  // i18next itself. There is no cheap split here, and a split made to hit a number
+  // would be a change that looks responsive without helping.
+  //
+  // One measurement mistake is recorded so the next reader does not repeat it: a
+  // worktree check with `pnpm install --frozen-lockfile --silent` reported the same
+  // 659.23 KB for the *old* lockfile, which briefly suggested the overage predated the
+  // upgrade. It did not — the install had failed silently and the command read the
+  // dist/ left behind by the main worktree. The CI numbers across two heads
+  // (656.83 → 659.23) are the trustworthy comparison.
+  totalGzip: 660 * 1024,
   maxJavaScriptRaw: 500 * 1024,
 }
 
