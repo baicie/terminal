@@ -34,6 +34,8 @@ function record(overrides: Partial<TerminalRecord> = {}): TerminalRecord {
     retryable: true,
     recovery: 'automatic',
     credentialKind: null,
+    hop: null,
+    stage: null,
     closed: false,
     ...overrides,
   }

@@ -5,6 +5,16 @@ import type { TerminalSessionOutputBuffer } from './terminal-session-output-buff
 import { updateTerminalState } from './terminal-session-state'
 import type { TerminalRecord } from './terminal-session-manager-types'
 
+import {
+  HOPS,
+  STAGES,
+  readContext,
+  type TerminalFailureHop,
+  type TerminalFailureStage,
+} from './terminal-failure-context'
+
+export type { TerminalFailureHop, TerminalFailureStage } from './terminal-failure-context'
+
 export interface TerminalFailure {
   error: string
   retryable: boolean
@@ -24,6 +34,13 @@ export interface TerminalFailure {
    * credential) instead of a generic "retry".
    */
   credentialKind?: string
+  /**
+   * SSH10: which leg of a jump chain failed. Absent for a direct connection — and absent
+   * is **not** "the target failed". Never consulted for retry: that is decided by `kind`.
+   */
+  hop?: TerminalFailureHop
+  /** SSH10: where in the connection sequence it failed. Same rules as `hop`. */
+  stage?: TerminalFailureStage
 }
 
 /** The three ways a failed connection can become a working one. */
@@ -151,56 +168,40 @@ export function classifyTerminalFailure(error: unknown): TerminalFailure {
       ? (error as Record<string, unknown>)
       : undefined
   const kind = record?.type ?? record?.kind
+  // SSH10: read from the raw IPC object — below this point everything is a sentence.
+  const hop = readContext(record?.hop, HOPS)
+  const stage = readContext(record?.stage, STAGES)
   const normalized = formatted.toLowerCase()
   /*
    * ## A rejected credential is terminal; a broken path to the server is not
    *
-   * The previous rule made `authentication_failed` retryable whenever the message
-   * contained a transient-looking word ("timed out", "connection reset", …). Measured
-   * against the real classifier:
-   *
-   *     "authentication failed: password my-timeout-secret rejected"  → retryable = true
-   *
-   * — a rejected password that happens to contain a transient word, retried five times
-   * with the whole backoff, resending a secret the server has already refused. The user
-   * waits out the ladder to be told something the first attempt established.
-   *
-   * The rule cannot be fixed lexically, because the message includes a server's or a
-   * library's own words. What separates the two cases is *where* the failure happened,
-   * and Rust already distinguishes it: a transport, handshake or agent problem surfaces
-   * as `connection_failed`; only the credential check itself produces
-   * `authentication_failed`.
-   *
-   * So `authentication_failed` is terminal, with one narrow exception kept because the
-   * product depends on it: an SSH **agent** that cannot be reached is a local
-   * environment problem that a retry genuinely may resolve (a locked keychain being
-   * unlocked, an agent starting up). That shape is identifiable by its own wording and
-   * is not something a server echoes.
+   * `authentication_failed` used to be retried whenever the message contained a
+   * transient-looking word. Measured: `"authentication failed: password
+   * my-timeout-secret rejected"` → `retryable = true`, so a refused password was resent
+   * five times with the whole backoff. The rule cannot be fixed lexically — the message
+   * carries the server's own words. What separates the two is *where* it happened, which
+   * Rust already distinguishes: transport/handshake/agent problems surface as
+   * `connection_failed`; only the credential check itself produces
+   * `authentication_failed`. One narrow exception remains, because the product depends on
+   * it: an unreachable SSH **agent** is a local problem a retry may genuinely fix, and
+   * that shape is identifiable by its own wording.
    */
   /*
    * ## Why "rejected" wins over "timeout"
    *
-   * A first-connection timeout during auth is transient and must keep retrying
-   * (`keeps the automatic reconnect for a first-connection timeout` pins that). A
-   * credential the server *refused* is not, even when the sentence also mentions a
-   * transient word — measured: `"authentication failed: password my-timeout-secret
-   * rejected"` matched "timeout" and consumed the full five-attempt budget.
-   *
-   * So the rejection is checked first and wins. The server can only say the credential
-   * was refused after the connection succeeded, which is what makes "refused" a stronger
-   * signal than any transport word in the same sentence.
+   * A first-connection timeout during auth is transient and must keep retrying (pinned by
+   * `keeps the automatic reconnect for a first-connection timeout`). A credential the
+   * server *refused* is not, even when the sentence also mentions a transient word — the
+   * server can only refuse after the connection succeeded, which makes "refused" the
+   * stronger signal in the same sentence.
    */
   /*
    * ## Two signals, not one phrase
    *
-   * A single substring cannot carry this: `"password my-timeout-secret rejected"` puts
-   * the credential between the noun and the verb, and `"connection refused"` reuses the
-   * verb for transport. Measured both ways while writing this.
-   *
-   * So the rejection is recognised by a **verb of refusal anywhere** in a message that
-   * also contains a credential noun. `"failed to connect SSH agent: connection refused"`
-   * has the verb but no credential noun, so it keeps retrying; `"password … rejected"`
-   * has both.
+   * A single substring cannot carry this: `"password my-timeout-secret rejected"` puts the
+   * credential between the noun and the verb, and `"connection refused"` reuses the verb
+   * for transport. So a refusal is recognised by a verb of refusal anywhere in a message
+   * whose subject is the credential.
    */
   /*
    * `\b` matters: without it "auth" would match inside "author". Written with the
@@ -256,6 +257,11 @@ export function classifyTerminalFailure(error: unknown): TerminalFailure {
     // protocol failure. The ones that retry are the transient network cases the
     // ladder exists for; the ones that do not need the user to act.
     recovery: retryable ? 'automatic' : 'manual',
+    // SSH10: carried through, never consulted. `retryable` above is decided by `kind`
+    // alone, so a bastion and a target refusal retry identically — correct, because both
+    // mean "the server said no, stop".
+    ...(hop ? { hop } : {}),
+    ...(stage ? { stage } : {}),
   }
 }
 

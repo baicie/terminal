@@ -2,7 +2,11 @@ import type { Host } from '@/types'
 import type { TabType } from '../types'
 import type { TerminalSessionIo, TerminalSessionIoSnapshot } from './terminal-session-io'
 import type { TerminalSessionAudience } from './terminal-session-output-buffer'
-import type { TerminalFailureRecovery } from './terminal-session-manager-errors'
+import type {
+  TerminalFailureHop,
+  TerminalFailureRecovery,
+  TerminalFailureStage,
+} from './terminal-session-manager-errors'
 
 export type TerminalSessionStatus =
   | 'idle'
@@ -77,6 +81,19 @@ export interface TerminalSessionSnapshot {
   recovery?: TerminalFailureRecovery
   /** Credential failure kind, when the error came from the vault layer. */
   credentialKind?: string
+  /**
+   * Which leg of a jump chain failed (SSH10).
+   *
+   * Absent for a direct connection. A pane that shows "authentication rejected" with
+   * `hop: 'bastion'` is telling the user to check the **bastion's** account; the same
+   * message with `hop: 'target'` means the bastion worked and the host behind it refused.
+   * Those are different logins on different machines.
+   *
+   * Absent must never be rendered as "target".
+   */
+  hop?: TerminalFailureHop
+  /** Where in the connection sequence the failure happened. */
+  stage?: TerminalFailureStage
 }
 
 export interface TerminalOutputReceipt {
@@ -126,6 +143,10 @@ export interface TerminalRecord {
   recovery: TerminalFailureRecovery | null
   /** Credential failure kind, when the last error came from the vault layer. */
   credentialKind: string | null
+  /** SSH10: which leg of a jump chain the last failure came from. */
+  hop: TerminalFailureHop | null
+  /** SSH10: which connection step the last failure happened at. */
+  stage: TerminalFailureStage | null
   closed: boolean
 }
 
@@ -156,6 +177,8 @@ export function getTerminalSnapshot(
   if (record.credentialKind !== null) {
     snapshot.credentialKind = record.credentialKind
   }
+  if (record.hop !== null) snapshot.hop = record.hop
+  if (record.stage !== null) snapshot.stage = record.stage
   return snapshot
 }
 
