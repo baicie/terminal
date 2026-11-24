@@ -1,7 +1,7 @@
 {
   "case": "r04-focus-hook-regression",
   "verdict": "PASS",
-  "recordedAt": "2026-11-23T13:22:02.418Z",
+  "recordedAt": "2026-11-24T02:18:37.235Z",
   "platform": {
     "platform": "darwin",
     "release": "24.6.0",
@@ -10,58 +10,58 @@
     "osVersion": "Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103"
   },
   "source": {
-    "sha": "64cdb0e9092db2ba4e49c6cd254e06b02460ecfa",
+    "sha": "438261c8323486ffb85636afd916bd5dfb300d6d",
     "branch": "fix/tn-sftp-gui-closure",
     "dirty": true
   },
   "binary": {
     "path": "src-tauri/target/release/terminal",
-    "sha256": "17fdfb1fc677c5efcbd1f80586137b1f3188cdbd4d63a15f5f84be52e836d4ce",
-    "bytes": 37224944
+    "sha256": "06691d4ff5c2984da8223c863ea0e0f4d938bb3b41ca0bdd0d46c140bc370291",
+    "bytes": 37206256
   },
   "window": null,
   "terminal": null,
   "command": null,
-  "screenshot": "e2e/gui/artifacts/r04-focus-hook-regression/screens/r04-focus-hook-regression-1795440122335.png",
-  "notes": "open-dock click 19 ms\nafter-blur click 11 ms\nNOT_RUN MULTI_WINDOW_EVENT_TARGETING — the app is single-instance and single-window by construction (tauri-plugin-single-instance blocks a second process before any database access, and no WebviewWindowBuilder path creates a second window), so \"an event went to the wrong window\" cannot be constructed here\nNOT_RUN SWITCH_TO_WINDOW_SELECTION — switchToWindow(handles[0]) only sets the user-chosen-window cache; whether it picks the right window in a real multi-window session is not observable in this app",
+  "screenshot": "e2e/gui/artifacts/r04-focus-hook-regression/screens/r04-focus-hook-regression-1795486717162.png",
+  "notes": "open-dock click 28 ms\nafter-blur click 15 ms on [data-testid=\"rail-terminal\"]\nNOT_RUN MULTI_WINDOW_EVENT_TARGETING — the app is single-instance and single-window by construction (tauri-plugin-single-instance blocks a second process before any database access, and no WebviewWindowBuilder path creates a second window), so \"an event went to the wrong window\" cannot be constructed here\nNOT_RUN SWITCH_TO_WINDOW_SELECTION — switchToWindow(handles[0]) only sets the user-chosen-window cache; whether it picks the right window in a real multi-window session is not observable in this app",
   "extra": {
     "clicks": [
       {
         "label": "open-dock",
         "selector": "[data-testid=\"rail-sftp\"]",
-        "elapsedMs": 19
+        "elapsedMs": 28
       },
       {
         "label": "close-dock",
         "selector": "[data-testid=\"rail-sftp\"]",
-        "elapsedMs": 9
+        "elapsedMs": 7
       },
       {
         "label": "reopen-dock",
         "selector": "[data-testid=\"rail-sftp\"]",
-        "elapsedMs": 6
+        "elapsedMs": 7
       },
       {
         "label": "activity-rail",
         "selector": "[data-testid=\"activity-rail\"] [data-testid=\"rail-terminal\"]",
-        "elapsedMs": 10
+        "elapsedMs": 8
       },
       {
         "label": "rail-connections",
         "selector": "[data-testid=\"rail-connections\"]",
-        "elapsedMs": 33
+        "elapsedMs": 26
       },
       {
         "label": "after-blur",
-        "selector": "[data-testid=\"rail-sftp\"]",
-        "elapsedMs": 11
+        "selector": "[data-testid=\"rail-terminal\"]",
+        "elapsedMs": 15
       }
     ],
     "failures": [],
     "slowestClick": {
-      "label": "rail-connections",
-      "selector": "[data-testid=\"rail-connections\"]",
-      "elapsedMs": 33
+      "label": "open-dock",
+      "selector": "[data-testid=\"rail-sftp\"]",
+      "elapsedMs": 28
     },
     "clickCount": 6,
     "notRun": [

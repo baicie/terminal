@@ -147,10 +147,20 @@ async function readPresentations() {
         ? (rightPanel.getAttribute('data-presentation') ?? 'column')
         : 'none',
       rightWidth: rightPanel ? Math.round(rightPanel.getBoundingClientRect().width) : 0,
-      // A drawer or overlay costs the terminal nothing, so only a *column*
-      // counts against the terminal's width.
+      // A drawer or overlay costs the terminal nothing, so only a *column* counts
+      // against the terminal's width.
       leftCostsWidth: left === 'column',
-      rightCostsWidth: rightPanel?.getAttribute('data-presentation') !== 'overlay',
+      /*
+       * `right` is computed above and already distinguishes `'none'` from a presentation.
+       * The earlier form — `rightPanel?.getAttribute(...) !== 'overlay'` — is `true` when
+       * `rightPanel` is null, because `undefined !== 'overlay'`. With the dock closed the
+       * pair then read `rightCostsWidth: true, rightWidth: 0`: a panel that costs 300 px of
+       * width while measuring zero. The policy check below subtracts `rightWidth` (0), so
+       * the arithmetic happened to stay right, but the recorded evidence claimed a column
+       * that was not there — and any future assertion reading `rightCostsWidth` alone
+       * would have been wrong.
+       */
+      rightCostsWidth: right === 'column',
       terminalWidth: rect ? Math.round(rect.width) : 0,
       cssWidth: document.documentElement.clientWidth,
       devicePixelRatio: window.devicePixelRatio,
@@ -207,10 +217,47 @@ async function resizeWindow(width, height = 900) {
   await browser.setWindowSize(width, height)
   let seen = await readPresentations()
   try {
+    /*
+     * ## Waiting for the width alone is not waiting for the layout
+     *
+     * Measured on the Linux runner: the matrix reported `cols: 142` at **every** width
+     * (1440 → 640), and at 900 / 768 / 640 the policy check saw
+     * `leftCostsWidth && rightCostsWidth` with only 418 / 286 / 158 px left over. 142
+     * columns is a 1440-class canvas — the assertion was reading the *previous* layout.
+     *
+     * `setWindowSize` resolves when the window system accepts the size. The app then
+     * re-measures on its own `ResizeObserver` and writes `data-presentation` from
+     * `chooseLayout`. Those are two separate steps, and this helper only waited for the
+     * first: `cssWidth` matches the request while `data-presentation` still describes the
+     * old width. On macOS the gap was small enough to hide; on Linux it was not, so the
+     * check blamed the product for a layout that had not been asked to change yet.
+     *
+     * The fix is to wait on the observable the assertion actually reads. `data-presentation`
+     * is written by the same decision function the product uses, so waiting for it to
+     * settle is waiting for the decision, not for a sleep.
+     */
+    let lastSignature = null
+    let stableRounds = 0
     await browser.waitUntil(
       async () => {
         seen = await readPresentations()
-        return Math.abs(seen.cssWidth - width) <= 2
+        if (Math.abs(seen.cssWidth - width) > 2) {
+          stableRounds = 0
+          return false
+        }
+        // The decision must be unchanged across two consecutive reads: one read can land
+        // between the width change and the re-measure.
+        const signature = JSON.stringify([
+          seen.left,
+          seen.right,
+          seen.leftCostsWidth,
+          seen.rightCostsWidth,
+          seen.leftColumnWidth,
+          seen.rightWidth,
+        ])
+        stableRounds = signature === lastSignature ? stableRounds + 1 : 0
+        lastSignature = signature
+        return stableRounds >= 1
       },
       { timeout: 10_000, interval: 100 },
     )

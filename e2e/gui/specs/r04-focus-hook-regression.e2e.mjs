@@ -118,27 +118,69 @@ describe('R04 — the focus hook no longer taxes every command', () => {
         throw new Error(`${label} took ${elapsed} ms after a re-render`)
       }
     }
+    /*
+     * Return to `/terminal`, because these clicks are *navigations*, not just latency
+     * samples: pressing `rail-terminal` and `rail-connections` changes the route. The
+     * follow-up case then measured a click on a control that belongs to the terminal view
+     * while the app was somewhere else, and WebdriverIO reported it as not clickable after
+     * 10 s. A case that navigates owes the next one a known starting point.
+     */
+    await browser.execute(() => {
+      if (window.location.pathname !== '/terminal') {
+        window.history.pushState({}, '', '/terminal')
+        window.dispatchEvent(new PopStateEvent('popstate'))
+      }
+    })
+    await browser.pause(300)
   })
 
-  it('a lost and regained focus does not reintroduce the timeout', async () => {
+  it('a blur event does not reintroduce the timeout', async () => {
     /*
      * The path this actually exercises: `ensureActiveWindowFocus` exists precisely because
      * a WebView can lose focus. Blurring and refocusing the window is the closest this
      * single-window app can get to the multi-window case the hook was written for.
      *
-     * `browser.execute` is used here to *cause* the blur, not to stand in for a click —
-     * the click that follows is a real WebDriver click, and it is what gets timed.
+     * ## Two things this case got wrong on CI, and why
+     *
+     * **1. It clicked `rail-sftp` while the current route was `/hosts`.** The previous case
+     * navigated away from `/terminal` by pressing `rail-terminal` and `rail-connections`,
+     * so the SFTP rail entry was a plain link, not the dock toggle this case assumed —
+     * and WebdriverIO reported `still not clickable after 10000ms`. The case passed locally
+     * only because the local run happened to leave the app on `/terminal`.
+     *
+     * The fix is not a longer timeout; it is that a focus-timing case must not depend on
+     * which view a previous case left behind. It measures whatever rail entry is present
+     * and returns to `/terminal` afterwards so the next case starts from a known route.
+     *
+     * **2. A synthetic `blur` on `window` does not blur anything.** It is an event
+     * dispatch, not a focus change: no element loses focus, so the case was not testing
+     * "focus was lost" at all. What it can honestly claim is "a blur event went through
+     * the handlers without breaking the command path". Said that way it is still worth
+     * running — the handler chain is real code — but the case name now matches it.
      */
     await browser.execute(() => {
       window.dispatchEvent(new Event('blur'))
       document.dispatchEvent(new Event('visibilitychange'))
     })
     await browser.pause(150)
-    const elapsed = await timedClick('[data-testid="rail-sftp"]', 'after-blur')
-    if (elapsed >= 1000) {
-      throw new Error(`a click after losing focus took ${elapsed} ms`)
+
+    const selector = await browser.execute(() => {
+      // Prefer an entry that is guaranteed to be a plain, clickable link on any route.
+      for (const id of ['rail-terminal', 'rail-hosts', 'rail-connections']) {
+        const element = document.querySelector(`[data-testid="${id}"]`)
+        if (element) return `[data-testid="${id}"]`
+      }
+      return null
+    })
+    if (!selector) {
+      notes.push('after-blur NOT_RUN: none of the rail entries exist in this build')
+      return
     }
-    notes.push(`after-blur click ${elapsed} ms`)
+    const elapsed = await timedClick(selector, 'after-blur')
+    if (elapsed >= 1000) {
+      throw new Error(`a click after a blur event took ${elapsed} ms`)
+    }
+    notes.push(`after-blur click ${elapsed} ms on ${selector}`)
   })
 
   it('records what could not be verified', async () => {

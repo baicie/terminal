@@ -1,7 +1,7 @@
 {
   "case": "e2e-03",
   "verdict": "PARTIAL",
-  "recordedAt": "2026-11-23T13:20:44.068Z",
+  "recordedAt": "2026-11-24T02:17:27.186Z",
   "platform": {
     "platform": "darwin",
     "release": "24.6.0",
@@ -10,20 +10,20 @@
     "osVersion": "Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103"
   },
   "source": {
-    "sha": "64cdb0e9092db2ba4e49c6cd254e06b02460ecfa",
+    "sha": "438261c8323486ffb85636afd916bd5dfb300d6d",
     "branch": "fix/tn-sftp-gui-closure",
     "dirty": true
   },
   "binary": {
     "path": "src-tauri/target/release/terminal",
-    "sha256": "17fdfb1fc677c5efcbd1f80586137b1f3188cdbd4d63a15f5f84be52e836d4ce",
-    "bytes": 37224944
+    "sha256": "06691d4ff5c2984da8223c863ea0e0f4d938bb3b41ca0bdd0d46c140bc370291",
+    "bytes": 37206256
   },
   "window": null,
   "terminal": null,
   "command": null,
-  "screenshot": "e2e/gui/artifacts/e2e-03/screens/e2e-03-1795440043980.png",
-  "notes": "clicked the seeded host card: true\ntabs {\"clicked\":false,\"described\":[{\"label\":\"Local\",\"selected\":false,\"text\":\"ConnectedLocal\",\"type\":\"local\"},{\"label\":\"E2E Local\",\"selected\":true,\"text\":\"ConnectedE2E Local\",\"type\":\"remote\"}],\"reason\":\"the SSH tab is already active\"}\ndock precondition: {\"alreadyOpen\":false,\"clicked\":true}\ndock width 300px, content 275px\ncontent 275px = border 299px − padding 24px\ntransfer panel absent (no transfers in this session)\n/sftp content 1370px → split\nkeyboard: 1 rows, focusable, aria-selected=\"false\" after Space\nsecond host connected: {\"connected\":true,\"hostField\":\"127.0.0.1\",\"port\":\"63619\",\"remoteTabs\":2,\"tabs\":3}\nafter connecting B: {\"activeTabLabel\":\"E2E Second\",\"activeTabType\":\"remote\",\"boundHost\":\"E2E Local\",\"offersFollow\":true,\"remoteCount\":2,\"remotePath\":\"SFTP: 127.0.0.1\",\"rows\":[\"e2e-local.markerrw-------10 BJan 22, 02:43File\"]}\nafter following to B: {\"activeTabLabel\":\"E2E Second\",\"activeTabType\":\"remote\",\"boundHost\":\"E2E Second\",\"offersFollow\":false,\"remoteCount\":2,\"remotePath\":\"SFTP: 127.0.0.1\",\"rows\":[\"e2e-second.markerrw-------11 BJan 22, 02:43File\"]}\nafter delete: {\"dialogPresent\":false,\"dialogState\":null}\nactivate first remote tab: {\"activated\":true,\"alreadyActive\":false,\"remoteCount\":2}\nback on A's tab, dock pinned: {\"activeTabLabel\":\"E2E Local\",\"activeTabType\":\"remote\",\"boundHost\":\"E2E Second\",\"offersFollow\":true,\"remoteCount\":2,\"remotePath\":\"SFTP: 127.0.0.1\",\"rows\":[\"e2e-second.markerrw-------11 BJan 22, 02:43File\"]}\nafter following back to A: {\"activeTabLabel\":\"E2E Local\",\"activeTabType\":\"remote\",\"boundHost\":\"E2E Local\",\"offersFollow\":false,\"remoteCount\":2,\"remotePath\":\"SFTP: 127.0.0.1\",\"rows\":[\"e2e-local.markerrw-------10 BJan 22, 02:43File\"]}\npane and server agree on the starting listing (1 entries)\nthe server created e2e-mkdir-case as a real directory\nthe server moved e2e-mkdir-case → e2e-mkdir-renamed; the old name is gone\nbefore delete confirm: {\"confirm\":{\"h\":36,\"opacity\":\"1\",\"pointerEvents\":\"auto\",\"w\":75,\"x\":876,\"y\":477},\"dialog\":{\"h\":176,\"opacity\":\"1\",\"pointerEvents\":\"auto\",\"w\":512,\"x\":464,\"y\":362},\"dialogState\":\"open\"}\nthe server removed e2e-mkdir-renamed\nthe other server's directory is untouched (1 entries, neither e2e-mkdir-case nor e2e-mkdir-renamed)\nnavigated into e2e-nav-case and the pane lists the server's 2 entries\nthe breadcrumb Home control returned the pane to the root listing\nNOT_RUN: upload survives closing the dock (this spec starts no upload — the transfer queue is exercised by the upload/download cases in `sftp-transfer-queue.test.ts` and the 24 MiB real-server harness, not by a GUI drag); refresh lands only for the right session + directory (no transfer to refresh)",
+  "screenshot": "e2e/gui/artifacts/e2e-03/screens/e2e-03-1795486647085.png",
+  "notes": "clicked the seeded host card: true\ntabs {\"clicked\":false,\"described\":[{\"label\":\"Local\",\"selected\":false,\"text\":\"ConnectedLocal\",\"type\":\"local\"},{\"label\":\"E2E Local\",\"selected\":true,\"text\":\"ConnectedE2E Local\",\"type\":\"remote\"}],\"reason\":\"the SSH tab is already active\"}\ndock precondition: {\"alreadyOpen\":false,\"clicked\":true}\ndock width 300px, content 275px\ncontent 275px = border 299px − padding 24px\ntransfer panel absent (no transfers in this session)\n/sftp content 1370px → split\nkeyboard: 1 rows, focusable, aria-selected=\"false\" after Space\nsecond host connected: {\"connected\":true,\"hostField\":\"127.0.0.1\",\"port\":\"53224\",\"remoteTabs\":2,\"tabs\":3}\nafter connecting B: {\"activeTabLabel\":\"E2E Second\",\"activeTabType\":\"remote\",\"boundHost\":\"E2E Local\",\"offersFollow\":true,\"remoteCount\":2,\"remotePath\":\"SFTP: 127.0.0.1\",\"rows\":[]}\nafter following to B: {\"activeTabLabel\":\"E2E Second\",\"activeTabType\":\"remote\",\"boundHost\":\"E2E Second\",\"offersFollow\":false,\"remoteCount\":2,\"remotePath\":\"SFTP: 127.0.0.1\",\"rows\":[\"e2e-second.markerrw-------11 BJan 22, 02:44File\"]}\nafter delete: {\"dialogPresent\":false,\"dialogState\":null}\nactivate first remote tab: {\"activated\":true,\"alreadyActive\":false,\"remoteCount\":2}\nback on A's tab, dock pinned: {\"activeTabLabel\":\"E2E Local\",\"activeTabType\":\"remote\",\"boundHost\":\"E2E Second\",\"offersFollow\":true,\"remoteCount\":2,\"remotePath\":\"SFTP: 127.0.0.1\",\"rows\":[\"e2e-second.markerrw-------11 BJan 22, 02:44File\"]}\nafter following back to A: {\"activeTabLabel\":\"E2E Local\",\"activeTabType\":\"remote\",\"boundHost\":\"E2E Local\",\"offersFollow\":false,\"remoteCount\":2,\"remotePath\":\"SFTP: 127.0.0.1\",\"rows\":[\"e2e-local.markerrw-------10 BJan 22, 02:44File\"]}\npane and server agree on the starting listing (1 entries)\nthe server created e2e-mkdir-case as a real directory\nthe server moved e2e-mkdir-case → e2e-mkdir-renamed; the old name is gone\nbefore delete confirm: {\"confirm\":{\"h\":36,\"opacity\":\"1\",\"pointerEvents\":\"auto\",\"w\":75,\"x\":876,\"y\":477},\"dialog\":{\"h\":176,\"opacity\":\"1\",\"pointerEvents\":\"auto\",\"w\":512,\"x\":464,\"y\":362},\"dialogState\":\"open\"}\nthe server removed e2e-mkdir-renamed\nthe other server's directory is untouched (1 entries, neither e2e-mkdir-case nor e2e-mkdir-renamed)\nnavigated into e2e-nav-case and the pane lists the server's 2 entries\nthe breadcrumb Home control returned the pane to the root listing\nNOT_RUN: upload survives closing the dock (this spec starts no upload — the transfer queue is exercised by the upload/download cases in `sftp-transfer-queue.test.ts` and the 24 MiB real-server harness, not by a GUI drag); refresh lands only for the right session + directory (no transfer to refresh)",
   "extra": {
     "measurements": {
       "dock": {
@@ -63,7 +63,7 @@
           "remoteCount": 2,
           "remotePath": "SFTP: 127.0.0.1",
           "rows": [
-            "e2e-local.markerrw-------10 BJan 22, 02:43File"
+            "e2e-local.markerrw-------10 BJan 22, 02:44File"
           ]
         },
         "b": {
@@ -74,7 +74,7 @@
           "remoteCount": 2,
           "remotePath": "SFTP: 127.0.0.1",
           "rows": [
-            "e2e-second.markerrw-------11 BJan 22, 02:43File"
+            "e2e-second.markerrw-------11 BJan 22, 02:44File"
           ]
         }
       }
@@ -83,33 +83,33 @@
     "clickTimings": [
       {
         "selector": "[data-testid=\"sftp-mkdir\"]",
-        "clickableMs": 6,
-        "clickMs": 21
+        "clickableMs": 5,
+        "clickMs": 20
       },
       {
         "selector": "[data-testid=\"sftp-mkdir-confirm\"]",
-        "clickableMs": 7,
-        "clickMs": 6
+        "clickableMs": 8,
+        "clickMs": 7
       },
       {
         "selector": "[data-testid=\"sftp-rename-input\"]",
-        "clickableMs": 6,
+        "clickableMs": 9,
         "clickMs": 2
       },
       {
         "selector": "[data-testid=\"sftp-rename-confirm\"]",
-        "clickableMs": 12,
-        "clickMs": 8
+        "clickableMs": 8,
+        "clickMs": 10
       },
       {
         "selector": "[data-testid=\"sftp-delete-confirm\"]",
         "clickableMs": 6,
-        "clickMs": 5
+        "clickMs": 6
       },
       {
         "selector": "[data-testid=\"sftp-remote-refresh\"]",
-        "clickableMs": 6,
-        "clickMs": 3
+        "clickableMs": 5,
+        "clickMs": 2
       }
     ],
     "notRunCount": 1,
