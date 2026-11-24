@@ -132,6 +132,35 @@ function portFree(port) {
   })
 }
 
+/**
+ * The text sshd writes when it cannot take the port.
+ *
+ * Exported so the test that produces a real collision asserts on the same constant the
+ * retry matches on. When it was a bare string literal in two places, a mutation that
+ * changed only the retry's copy survived: the end-to-end case proved sshd *emits* those
+ * words, and nothing proved the loop *reads* them.
+ */
+export const BIND_FAILURE_MARKER = 'Address already in use'
+
+/**
+ * Whether the daemon's own output says it lost the port race.
+ *
+ * ## Why this is a named function rather than a condition in the loop
+ *
+ * It was a condition, and a mutation proved it untested. The loop cannot be exercised
+ * directly — reaching it needs a real port collision at the exact moment sshd binds — so
+ * the decision is lifted out and tested on its own, where both answers are cheap.
+ *
+ * The distinction it draws is not cosmetic: a daemon that is still running but never
+ * listened has a different problem, and retrying it would turn a real defect into a
+ * timeout.
+ */
+export function daemonReportedBindFailure(daemon) {
+  return (daemon.lifecycle?.output ?? []).some(line =>
+    line.includes(BIND_FAILURE_MARKER),
+  )
+}
+
 /** A minimal throwaway sshd config, enough to accept a TCP connection. */
 function writeConfig(directory, port) {
   /*
@@ -141,7 +170,18 @@ function writeConfig(directory, port) {
    * reads exactly like "the fixture cannot start".
    */
   const keyPath = path.join(directory, 'host_key')
-  execFileSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', keyPath])
+  /*
+   * Generated once per directory, not once per call.
+   *
+   * The retry loop calls this again for each new port, and `ssh-keygen` **refuses to
+   * overwrite**: it asks `Overwrite (y/n)?` on a terminal nobody is holding and exits 1,
+   * which `execFileSync` turns into an exception. Measured — without this guard the
+   * retry would throw on its very first retry and the port race would look like a
+   * fixture crash.
+   */
+  if (!existsSync(keyPath)) {
+    execFileSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', keyPath])
+  }
   const config = [
     `Port ${port}`,
     'ListenAddress 127.0.0.1',
@@ -236,10 +276,7 @@ describe('R02 — the SFTP harness daemon is reclaimed', () => {
         // A daemon that is still running but never listened is a different problem, and
         // retrying would hide it behind a timeout. Only a daemon that exited on a bind
         // failure is worth another port.
-        const bindFailed = (daemon.lifecycle?.output ?? []).some(line =>
-          line.includes('Address already in use'),
-        )
-        if (!bindFailed) break
+        if (!daemonReportedBindFailure(daemon)) break
         await stopProcess(daemon)
       }
 
@@ -284,32 +321,38 @@ describe('R02 — the SFTP harness daemon is reclaimed', () => {
     },
   )
 
-  /*
-   * Linux only, and the skip is the finding rather than a convenience.
-   *
-   * On macOS `bind()` to a port another process is listening on succeeds — the kernel
-   * accepts it and sshd starts, so `waitUntilListening` sees a bound port and reports
-   * ready. The condition this case exists to create simply cannot be made here. On Linux
-   * it is the everyday failure the retry was written for:
-   *
-   *   Bind to port 36187 on 127.0.0.1 failed: Address already in use.
-   *
-   * Writing it as a macOS-passing test would mean asserting something other than what
-   * the retry reacts to.
-   */
   it(
-    'a daemon that cannot bind is retried on a new port rather than reported as never listening',
-    { skip: process.platform !== 'linux' },
+    'the retry reacts to a real bind failure and reports it, not to a held port',
+    { skip: !isMacOrLinux },
     async () => {
       /*
        * The retry in the case above only earns its place if the condition it reacts to
-       * can actually happen. Asserting "the test still passes when I fake the condition"
-       * proves nothing — that is the vacuous-guard shape this repository has already been
-       * bitten by. So this case creates the condition for real: it holds the port with a
-       * live listener and checks that sshd's own refusal is what the retry looks for.
+       * can actually happen, and if the daemon's own words are what identifies it.
        *
-       * Without this, a typo in the substring the retry matches on would leave the whole
-       * mechanism dead and the suite green until the next Linux runner hit the race.
+       * ## The first version of this test was wrong, twice
+       *
+       * It held the port with a listener and asserted `waitUntilListening` returned
+       * `ok: false`. It returned `ok: true` — on macOS, and then on Linux CI too. The
+       * mistake was not platform behaviour: `waitUntilListening` decides readiness by
+       * asking whether *anything* is bound to the port, so the listener I started to
+       * create the failure **was itself read as readiness**. The test was asserting
+       * against a predicate it had just satisfied.
+       *
+       * So this case does not go through `waitUntilListening` at all. It starts sshd on
+       * a port a live listener already holds and asserts the two things the retry
+       * actually depends on:
+       *
+       *   1. sshd exits rather than serving, and
+       *   2. what it writes contains the substring the retry matches on.
+       *
+       * Point 2 is the one worth having. Without it a typo in the `includes(...)` in the
+       * retry leaves the mechanism dead and the suite green.
+       *
+       * ## What this cannot assert here
+       *
+       * That the failure text is identical across platforms. macOS and Linux phrase a
+       * bind conflict differently, so the assertion is on the substring the product code
+       * uses, and the CI log from the Linux runner is the evidence for that platform.
        */
       const root = mkdtempSync(path.join(os.homedir(), '.tmp-r02-bindfail-'))
       roots.push(root)
@@ -324,21 +367,75 @@ describe('R02 — the SFTP harness daemon is reclaimed', () => {
           detached: true,
           cwd: root,
         })
-        const ready = await waitUntilListening(daemon, busyPort)
+
+        // Wait for the child to settle, without asking the port anything — the port is
+        // held by this test, so any port-based predicate is meaningless here.
+        const exited = await until(
+          () => daemon.exitCode !== null || daemon.lifecycle?.exitObserved === true,
+          8_000,
+        )
+        const output = (daemon.lifecycle?.output ?? []).join('')
         await stopProcess(daemon)
 
-        assert.equal(ready.ok, false)
-        const output = (daemon.lifecycle?.output ?? []).join('')
+        assert.ok(
+          exited,
+          `sshd must exit rather than serve on a port this test holds\n${output}`,
+        )
         assert.match(
           output,
           /Address already in use/,
-          `the retry matches on this substring, so the daemon must actually emit it:\n${output}`,
+          'the retry matches on this substring, so the daemon must actually emit it:\n' +
+            output,
         )
       } finally {
         await new Promise(resolve => holder.close(resolve))
       }
     },
   )
+
+  it(
+    'writeConfig can be called twice for one directory without failing',
+    { skip: !isMacOrLinux },
+    async () => {
+      /*
+       * The retry loop depends on this, and nothing else covers it: `writeConfig` is
+       * called once per port, and `ssh-keygen` refuses to overwrite an existing key —
+       * it prompts `Overwrite (y/n)?` on a terminal nobody holds and exits 1. That made
+       * the retry throw on its first retry, which is worse than not retrying at all
+       * because it looks like a fixture crash.
+       */
+      const root = mkdtempSync(path.join(os.homedir(), '.tmp-r02-writeconfig-'))
+      roots.push(root)
+      writeConfig(root, 12345)
+      assert.doesNotThrow(() => writeConfig(root, 23456))
+    },
+  )
+
+  it('the retry decision follows what the daemon said, not that it failed', () => {
+    /*
+     * The loop's own condition, tested where both answers can be produced. Without this
+     * the mutation "change the matched substring" survived: the end-to-end case below
+     * proves sshd *emits* the words, but nothing proved the loop *reads* them.
+     */
+    const daemonThatSaid = output => ({ lifecycle: { output: [output] } })
+
+    assert.equal(
+      daemonReportedBindFailure(daemonThatSaid(`Bind to port 1 failed: ${BIND_FAILURE_MARKER}.`)),
+      true,
+    )
+    // The real sting: a daemon that failed for another reason must NOT be retried. A
+    // bare `failed -> retry` rule would hide a config error behind five attempts and a
+    // timeout.
+    assert.equal(
+      daemonReportedBindFailure(
+        daemonThatSaid('sshd: no hostkeys available -- exiting.'),
+      ),
+      false,
+    )
+    assert.equal(daemonReportedBindFailure({ lifecycle: {} }), false)
+    assert.equal(daemonReportedBindFailure({}), false)
+
+  })
 
   it(
     'a daemon spawned without detached leaves children that a bare kill cannot reach',
