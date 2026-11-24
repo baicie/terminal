@@ -4237,6 +4237,61 @@ mod ssh_jump_e2e_tests {
         assert_eq!(failure.hop, Some(ConnectionHop::Bastion));
     }
 
+    /// SSH14 — a target whose host key is not the pinned one is refused, and the
+    /// refusal is the **target's**.
+    ///
+    /// The tunnel opened and the bastion authenticated, so a failure here says nothing
+    /// about the bastion. This is the case a user actually needs to see: "the host
+    /// behind the bastion has a different identity than the one you approved" is a
+    /// security decision, and blaming the bastion would send them to change the wrong
+    /// known_hosts entry.
+    #[tokio::test]
+    #[ignore = "needs scripts/verify-install/ssh-jump-e2e.mjs to start two daemons"]
+    async fn a_target_host_key_mismatch_is_attributed_to_the_target() {
+        let fixture = match fixture() {
+            FixtureLookup::Ready(fixture) => fixture,
+            FixtureLookup::NotConfigured => {
+                eprintln!("SSH_JUMP_E2E_* not set; skipping");
+                return;
+            }
+            FixtureLookup::Broken(reason) => panic!("the harness is not usable: {reason}"),
+        };
+        let target = JumpTarget {
+            host: "127.0.0.1".to_string(),
+            port: fixture.target_port,
+            username: fixture.user.clone(),
+            password: None,
+            private_key: Some(fixture.target_key.clone()),
+            certificate: None,
+            // The bastion's key, pinned as the target's. The bastion is unaffected: its
+            // own pin is correct, which is what makes the attribution unambiguous.
+            expected_host_key: Some(russsh_public_key(&fixture.bastion_host_key)),
+            use_agent: false,
+            allow_agent_forwarding: false,
+        };
+        let result = SshSession::connect_via_jump(
+            Arc::new(interactive_ssh_config()),
+            target,
+            jump_config(&fixture),
+            tokio::time::Instant::now() + std::time::Duration::from_secs(30),
+        )
+        .await;
+
+        let failure = result
+            .err()
+            .expect("the target's key is not the pinned one");
+        assert!(
+            matches!(failure.error, SessionError::HostKeyRejected(_)),
+            "a target identity mismatch must keep its own kind, got {:?}",
+            failure.error
+        );
+        assert_eq!(
+            failure.hop,
+            Some(ConnectionHop::Target),
+            "the bastion authenticated with its own correct key, so this is the target"
+        );
+    }
+
     /// Reads a public key from the fixture's `.pub` text.
     fn russsh_public_key(value: &str) -> russh::keys::PublicKey {
         russh::keys::PublicKey::from_openssh(value.trim())
