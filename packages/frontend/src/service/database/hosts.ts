@@ -16,6 +16,11 @@ import {
   retirePreviousVersion,
 } from './host-credentials'
 import { assertRowUpdated } from './host-update-guard'
+import {
+  hostIdExists,
+  insertHostStatement,
+  ownsNoRow,
+} from './host-create-guard'
 import { hostUpdateArgs } from './host-update-args'
 import { deleteHost, getHostById } from './host-rows-lifecycle'
 import { withHostWriteLock } from './host-write-lock'
@@ -31,6 +36,16 @@ export async function createHost(
   host: Omit<Host, 'createdAt' | 'updatedAt'>,
 ): Promise<void> {
   const now = Date.now()
+  /*
+   * A duplicate id would overwrite the live row's vault generation and then have it
+   * deleted by the cleanup below. See `host-create-guard.ts` for the measurement.
+   */
+  if (await hostIdExists(host.id)) {
+    throw new Error(
+      `A host with id ${host.id} already exists; refusing to overwrite its credentials`,
+    )
+  }
+
   const persisted = await persistHostSecrets(
     {
       id: host.id,
@@ -40,39 +55,28 @@ export async function createHost(
     null,
   )
   try {
-    await executeQuery(
-      `INSERT INTO hosts (id, name, hostname, port, username, auth_type, password, private_key, certificate, credential_ref, group_id, is_favorite, color, tags, port_forwards, startup_command, environment, jump_host_id, jump_host_auth_type, agent_forwarding, shell_integration, identity_file_path, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        host.id,
-        host.name,
-        host.hostname,
-        host.port,
-        host.username,
-        host.authType,
-        // A certificate is public material; it stays on the row.
-        host.certificate ?? null,
-        persisted.ref === null ? null : JSON.stringify(persisted.ref),
-        host.groupId ?? null,
-        host.isFavorite ? 1 : 0,
-        host.color ?? null,
-        host.tags ? JSON.stringify(host.tags) : null,
-        JSON.stringify(host.portForwards),
-        host.startupCommand ?? null,
-        host.environment ? JSON.stringify(host.environment) : null,
-        host.jumpHostId ?? null,
-        host.jumpHostAuthType ?? null,
-        host.agentForwarding ? 1 : 0,
-        host.shellIntegration ?? 'off',
-        host.identityFilePath ?? null,
-        now,
-        now,
-      ],
+    const { sql, params } = insertHostStatement(
+      host,
+      persisted.ref === null ? null : JSON.stringify(persisted.ref),
+      now,
     )
+    await executeQuery(sql, params)
   } catch (error) {
-    // The row never landed, so the credential written for it belongs to nothing.
-    // Remove the generation this attempt wrote; there is no previous one to keep.
-    if (persisted.ref && persisted.ref.version !== undefined) {
+    /*
+     * The row did not land. Remove only what this attempt can prove it created.
+     *
+     * The read at the top makes a collision here mean "two creates raced", not "an
+     * existing host owned this id" — the common duplicate case never reaches the INSERT.
+     * Even so, the cleanup is guarded: a row for this id means another writer won, and
+     * its reference is what the surviving row will use, so nothing is deleted.
+     */
+    // Only when nothing owns the id: whoever won a racing create reads the version this
+    // attempt wrote, so removing it would be the same loss by a narrower door.
+    if (
+      (await ownsNoRow(host.id)) &&
+      persisted.ref &&
+      persisted.ref.version !== undefined
+    ) {
       await vaultSecretProvider.removeVersion(
         { type: 'host', id: host.id },
         persisted.ref.version,
