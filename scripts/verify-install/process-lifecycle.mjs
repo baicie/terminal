@@ -50,8 +50,26 @@ export function launchProcess(command, args = [], options = {}) {
     cwd: options.cwd,
     env: options.env,
     stdio: options.stdio || ['ignore', 'pipe', 'pipe'],
+    /*
+     * `detached` must be forwarded, or a caller cannot ask for a process group.
+     *
+     * Measured while fixing the SFTP harness's leak (R02): `sshd -D` forks a session child
+     * per accepted connection. Killing the daemon by PID leaves those children to be
+     * reparented to init — 103 of them accumulated on this machine across runs. A caller
+     * that passes `detached: true` gets its own process group and can signal the whole
+     * group; one that does not still gets the old behaviour, because changing the default
+     * would alter every existing caller's signal delivery.
+     */
+    detached: options.detached === true,
   })
   child.lifecycle = state
+  /*
+   * The collected output is exposed on the lifecycle state so a caller that is not
+   * using `logPath` (the SFTP harness bounds its own child with a deadline) can still
+   * read what the process wrote. It is the same array the stream handlers push into,
+   * not a copy.
+   */
+  state.output = output
   child.once('spawn', () => { state.spawned = true })
   child.once('error', error => {
     state.spawnError = error
@@ -81,10 +99,24 @@ export function launchProcess(command, args = [], options = {}) {
     state.closeObserved = true
     state.exitCode = code
     state.signal = signal
-    if (!state.spawnError && !state.exitObserved) {
-      state.exitObserved = true
-      resolveExit()
-    }
+    /*
+     * `close` must not be read as "the process exited".
+     *
+     * Measured: a **detached** child spawned with `stdio: 'ignore'` emits `close`
+     * immediately — there are no stdio streams to wait for, so Node closes the handle as
+     * soon as the spawn completes. The old code treated that as an exit, so
+     * `stopProcess` saw `exitObserved: true` before signalling anything and returned
+     * `graceful` in 5 ms **while the daemon was still running**. That is the worst shape
+     * this module can have: a cleanup that reports success without checking.
+     *
+     * Only a real `exit` event means the process is gone. `close` without `exit` is
+     * reported as such (`closeObserved`), so a caller can tell the two apart.
+     */
+    // Resolve the **close** promise only. `exitPromise` is resolved by the `exit` event
+    // alone, because that is the only thing that says the process is gone. `stopProcess`
+    // waits on `exitPromise`; letting `close` settle it is what made a still-running
+    // detached daemon look gracefully stopped.
+    resolveClose()
     if (state.logPath && !state.logWritten) {
       state.logWritten = true
       // close fires after stdout/stderr are closed, so the log is complete.

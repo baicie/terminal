@@ -861,6 +861,9 @@ async function activateRemoteTab(options = {}) {
  * See the note inside: this was rebuilt three times and is now deliberately the
  * boring version.
  */
+/** Where each `clickWhenReady` spent its time — see the note inside it. */
+const clickTimings = []
+
 async function clickWhenReady(selector) {
   /*
    * ## Back to the native primitive, after three rounds of not improving this
@@ -892,12 +895,47 @@ async function clickWhenReady(selector) {
     throw new Error(`no element matches ${selector}`)
   }
 
-  let lastError = null
+  /*
+   * ## Visible first, and no 15 s wait on an element that is already known hidden
+   *
+   * `isDisplayed()` is a synchronous fact, so an element it reports as hidden cannot
+   * become clickable by waiting — the layout would have to change, and nothing in this
+   * case does. The earlier version waited anyway, spending the full `waitForClickable`
+   * budget on the *hidden* copy of a two-match selector before trying the visible one;
+   * `sftp-mkdir` matches twice (one per pane, the second hidden by the single-column
+   * layout), so every click cost 15 s. Measured: 30 s between "click mkdir" and "the
+   * server created it", against a 6 ms median round trip.
+   *
+   * Candidates are therefore partitioned by `isDisplayed`, and only a displayed one is
+   * waited on. A selector whose every match is hidden still fails — with the count and
+   * the states, which is what the previous round added that wait to discover.
+   */
+  const displayed = []
   for (const element of matches) {
-    if (!(await element.isDisplayed().catch(() => false))) continue
+    if (await element.isDisplayed().catch(() => false)) displayed.push(element)
+  }
+  if (displayed.length === 0) {
+    const states = []
+    for (const element of matches) {
+      states.push({
+        displayed: false,
+        enabled: await element.isEnabled().catch(() => 'unknown'),
+      })
+    }
+    throw new Error(
+      `every match for ${selector} is hidden; ${matches.length} matched, ` +
+        `states: ${JSON.stringify(states)}`,
+    )
+  }
+  let lastError = null
+  for (const element of displayed) {
     try {
+      const t0 = Date.now()
       await element.waitForClickable({ timeout: 15_000 })
+      const t1 = Date.now()
       await element.click()
+      const t2 = Date.now()
+      clickTimings.push({ selector, clickableMs: t1 - t0, clickMs: t2 - t1 })
       return
     } catch (error) {
       lastError = error
@@ -1217,6 +1255,23 @@ function readDockBinding() {
     // By position among the *remote* tabs, not by label: the label is whatever the
     // remote shell last set via OSC (measured on Windows: the console-host path), so
     // matching `E2E Local` found nothing while the tab was right there.
+    /*
+     * The dialog must be gone, not merely invisible: a Radix overlay left in the exit
+     * phase covers the viewport with `pointer-events: auto` and would swallow every
+     * later click — including the next case's.
+     */
+    notes.push(
+      `after delete: ${JSON.stringify(
+        await browser.execute(() => {
+          const dialog = document.querySelector('[data-testid="sftp-delete-dialog"]')
+          return {
+            dialogPresent: Boolean(dialog),
+            dialogState: dialog?.getAttribute('data-state') ?? null,
+          }
+        }),
+      )}`,
+    )
+
     const back = await activateRemoteTab({ inactive: true })
     notes.push(`activate first remote tab: ${JSON.stringify(back)}`)
     if (!back.activated) {
@@ -1492,6 +1547,44 @@ function readDockBinding() {
     }
     notes.push(`the server created ${dirName} as a real directory`)
 
+    /*
+     * The server has it; the **pane** may not yet.
+     *
+     * `mkdir` calls `void loadDir(path)` — the refresh is not awaited, so the row
+     * appears one listing round trip after the server confirms. The next step selects
+     * that row, and when this wait was missing the selection spent its full 20 s
+     * `waitForExist` before the listing caught up: measured 42 s between "the server
+     * created it" and "the row was selected", against a 6 ms median round trip. That
+     * was the bulk of the case's 240 s budget, and it is a harness race, not a product
+     * fault — the pane refreshes correctly, just later than the assertion looked.
+     *
+     * Waiting on the pane here is not "trusting the DOM over the server": the server
+     * check above already passed and is what makes this a *refresh* wait rather than a
+     * correctness claim.
+     */
+    const listedInPane = await browser
+      .waitUntil(
+        async () =>
+          browser.execute(
+            wanted =>
+              Array.from(
+                document.querySelectorAll('[data-testid="file-row"]'),
+              ).some(row => (row.textContent ?? '').includes(wanted)),
+            dirName,
+          ),
+        {
+          timeout: 15_000,
+          interval: 150,
+          timeoutMsg: `the pane never listed ${dirName} after the server created it`,
+        },
+      )
+      .catch(() => false)
+    if (!listedInPane) {
+      notes.push(
+        `the pane never listed ${dirName}; selection will have to wait for a refresh`,
+      )
+    }
+
     // ── rename, by the F2 shortcut ────────────────────────────────────────────
     //
     // ## Why not the actions menu
@@ -1555,6 +1648,37 @@ function readDockBinding() {
 
     // The confirmation is the product's guard against an accidental delete; a case that
     // skipped it would not be testing the path a user takes.
+    /*
+     * Record the dialog's state before the click. Kept permanently: when this case
+     * failed with Mocha's bare `Timeout`, the first question was "was the dialog even
+     * open", and the answer was only obtainable by re-running with this probe.
+     */
+    notes.push(
+      `before delete confirm: ${JSON.stringify(
+        await browser.execute(() => {
+          const dialog = document.querySelector('[data-testid="sftp-delete-dialog"]')
+          const confirm = document.querySelector('[data-testid="sftp-delete-confirm"]')
+          const box = el => {
+            if (!el) return null
+            const r = el.getBoundingClientRect()
+            const cs = getComputedStyle(el)
+            return {
+              x: Math.round(r.left),
+              y: Math.round(r.top),
+              w: Math.round(r.width),
+              h: Math.round(r.height),
+              opacity: cs.opacity,
+              pointerEvents: cs.pointerEvents,
+            }
+          }
+          return {
+            dialogState: dialog?.getAttribute('data-state') ?? null,
+            dialog: box(dialog),
+            confirm: box(confirm),
+          }
+        }),
+      )}`,
+    )
     await clickWhenReady('[data-testid="sftp-delete-confirm"]')
 
     /*
@@ -1667,6 +1791,7 @@ function readDockBinding() {
    * Opening a *file* (as opposed to a directory) is a download, and that goes through
    * the OS save dialog. `records what could not be verified` still says so.
    */
+
   it('navigates into a directory and reports the destination the filesystem has', async () => {
     if (!process.env.GUI_E2E_SSH_PORT) {
       notes.push('navigation case NOT_RUN: no SSH fixture this run')
@@ -1935,6 +2060,9 @@ function readDockBinding() {
       extra: {
         measurements,
         failures,
+        // Every `clickWhenReady` call's two halves, so a slow case names the call
+        // instead of leaving 30 s unexplained.
+        clickTimings,
         notRunCount,
         // Recorded so a reader can tell which precondition the run actually had.
         sshFixture: Boolean(process.env.GUI_E2E_SSH_PORT),

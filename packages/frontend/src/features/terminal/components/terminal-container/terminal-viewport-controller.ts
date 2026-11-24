@@ -26,6 +26,14 @@ export class TerminalViewportController {
   private lastFitAt = Number.NEGATIVE_INFINITY
   private resizeFrame: number | null = null
   private resizeTimer: ReturnType<typeof setTimeout> | null = null
+  /**
+   * A resize arrived while a fit was already scheduled.
+   *
+   * Without this the request was dropped outright, and the fit that ran used the
+   * container's size from before that resize — with nothing left to correct it. See
+   * `requestFit` for the measurement.
+   */
+  private fitRequestedAgain = false
   private pinnedStateFrame: number | null = null
   private touchY: number | null = null
 
@@ -54,11 +62,30 @@ export class TerminalViewportController {
   }
 
   requestFit(): void {
-    if (
-      this.disposed ||
-      this.resizeFrame !== null ||
-      this.resizeTimer !== null
-    ) {
+    /*
+     * ## A dropped request is a stale terminal, not a saved frame
+     *
+     * Measured on the Linux GUI runner, walking the width matrix 1440 → 640: the canvas
+     * shrank 554 → 540 → 594 while the terminal reported 67 → **50** → 72 columns. The
+     * 768 px row was the only one whose column count disagreed with its own container
+     * (`canvasWidth: 540`, `xtermHostWidth: 539`, `cols: 50` — every other row lands
+     * within 2 px of `canvas / cellWidth`).
+     *
+     * The cause is here. A resize that arrives while a fit is already scheduled used to
+     * `return` — the request was **discarded**, not coalesced. That is only safe if
+     * another resize event is guaranteed to follow, and after the last resize of a burst
+     * there is none: the pending fit runs against whatever the container was when it was
+     * scheduled, and nothing asks again. The user sees a terminal fitted to a width the
+     * window no longer has, until the next unrelated layout change.
+     *
+     * So a request that cannot be scheduled now is remembered, and the fit that is
+     * already pending schedules one more pass when it finishes. Still one fit per frame
+     * at most (the throttle is unchanged); what changes is that the **last** request is
+     * never the one that gets thrown away.
+     */
+    if (this.disposed) return
+    if (this.resizeFrame !== null || this.resizeTimer !== null) {
+      this.fitRequestedAgain = true
       return
     }
     const wait = Math.max(
@@ -71,6 +98,11 @@ export class TerminalViewportController {
         this.resizeFrame = null
         this.lastFitAt = Date.now()
         this.fitNow()
+        if (this.fitRequestedAgain) {
+          this.fitRequestedAgain = false
+          // Measure again on the next frame: the layout may have moved during this fit.
+          this.requestFit()
+        }
       })
     }
     if (wait > 0) {

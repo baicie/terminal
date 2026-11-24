@@ -1,27 +1,42 @@
 {
   "case": "e2e-02",
   "verdict": "PASS",
-  "recordedAt": "2026-11-14T05:33:52.980Z",
+  "recordedAt": "2026-11-24T02:17:04.916Z",
   "platform": {
     "platform": "darwin",
     "release": "24.6.0",
     "arch": "arm64",
-    "node": "v22.12.0",
+    "node": "v24.16.0",
     "osVersion": "Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103"
   },
   "source": {
-    "sha": "4b522bc33e81e87ad3e8e81bc8f1ca14c218d30f",
-    "branch": "feat/tn-03-native-gui-e2e",
+    "sha": "438261c8323486ffb85636afd916bd5dfb300d6d",
+    "branch": "fix/tn-sftp-gui-closure",
     "dirty": true
   },
   "binary": {
     "path": "src-tauri/target/release/terminal",
-    "sha256": "9f7a8717392129f7c447befae2a10efa1023a71ca336d42e3f95f055266b102f",
-    "bytes": 36667568
+    "sha256": "06691d4ff5c2984da8223c863ea0e0f4d938bb3b41ca0bdd0d46c140bc370291",
+    "bytes": 37206256
   },
-  "window": null,
+  "window": {
+    "requestedWidth": 1440,
+    "observedWidth": 1440,
+    "osClamped": false,
+    "cssWidth": 1440,
+    "devicePixelRatio": 2,
+    "left": "column",
+    "leftColumnWidth": 182,
+    "leftCostsWidth": true,
+    "right": "column",
+    "rightCostsWidth": true,
+    "rightWidth": 300,
+    "terminalWidth": 896,
+    "cols": 112,
+    "rows": 49
+  },
   "terminal": null,
   "command": null,
-  "screenshot": null,
-  "notes": "[]\n\nrequestAnimationFrame observed under automation: true. \nscreenshot failed: WebDriverError: Request failed with error code ECONNREFUSED when running \"screenshot\" with method \"GET\""
+  "screenshot": "e2e/gui/artifacts/e2e-02/screens/e2e-02-1795486624816.png",
+  "notes": "[\n  {\n    \"requestedWidth\": 1440,\n    \"observedWidth\": 1440,\n    \"osClamped\": false,\n    \"cssWidth\": 1440,\n    \"devicePixelRatio\": 2,\n    \"left\": \"column\",\n    \"leftColumnWidth\": 182,\n    \"leftCostsWidth\": true,\n    \"right\": \"column\",\n    \"rightCostsWidth\": true,\n    \"rightWidth\": 300,\n    \"terminalWidth\": 896,\n    \"cols\": 112,\n    \"rows\": 49\n  },\n  {\n    \"requestedWidth\": 1280,\n    \"observedWidth\": 1280,\n    \"osClamped\": false,\n    \"cssWidth\": 1280,\n    \"devicePixelRatio\": 2,\n    \"left\": \"column\",\n    \"leftColumnWidth\": 182,\n    \"leftCostsWidth\": true,\n    \"right\": \"column\",\n    \"rightCostsWidth\": true,\n    \"rightWidth\": 300,\n    \"terminalWidth\": 736,\n    \"cols\": 92,\n    \"rows\": 49\n  },\n  {\n    \"requestedWidth\": 1024,\n    \"observedWidth\": 1024,\n    \"osClamped\": false,\n    \"cssWidth\": 1024,\n    \"devicePixelRatio\": 2,\n    \"left\": \"drawer\",\n    \"leftColumnWidth\": 176,\n    \"leftCostsWidth\": false,\n    \"right\": \"column\",\n    \"rightCostsWidth\": true,\n    \"rightWidth\": 300,\n    \"terminalWidth\": 480,\n    \"cols\": 60,\n    \"rows\": 49\n  },\n  {\n    \"requestedWidth\": 900,\n    \"observedWidth\": 900,\n    \"osClamped\": false,\n    \"cssWidth\": 900,\n    \"devicePixelRatio\": 2,\n    \"left\": \"drawer\",\n    \"leftColumnWidth\": 176,\n    \"leftCostsWidth\": false,\n    \"right\": \"column\",\n    \"rightCostsWidth\": true,\n    \"rightWidth\": 300,\n    \"terminalWidth\": 536,\n    \"cols\": 67,\n    \"rows\": 49\n  },\n  {\n    \"requestedWidth\": 768,\n    \"observedWidth\": 768,\n    \"osClamped\": false,\n    \"cssWidth\": 768,\n    \"devicePixelRatio\": 2,\n    \"left\": \"drawer\",\n    \"leftColumnWidth\": 176,\n    \"leftCostsWidth\": false,\n    \"right\": \"column\",\n    \"rightCostsWidth\": true,\n    \"rightWidth\": 300,\n    \"terminalWidth\": 536,\n    \"cols\": 67,\n    \"rows\": 49\n  },\n  {\n    \"requestedWidth\": 640,\n    \"observedWidth\": 640,\n    \"osClamped\": false,\n    \"cssWidth\": 640,\n    \"devicePixelRatio\": 2,\n    \"left\": \"drawer\",\n    \"leftColumnWidth\": 176,\n    \"leftCostsWidth\": false,\n    \"right\": \"overlay\",\n    \"rightCostsWidth\": false,\n    \"rightWidth\": 300,\n    \"terminalWidth\": 576,\n    \"cols\": 72,\n    \"rows\": 49\n  }\n]\n\nrequestAnimationFrame observed under automation: true. "
 }

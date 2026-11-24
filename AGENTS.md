@@ -1110,6 +1110,57 @@ e2e-03 的 mkdir/rename/delete 后续超时（服务器侧三步已确认真实�
 `SIGNED_PUBLIC_RELEASE_READY=NO`（签名/公证/updater 密钥 `BLOCKED_EXTERNAL`）。
 详见 `docs/design/terminal-next/21-sftp-integrity-rc-acceptance.md`。
 
+### SFTP GUI 闭合与并发完整性 🟡 分支 `fix/tn-sftp-gui-closure`
+
+基线 `main = e2a2e58`（PR #148 之后）。目标是关掉上一批记录的 SFTP GUI 未闭合项，
+并在并发、异常、慢网络下验证数据完整性。
+
+**一个 18 秒的脚手架开销伪装成了产品缺陷**
+
+`e2e-03` 的两个用例长期 FAIL。实测：`waitForClickable` **11 ms** 成功，紧跟的
+`elementClick` **18 010 ms** —— 一个按钮不可能「可点」却点 18 秒。根因是
+`@wdio/tauri-service` 的 `beforeCommand` 对 `$`/`$$`/`findElement`/`elementClick`
+用 `core.invoke` 问窗口状态，而本构建故意不装 `tauri-plugin-wdio`，每次等满 5 秒
+（一次运行 69 次）。在 `wdio.conf.mjs` 的 `before` 里调一次 `switchToWindow` 置位
+跳过标记即可。
+
+| 指标 | 改前 | 改后 |
+| --- | --- | --- |
+| `elementClick` | 18 010 ms | **6 ms** |
+| e2e-03 | 7 分 8 秒 / 2 失败 | **14 秒 / 11 项全过** |
+| 整个 GUI 套件 | ~30 分钟 | **2 分 08 秒** |
+
+没有改任何 `waitUntil` 超时、断言或点击目标。
+
+**T09 dock refresh**：当前 HEAD 不复现「遮挡 div」。命中测试在 1024/1440/2560 与缩放
+前后 `topmostIsSelf` 全为 `true`；真实 WebDriver 点击后 `__sftpLoadTrace` 增长且末条
+是 `listed <目录> -> 1 entries`。顺带确认 dock 宽度是 `DOCK_WIDTH = 300` 常量、**不可
+调整**，所以「在 400/600 px 测 dock」不是用户能做的操作。
+
+**T14 校验能被另一个传输的字节骗过（已修）**：A 写完开始哈希、B 覆盖同一路径，A 读到
+B 的内容却给自己发 `verified`。修复是**路径代次**快照（`sftp-transfer-path-generation.ts`），
+不是互斥——用户要的是能并发写。key 只有 `remotePath`：第一版含 `sessionId`，实测两个
+会话写同一路径时守卫不生效。
+
+**T13/T15**：7 + 7 项，各两个变异验证。篡改/断线在真实 sshd 上验证（8/8）；
+隐藏记录不释放 claim、不伪造取消。
+
+**T16**：`scripts/sftp-shaping-proxy.mjs` 用户态整形代理（无 root），自证 6/6；
+Rust 传输在 2 MiB/s + 20 ms 下 **8/8 通过**、字节完整性成立。不是 WAN 仿真——
+延迟是定时器、断流是 RST。
+
+**T12**：`BLOCKED_EXTERNAL`。`UI elements enabled: true` 但 System Events 对任何
+进程 `count of windows` = 0。三平台前置条件见报告 §八。
+
+**隐私**：证据的 `terminal` 与 `command` 两个字段从未走过脱敏，e2e-01/05 带着本机
+用户名入库。已补规则（提示符、home 路径）与覆盖（这两个字段），全量扫描 = 0 次。
+
+**门禁**：前端 325 文件 / 2998 项、`scripts/*.test.mjs` **810 项**、typecheck、
+ESLint、source-size 769、Rust 456、SFTP command-level 8/8、`cargo fmt`/`clippy` 干净、
+GUI 隔离 7/7。
+
+详见 `docs/design/terminal-next/22-sftp-gui-closure.md`。
+
 ### Credential Export / Import Preservation ✅ 已合入（PR #35 → `e710369`）
 
 独立于 Terminal Next 设计的一次修复：三条**现在就存在**的凭据引用关联丢失路径。

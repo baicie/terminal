@@ -1,0 +1,3054 @@
+{
+  "case": "t09-refresh-hit-test",
+  "verdict": "PASS",
+  "recordedAt": "2026-11-24T02:18:57.020Z",
+  "platform": {
+    "platform": "darwin",
+    "release": "24.6.0",
+    "arch": "arm64",
+    "node": "v24.16.0",
+    "osVersion": "Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103"
+  },
+  "source": {
+    "sha": "438261c8323486ffb85636afd916bd5dfb300d6d",
+    "branch": "fix/tn-sftp-gui-closure",
+    "dirty": true
+  },
+  "binary": {
+    "path": "src-tauri/target/release/terminal",
+    "sha256": "06691d4ff5c2984da8223c863ea0e0f4d938bb3b41ca0bdd0d46c140bc370291",
+    "bytes": 37206256
+  },
+  "window": null,
+  "terminal": null,
+  "command": null,
+  "screenshot": "e2e/gui/artifacts/t09-refresh-hit-test/screens/t09-refresh-hit-test-1795486736910.png",
+  "notes": "round trip (ms): {\"samples\":[1,1,1,1,2,2,2,3,3,4],\"median\":2,\"max\":4}\ndefault width: dock={\"contentWidth\":\"275\",\"panel\":{\"h\":832,\"w\":300,\"x\":1140,\"y\":44},\"panes\":{\"h\":776,\"w\":299,\"x\":1141,\"y\":100},\"presentation\":\"single\",\"railPressed\":\"true\"}\nrefresh: {\"centre\":{\"x\":1401,\"y\":223},\"present\":true,\"rect\":{\"bottom\":237,\"h\":28,\"left\":1387,\"right\":1415,\"top\":209,\"w\":28},\"self\":{\"display\":\"flex\",\"opacity\":\"1\",\"pointerEvents\":\"auto\",\"position\":\"static\",\"transform\":\"none\",\"visibility\":\"visible\",\"zIndex\":\"auto\"},\"stack\":[{\"cls\":\"cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap r\",\"isSelf\":true,\"opacity\":\"1\",\"overflow\":\"visible/visible\",\"pointerEvents\":\"auto\",\"position\":\"static\",\"rect\":{\"h\":28,\"w\":28,\"x\":1387,\"y\":209},\"role\":null,\"state\":null,\"tag\":\"button\",\"testid\":\"sftp-remote-refresh\",\"transform\":\"none\",\"visibility\":\"visible\",\"zIndex\":\"auto\"},{\"cls\":\"shrink-0 px-3 py-2 bg-secondary/40 border-b border-border/50 flex items-center g\",\"isSelf\":false,\"opacity\":\"1\",\"overflow\":\"visible/visible\",\"pointerEvents\":\"auto\",\"position\":\"static\",\"rect\":{\"h\":45,\"w\":273,\"x\":1154,\"y\":201},\"role\":null,\"state\":null,\"tag\":\"div\",\"testid\":null,\"transform\":\"none\",\"visibility\":\"visible\",\"zIndex\":\"auto\"},{\"cls\":\"flex flex-col h-full border border-border/50 rounded-lg overflow-hidden bg-card\",\"isSelf\":false,\"opacity\":\"1\",\"overflow\":\"hidden/hidden\",\"pointerEvents\":\"auto\",\"position\":\"static\",\"rect\":{\"h\":664,\"w\":275,\"x\":1153,\"y\":200},\"role\":null,\"state\":null,\"tag\":\"div\",\"testid\":null,\"transform\":\"none\",\"visibility\":\"visible\",\"zIndex\":\"auto\"},{\"cls\":\"flex-1 min-w-0 flex flex-col gap-2\",\"isSelf\":false,\"opacity\":\"1\",\"overflow\":\"visible/visible\",\"pointerEvents\":\"auto\",\"position\":\"static\",\"rect\":{\"h\":700,\"w\":275,\"x\":1153,\"y\":164},\"role\":null,\"state\":null,\"tag\":\"div\",\"testid\":\"sftp-pane-remote\",\"transform\":\"none\",\"visibility\":\"visible\",\"zIndex\":\"auto\"},{\"cls\":\"p-3 flex gap-3 h-full overflow-hidden flex-col\",\"isSelf\":false,\"opacity\":\"1\",\"overflow\":\"hidden/hidden\",\"pointerEvents\":\"auto\",\"position\":\"static\",\"rect\":{\"h\":776,\"w\":299,\"x\":1141,\"y\":100},\"role\":null,\"state\":null,\"tag\":\"div\",\"testid\":\"sftp-file-panes\",\"transform\":\"none\",\"visibility\":\"visible\",\"zIndex\":\"auto\"},{\"cls\":\"flex-1 overflow-auto h-full\",\"isSelf\":false,\"opacity\":\"1\",\"overflow\":\"auto/auto\",\"pointerEvents\":\"auto\",\"position\":\"static\",\"rect\":{\"h\":776,\"w\":299,\"x\":1141,\"y\":100},\"role\":null,\"state\":null,\"tag\":\"div\",\"testid\":null,\"transform\":\"none\",\"visibility\":\"visible\",\"zIndex\":\"auto\"}],\"topmostIsSelf\":true}\nwindow 1024: dockW=300 presentation=single contentW=275 topmostIsSelf=true\nwindow 1440: dockW=300 presentation=single contentW=275 topmostIsSelf=true\nwindow 2560: dockW=300 presentation=single contentW=275 topmostIsSelf=true\nfull window: {\"bottom\":237,\"h\":28,\"left\":1867,\"right\":1895,\"top\":209,\"w\":28}\nresize: {\"before\":{\"bottom\":237,\"h\":28,\"left\":1387,\"right\":1415,\"top\":209,\"w\":28},\"shrunk\":{\"bottom\":237,\"h\":28,\"left\":1227,\"right\":1255,\"top\":209,\"w\":28},\"restored\":{\"bottom\":237,\"h\":28,\"left\":1387,\"right\":1415,\"top\":209,\"w\":28},\"sameTopmost\":true}\nreal click: before={\"rows\":4,\"traceLen\":2} after={\"last\":\"listed /private/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-sftp-10jMJ1/remote -> 4 entries\",\"rows\":4,\"traceLen\":4}\nhit test says the button IS the topmost node at both widths — the failure WebDriver reported is a scaffolding coordinate problem, not occlusion",
+  "extra": {
+    "measurements": {
+      "roundTrip": {
+        "samples": [
+          1,
+          1,
+          1,
+          1,
+          2,
+          2,
+          2,
+          3,
+          3,
+          4
+        ],
+        "median": 2,
+        "max": 4
+      },
+      "dock": {
+        "contentWidth": "275",
+        "panel": {
+          "h": 832,
+          "w": 300,
+          "x": 1140,
+          "y": 44
+        },
+        "panes": {
+          "h": 776,
+          "w": 299,
+          "x": 1141,
+          "y": 100
+        },
+        "presentation": "single",
+        "railPressed": "true"
+      },
+      "residue": {
+        "path": "/terminal?tab=remote-1795486725501",
+        "portals": [
+          {
+            "cls": "cursor-pointer inline-flex items-center whitespace-nowrap text-sm tran",
+            "opacity": "1",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 32,
+              "w": 60,
+              "x": 137,
+              "y": 6
+            },
+            "role": "tab",
+            "state": "closed",
+            "tag": "button",
+            "testid": null,
+            "zIndex": "auto"
+          },
+          {
+            "cls": "cursor-pointer inline-flex items-center whitespace-nowrap text-sm tran",
+            "opacity": "1",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 32,
+              "w": 89,
+              "x": 231,
+              "y": 6
+            },
+            "role": "tab",
+            "state": "closed",
+            "tag": "button",
+            "testid": null,
+            "zIndex": "auto"
+          },
+          {
+            "cls": "cursor-pointer inline-flex items-center justify-center whitespace-nowr",
+            "opacity": "1",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 32,
+              "w": 85,
+              "x": 1237,
+              "y": 6
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "button",
+            "testid": null,
+            "zIndex": "auto"
+          },
+          {
+            "cls": "cursor-pointer inline-flex items-center justify-center whitespace-nowr",
+            "opacity": "1",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 32,
+              "w": 70,
+              "x": 1324,
+              "y": 6
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "button",
+            "testid": null,
+            "zIndex": "auto"
+          },
+          {
+            "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+            "opacity": "1",
+            "pointerEvents": "auto",
+            "position": "relative",
+            "rect": {
+              "h": 32,
+              "w": 32,
+              "x": 1396,
+              "y": 6
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "button",
+            "testid": null,
+            "zIndex": "auto"
+          },
+          {
+            "cls": "flex size-9 items-center justify-center rounded-md transition-colors h",
+            "opacity": "1",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 36,
+              "w": 36,
+              "x": 5,
+              "y": 52
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "button",
+            "testid": "rail-terminal",
+            "zIndex": "auto"
+          },
+          {
+            "cls": "flex size-9 items-center justify-center rounded-md transition-colors t",
+            "opacity": "1",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 36,
+              "w": 36,
+              "x": 5,
+              "y": 92
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "button",
+            "testid": "rail-connections",
+            "zIndex": "auto"
+          },
+          {
+            "cls": "flex size-9 items-center justify-center rounded-md transition-colors h",
+            "opacity": "1",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 36,
+              "w": 36,
+              "x": 5,
+              "y": 132
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "button",
+            "testid": "rail-sftp",
+            "zIndex": "auto"
+          },
+          {
+            "cls": "({isActive:e})=>k(Y(),e&&`bg-secondary text-foreground`)",
+            "opacity": "1",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 20,
+              "w": 20,
+              "x": 13,
+              "y": 185
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "a",
+            "testid": "rail-hosts",
+            "zIndex": "auto"
+          },
+          {
+            "cls": "({isActive:e})=>k(Y(),e&&`bg-secondary text-foreground`)",
+            "opacity": "1",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 20,
+              "w": 20,
+              "x": 13,
+              "y": 209
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "a",
+            "testid": "rail-keychain",
+            "zIndex": "auto"
+          },
+          {
+            "cls": "({isActive:e})=>k(Y(),e&&`bg-secondary text-foreground`)",
+            "opacity": "1",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 20,
+              "w": 20,
+              "x": 13,
+              "y": 233
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "a",
+            "testid": "rail-snippets",
+            "zIndex": "auto"
+          },
+          {
+            "cls": "({isActive:e})=>k(Y(),e&&`bg-secondary text-foreground`)",
+            "opacity": "1",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 20,
+              "w": 20,
+              "x": 13,
+              "y": 257
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "a",
+            "testid": "rail-port-forward",
+            "zIndex": "auto"
+          },
+          {
+            "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+            "opacity": "1",
+            "pointerEvents": "none",
+            "position": "static",
+            "rect": {
+              "h": 28,
+              "w": 28,
+              "x": 973,
+              "y": 48
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "button",
+            "testid": null,
+            "zIndex": "auto"
+          },
+          {
+            "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+            "opacity": "1",
+            "pointerEvents": "none",
+            "position": "static",
+            "rect": {
+              "h": 28,
+              "w": 28,
+              "x": 1003,
+              "y": 48
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "button",
+            "testid": null,
+            "zIndex": "auto"
+          },
+          {
+            "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+            "opacity": "1",
+            "pointerEvents": "none",
+            "position": "static",
+            "rect": {
+              "h": 28,
+              "w": 28,
+              "x": 1033,
+              "y": 48
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "button",
+            "testid": null,
+            "zIndex": "auto"
+          },
+          {
+            "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+            "opacity": "1",
+            "pointerEvents": "none",
+            "position": "static",
+            "rect": {
+              "h": 28,
+              "w": 28,
+              "x": 1063,
+              "y": 48
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "button",
+            "testid": null,
+            "zIndex": "auto"
+          },
+          {
+            "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+            "opacity": "1",
+            "pointerEvents": "none",
+            "position": "static",
+            "rect": {
+              "h": 32,
+              "w": 32,
+              "x": 1099,
+              "y": 46
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "button",
+            "testid": null,
+            "zIndex": "auto"
+          },
+          {
+            "cls": "absolute inset-0 overflow-hidden focus-visible:outline-none focus-visi",
+            "opacity": "1",
+            "pointerEvents": "none",
+            "position": "absolute",
+            "rect": {
+              "h": 796,
+              "w": 1093,
+              "x": 46,
+              "y": 80
+            },
+            "role": "application",
+            "state": "closed",
+            "tag": "div",
+            "testid": null,
+            "zIndex": "auto"
+          },
+          {
+            "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+            "opacity": "1",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 28,
+              "w": 28,
+              "x": 973,
+              "y": 48
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "button",
+            "testid": null,
+            "zIndex": "auto"
+          },
+          {
+            "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+            "opacity": "1",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 28,
+              "w": 28,
+              "x": 1003,
+              "y": 48
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "button",
+            "testid": null,
+            "zIndex": "auto"
+          },
+          {
+            "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+            "opacity": "1",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 28,
+              "w": 28,
+              "x": 1033,
+              "y": 48
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "button",
+            "testid": null,
+            "zIndex": "auto"
+          },
+          {
+            "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+            "opacity": "1",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 28,
+              "w": 28,
+              "x": 1063,
+              "y": 48
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "button",
+            "testid": null,
+            "zIndex": "auto"
+          },
+          {
+            "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+            "opacity": "1",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 32,
+              "w": 32,
+              "x": 1099,
+              "y": 46
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "button",
+            "testid": null,
+            "zIndex": "auto"
+          },
+          {
+            "cls": "absolute inset-0 overflow-hidden focus-visible:outline-none focus-visi",
+            "opacity": "1",
+            "pointerEvents": "auto",
+            "position": "absolute",
+            "rect": {
+              "h": 796,
+              "w": 1093,
+              "x": 46,
+              "y": 80
+            },
+            "role": "application",
+            "state": "closed",
+            "tag": "div",
+            "testid": null,
+            "zIndex": "auto"
+          },
+          {
+            "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+            "opacity": "0",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 24,
+              "w": 24,
+              "x": 1391,
+              "y": 333
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "button",
+            "testid": "file-row-actions",
+            "zIndex": "auto"
+          },
+          {
+            "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+            "opacity": "0",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 24,
+              "w": 24,
+              "x": 1391,
+              "y": 379
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "button",
+            "testid": "file-row-actions",
+            "zIndex": "auto"
+          },
+          {
+            "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+            "opacity": "0",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 24,
+              "w": 24,
+              "x": 1391,
+              "y": 425
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "button",
+            "testid": "file-row-actions",
+            "zIndex": "auto"
+          },
+          {
+            "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+            "opacity": "0",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 24,
+              "w": 24,
+              "x": 1391,
+              "y": 471
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "button",
+            "testid": "file-row-actions",
+            "zIndex": "auto"
+          },
+          {
+            "cls": "",
+            "opacity": "1",
+            "pointerEvents": "auto",
+            "position": "fixed",
+            "rect": {
+              "h": 28,
+              "w": 57,
+              "x": 43,
+              "y": 181
+            },
+            "role": null,
+            "state": null,
+            "tag": "div",
+            "testid": null,
+            "zIndex": "50"
+          },
+          {
+            "cls": "z-50 w-fit origin-(--radix-tooltip-content-transform-origin) animate-i",
+            "opacity": "1",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 28,
+              "w": 57,
+              "x": 43,
+              "y": 181
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "div",
+            "testid": null,
+            "zIndex": "50"
+          }
+        ],
+        "viewport": {
+          "dpr": 2,
+          "h": 900,
+          "w": 1440
+        }
+      },
+      "refresh": {
+        "centre": {
+          "x": 1401,
+          "y": 223
+        },
+        "present": true,
+        "rect": {
+          "bottom": 237,
+          "h": 28,
+          "left": 1387,
+          "right": 1415,
+          "top": 209,
+          "w": 28
+        },
+        "self": {
+          "display": "flex",
+          "opacity": "1",
+          "pointerEvents": "auto",
+          "position": "static",
+          "transform": "none",
+          "visibility": "visible",
+          "zIndex": "auto"
+        },
+        "stack": [
+          {
+            "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap r",
+            "isSelf": true,
+            "opacity": "1",
+            "overflow": "visible/visible",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 28,
+              "w": 28,
+              "x": 1387,
+              "y": 209
+            },
+            "role": null,
+            "state": null,
+            "tag": "button",
+            "testid": "sftp-remote-refresh",
+            "transform": "none",
+            "visibility": "visible",
+            "zIndex": "auto"
+          },
+          {
+            "cls": "shrink-0 px-3 py-2 bg-secondary/40 border-b border-border/50 flex items-center g",
+            "isSelf": false,
+            "opacity": "1",
+            "overflow": "visible/visible",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 45,
+              "w": 273,
+              "x": 1154,
+              "y": 201
+            },
+            "role": null,
+            "state": null,
+            "tag": "div",
+            "testid": null,
+            "transform": "none",
+            "visibility": "visible",
+            "zIndex": "auto"
+          },
+          {
+            "cls": "flex flex-col h-full border border-border/50 rounded-lg overflow-hidden bg-card",
+            "isSelf": false,
+            "opacity": "1",
+            "overflow": "hidden/hidden",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 664,
+              "w": 275,
+              "x": 1153,
+              "y": 200
+            },
+            "role": null,
+            "state": null,
+            "tag": "div",
+            "testid": null,
+            "transform": "none",
+            "visibility": "visible",
+            "zIndex": "auto"
+          },
+          {
+            "cls": "flex-1 min-w-0 flex flex-col gap-2",
+            "isSelf": false,
+            "opacity": "1",
+            "overflow": "visible/visible",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 700,
+              "w": 275,
+              "x": 1153,
+              "y": 164
+            },
+            "role": null,
+            "state": null,
+            "tag": "div",
+            "testid": "sftp-pane-remote",
+            "transform": "none",
+            "visibility": "visible",
+            "zIndex": "auto"
+          },
+          {
+            "cls": "p-3 flex gap-3 h-full overflow-hidden flex-col",
+            "isSelf": false,
+            "opacity": "1",
+            "overflow": "hidden/hidden",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 776,
+              "w": 299,
+              "x": 1141,
+              "y": 100
+            },
+            "role": null,
+            "state": null,
+            "tag": "div",
+            "testid": "sftp-file-panes",
+            "transform": "none",
+            "visibility": "visible",
+            "zIndex": "auto"
+          },
+          {
+            "cls": "flex-1 overflow-auto h-full",
+            "isSelf": false,
+            "opacity": "1",
+            "overflow": "auto/auto",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 776,
+              "w": 299,
+              "x": 1141,
+              "y": 100
+            },
+            "role": null,
+            "state": null,
+            "tag": "div",
+            "testid": null,
+            "transform": "none",
+            "visibility": "visible",
+            "zIndex": "auto"
+          }
+        ],
+        "topmostIsSelf": true
+      },
+      "widths": {
+        "1024": {
+          "dock": {
+            "contentWidth": "275",
+            "panel": {
+              "h": 832,
+              "w": 300,
+              "x": 724,
+              "y": 44
+            },
+            "panes": {
+              "h": 776,
+              "w": 299,
+              "x": 725,
+              "y": 100
+            },
+            "presentation": "single",
+            "railPressed": "true"
+          },
+          "refresh": {
+            "centre": {
+              "x": 985,
+              "y": 223
+            },
+            "present": true,
+            "rect": {
+              "bottom": 237,
+              "h": 28,
+              "left": 971,
+              "right": 999,
+              "top": 209,
+              "w": 28
+            },
+            "self": {
+              "display": "flex",
+              "opacity": "1",
+              "pointerEvents": "auto",
+              "position": "static",
+              "transform": "none",
+              "visibility": "visible",
+              "zIndex": "auto"
+            },
+            "stack": [
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap r",
+                "isSelf": true,
+                "opacity": "1",
+                "overflow": "visible/visible",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 971,
+                  "y": 209
+                },
+                "role": null,
+                "state": null,
+                "tag": "button",
+                "testid": "sftp-remote-refresh",
+                "transform": "none",
+                "visibility": "visible",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "shrink-0 px-3 py-2 bg-secondary/40 border-b border-border/50 flex items-center g",
+                "isSelf": false,
+                "opacity": "1",
+                "overflow": "visible/visible",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 45,
+                  "w": 273,
+                  "x": 738,
+                  "y": 201
+                },
+                "role": null,
+                "state": null,
+                "tag": "div",
+                "testid": null,
+                "transform": "none",
+                "visibility": "visible",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "flex flex-col h-full border border-border/50 rounded-lg overflow-hidden bg-card",
+                "isSelf": false,
+                "opacity": "1",
+                "overflow": "hidden/hidden",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 664,
+                  "w": 275,
+                  "x": 737,
+                  "y": 200
+                },
+                "role": null,
+                "state": null,
+                "tag": "div",
+                "testid": null,
+                "transform": "none",
+                "visibility": "visible",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "flex-1 min-w-0 flex flex-col gap-2",
+                "isSelf": false,
+                "opacity": "1",
+                "overflow": "visible/visible",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 700,
+                  "w": 275,
+                  "x": 737,
+                  "y": 164
+                },
+                "role": null,
+                "state": null,
+                "tag": "div",
+                "testid": "sftp-pane-remote",
+                "transform": "none",
+                "visibility": "visible",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "p-3 flex gap-3 h-full overflow-hidden flex-col",
+                "isSelf": false,
+                "opacity": "1",
+                "overflow": "hidden/hidden",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 776,
+                  "w": 299,
+                  "x": 725,
+                  "y": 100
+                },
+                "role": null,
+                "state": null,
+                "tag": "div",
+                "testid": "sftp-file-panes",
+                "transform": "none",
+                "visibility": "visible",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "flex-1 overflow-auto h-full",
+                "isSelf": false,
+                "opacity": "1",
+                "overflow": "auto/auto",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 776,
+                  "w": 299,
+                  "x": 725,
+                  "y": 100
+                },
+                "role": null,
+                "state": null,
+                "tag": "div",
+                "testid": null,
+                "transform": "none",
+                "visibility": "visible",
+                "zIndex": "auto"
+              }
+            ],
+            "topmostIsSelf": true
+          },
+          "residue": {
+            "path": "/terminal?tab=remote-1795486725501",
+            "portals": [
+              {
+                "cls": "cursor-pointer inline-flex items-center whitespace-nowrap text-sm tran",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 32,
+                  "w": 60,
+                  "x": 137,
+                  "y": 6
+                },
+                "role": "tab",
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center whitespace-nowrap text-sm tran",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 32,
+                  "w": 89,
+                  "x": 231,
+                  "y": 6
+                },
+                "role": "tab",
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center whitespace-nowr",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 32,
+                  "w": 85,
+                  "x": 821,
+                  "y": 6
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center whitespace-nowr",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 32,
+                  "w": 70,
+                  "x": 908,
+                  "y": 6
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "relative",
+                "rect": {
+                  "h": 32,
+                  "w": 32,
+                  "x": 980,
+                  "y": 6
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "flex size-9 items-center justify-center rounded-md transition-colors h",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 36,
+                  "w": 36,
+                  "x": 5,
+                  "y": 52
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "rail-terminal",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "flex size-9 items-center justify-center rounded-md transition-colors t",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 36,
+                  "w": 36,
+                  "x": 5,
+                  "y": 92
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "rail-connections",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "flex size-9 items-center justify-center rounded-md transition-colors h",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 36,
+                  "w": 36,
+                  "x": 5,
+                  "y": 132
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "rail-sftp",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "({isActive:e})=>k(Y(),e&&`bg-secondary text-foreground`)",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 20,
+                  "w": 20,
+                  "x": 13,
+                  "y": 185
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "a",
+                "testid": "rail-hosts",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "({isActive:e})=>k(Y(),e&&`bg-secondary text-foreground`)",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 20,
+                  "w": 20,
+                  "x": 13,
+                  "y": 209
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "a",
+                "testid": "rail-keychain",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "({isActive:e})=>k(Y(),e&&`bg-secondary text-foreground`)",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 20,
+                  "w": 20,
+                  "x": 13,
+                  "y": 233
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "a",
+                "testid": "rail-snippets",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "({isActive:e})=>k(Y(),e&&`bg-secondary text-foreground`)",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 20,
+                  "w": 20,
+                  "x": 13,
+                  "y": 257
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "a",
+                "testid": "rail-port-forward",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "none",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 557,
+                  "y": 48
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "none",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 587,
+                  "y": 48
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "none",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 617,
+                  "y": 48
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "none",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 647,
+                  "y": 48
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "none",
+                "position": "static",
+                "rect": {
+                  "h": 32,
+                  "w": 32,
+                  "x": 683,
+                  "y": 46
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "absolute inset-0 overflow-hidden focus-visible:outline-none focus-visi",
+                "opacity": "1",
+                "pointerEvents": "none",
+                "position": "absolute",
+                "rect": {
+                  "h": 796,
+                  "w": 677,
+                  "x": 46,
+                  "y": 80
+                },
+                "role": "application",
+                "state": "closed",
+                "tag": "div",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 557,
+                  "y": 48
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 587,
+                  "y": 48
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 617,
+                  "y": 48
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 647,
+                  "y": 48
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 32,
+                  "w": 32,
+                  "x": 683,
+                  "y": 46
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "absolute inset-0 overflow-hidden focus-visible:outline-none focus-visi",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "absolute",
+                "rect": {
+                  "h": 796,
+                  "w": 677,
+                  "x": 46,
+                  "y": 80
+                },
+                "role": "application",
+                "state": "closed",
+                "tag": "div",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "0",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 24,
+                  "w": 24,
+                  "x": 975,
+                  "y": 333
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "file-row-actions",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "0",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 24,
+                  "w": 24,
+                  "x": 975,
+                  "y": 379
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "file-row-actions",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "0",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 24,
+                  "w": 24,
+                  "x": 975,
+                  "y": 425
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "file-row-actions",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "0",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 24,
+                  "w": 24,
+                  "x": 975,
+                  "y": 471
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "file-row-actions",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "fixed",
+                "rect": {
+                  "h": 28,
+                  "w": 57,
+                  "x": 43,
+                  "y": 181
+                },
+                "role": null,
+                "state": null,
+                "tag": "div",
+                "testid": null,
+                "zIndex": "50"
+              },
+              {
+                "cls": "z-50 w-fit origin-(--radix-tooltip-content-transform-origin) animate-i",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 57,
+                  "x": 43,
+                  "y": 181
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "div",
+                "testid": null,
+                "zIndex": "50"
+              }
+            ],
+            "viewport": {
+              "dpr": 2,
+              "h": 900,
+              "w": 1024
+            }
+          }
+        },
+        "1440": {
+          "dock": {
+            "contentWidth": "275",
+            "panel": {
+              "h": 832,
+              "w": 300,
+              "x": 1140,
+              "y": 44
+            },
+            "panes": {
+              "h": 776,
+              "w": 299,
+              "x": 1141,
+              "y": 100
+            },
+            "presentation": "single",
+            "railPressed": "true"
+          },
+          "refresh": {
+            "centre": {
+              "x": 1401,
+              "y": 223
+            },
+            "present": true,
+            "rect": {
+              "bottom": 237,
+              "h": 28,
+              "left": 1387,
+              "right": 1415,
+              "top": 209,
+              "w": 28
+            },
+            "self": {
+              "display": "flex",
+              "opacity": "1",
+              "pointerEvents": "auto",
+              "position": "static",
+              "transform": "none",
+              "visibility": "visible",
+              "zIndex": "auto"
+            },
+            "stack": [
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap r",
+                "isSelf": true,
+                "opacity": "1",
+                "overflow": "visible/visible",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 1387,
+                  "y": 209
+                },
+                "role": null,
+                "state": null,
+                "tag": "button",
+                "testid": "sftp-remote-refresh",
+                "transform": "none",
+                "visibility": "visible",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "shrink-0 px-3 py-2 bg-secondary/40 border-b border-border/50 flex items-center g",
+                "isSelf": false,
+                "opacity": "1",
+                "overflow": "visible/visible",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 45,
+                  "w": 273,
+                  "x": 1154,
+                  "y": 201
+                },
+                "role": null,
+                "state": null,
+                "tag": "div",
+                "testid": null,
+                "transform": "none",
+                "visibility": "visible",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "flex flex-col h-full border border-border/50 rounded-lg overflow-hidden bg-card",
+                "isSelf": false,
+                "opacity": "1",
+                "overflow": "hidden/hidden",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 664,
+                  "w": 275,
+                  "x": 1153,
+                  "y": 200
+                },
+                "role": null,
+                "state": null,
+                "tag": "div",
+                "testid": null,
+                "transform": "none",
+                "visibility": "visible",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "flex-1 min-w-0 flex flex-col gap-2",
+                "isSelf": false,
+                "opacity": "1",
+                "overflow": "visible/visible",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 700,
+                  "w": 275,
+                  "x": 1153,
+                  "y": 164
+                },
+                "role": null,
+                "state": null,
+                "tag": "div",
+                "testid": "sftp-pane-remote",
+                "transform": "none",
+                "visibility": "visible",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "p-3 flex gap-3 h-full overflow-hidden flex-col",
+                "isSelf": false,
+                "opacity": "1",
+                "overflow": "hidden/hidden",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 776,
+                  "w": 299,
+                  "x": 1141,
+                  "y": 100
+                },
+                "role": null,
+                "state": null,
+                "tag": "div",
+                "testid": "sftp-file-panes",
+                "transform": "none",
+                "visibility": "visible",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "flex-1 overflow-auto h-full",
+                "isSelf": false,
+                "opacity": "1",
+                "overflow": "auto/auto",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 776,
+                  "w": 299,
+                  "x": 1141,
+                  "y": 100
+                },
+                "role": null,
+                "state": null,
+                "tag": "div",
+                "testid": null,
+                "transform": "none",
+                "visibility": "visible",
+                "zIndex": "auto"
+              }
+            ],
+            "topmostIsSelf": true
+          },
+          "residue": {
+            "path": "/terminal?tab=remote-1795486725501",
+            "portals": [
+              {
+                "cls": "cursor-pointer inline-flex items-center whitespace-nowrap text-sm tran",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 32,
+                  "w": 60,
+                  "x": 137,
+                  "y": 6
+                },
+                "role": "tab",
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center whitespace-nowrap text-sm tran",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 32,
+                  "w": 89,
+                  "x": 231,
+                  "y": 6
+                },
+                "role": "tab",
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center whitespace-nowr",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 32,
+                  "w": 85,
+                  "x": 1237,
+                  "y": 6
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center whitespace-nowr",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 32,
+                  "w": 70,
+                  "x": 1324,
+                  "y": 6
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "relative",
+                "rect": {
+                  "h": 32,
+                  "w": 32,
+                  "x": 1396,
+                  "y": 6
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "flex size-9 items-center justify-center rounded-md transition-colors h",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 36,
+                  "w": 36,
+                  "x": 5,
+                  "y": 52
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "rail-terminal",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "flex size-9 items-center justify-center rounded-md transition-colors t",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 36,
+                  "w": 36,
+                  "x": 5,
+                  "y": 92
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "rail-connections",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "flex size-9 items-center justify-center rounded-md transition-colors h",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 36,
+                  "w": 36,
+                  "x": 5,
+                  "y": 132
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "rail-sftp",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "({isActive:e})=>k(Y(),e&&`bg-secondary text-foreground`)",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 20,
+                  "w": 20,
+                  "x": 13,
+                  "y": 185
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "a",
+                "testid": "rail-hosts",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "({isActive:e})=>k(Y(),e&&`bg-secondary text-foreground`)",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 20,
+                  "w": 20,
+                  "x": 13,
+                  "y": 209
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "a",
+                "testid": "rail-keychain",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "({isActive:e})=>k(Y(),e&&`bg-secondary text-foreground`)",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 20,
+                  "w": 20,
+                  "x": 13,
+                  "y": 233
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "a",
+                "testid": "rail-snippets",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "({isActive:e})=>k(Y(),e&&`bg-secondary text-foreground`)",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 20,
+                  "w": 20,
+                  "x": 13,
+                  "y": 257
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "a",
+                "testid": "rail-port-forward",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "none",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 973,
+                  "y": 48
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "none",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 1003,
+                  "y": 48
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "none",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 1033,
+                  "y": 48
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "none",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 1063,
+                  "y": 48
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "none",
+                "position": "static",
+                "rect": {
+                  "h": 32,
+                  "w": 32,
+                  "x": 1099,
+                  "y": 46
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "absolute inset-0 overflow-hidden focus-visible:outline-none focus-visi",
+                "opacity": "1",
+                "pointerEvents": "none",
+                "position": "absolute",
+                "rect": {
+                  "h": 796,
+                  "w": 1093,
+                  "x": 46,
+                  "y": 80
+                },
+                "role": "application",
+                "state": "closed",
+                "tag": "div",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 973,
+                  "y": 48
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 1003,
+                  "y": 48
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 1033,
+                  "y": 48
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 1063,
+                  "y": 48
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 32,
+                  "w": 32,
+                  "x": 1099,
+                  "y": 46
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "absolute inset-0 overflow-hidden focus-visible:outline-none focus-visi",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "absolute",
+                "rect": {
+                  "h": 796,
+                  "w": 1093,
+                  "x": 46,
+                  "y": 80
+                },
+                "role": "application",
+                "state": "closed",
+                "tag": "div",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "0",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 24,
+                  "w": 24,
+                  "x": 1391,
+                  "y": 333
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "file-row-actions",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "0",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 24,
+                  "w": 24,
+                  "x": 1391,
+                  "y": 379
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "file-row-actions",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "0",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 24,
+                  "w": 24,
+                  "x": 1391,
+                  "y": 425
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "file-row-actions",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "0",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 24,
+                  "w": 24,
+                  "x": 1391,
+                  "y": 471
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "file-row-actions",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "fixed",
+                "rect": {
+                  "h": 28,
+                  "w": 57,
+                  "x": 43,
+                  "y": 181
+                },
+                "role": null,
+                "state": null,
+                "tag": "div",
+                "testid": null,
+                "zIndex": "50"
+              },
+              {
+                "cls": "z-50 w-fit origin-(--radix-tooltip-content-transform-origin) animate-i",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 57,
+                  "x": 43,
+                  "y": 181
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "div",
+                "testid": null,
+                "zIndex": "50"
+              }
+            ],
+            "viewport": {
+              "dpr": 2,
+              "h": 900,
+              "w": 1440
+            }
+          }
+        },
+        "2560": {
+          "dock": {
+            "contentWidth": "275",
+            "panel": {
+              "h": 832,
+              "w": 300,
+              "x": 2260,
+              "y": 44
+            },
+            "panes": {
+              "h": 776,
+              "w": 299,
+              "x": 2261,
+              "y": 100
+            },
+            "presentation": "single",
+            "railPressed": "true"
+          },
+          "refresh": {
+            "centre": {
+              "x": 2521,
+              "y": 223
+            },
+            "present": true,
+            "rect": {
+              "bottom": 237,
+              "h": 28,
+              "left": 2507,
+              "right": 2535,
+              "top": 209,
+              "w": 28
+            },
+            "self": {
+              "display": "flex",
+              "opacity": "1",
+              "pointerEvents": "auto",
+              "position": "static",
+              "transform": "none",
+              "visibility": "visible",
+              "zIndex": "auto"
+            },
+            "stack": [
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap r",
+                "isSelf": true,
+                "opacity": "1",
+                "overflow": "visible/visible",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 2507,
+                  "y": 209
+                },
+                "role": null,
+                "state": null,
+                "tag": "button",
+                "testid": "sftp-remote-refresh",
+                "transform": "none",
+                "visibility": "visible",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "shrink-0 px-3 py-2 bg-secondary/40 border-b border-border/50 flex items-center g",
+                "isSelf": false,
+                "opacity": "1",
+                "overflow": "visible/visible",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 45,
+                  "w": 273,
+                  "x": 2274,
+                  "y": 201
+                },
+                "role": null,
+                "state": null,
+                "tag": "div",
+                "testid": null,
+                "transform": "none",
+                "visibility": "visible",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "flex flex-col h-full border border-border/50 rounded-lg overflow-hidden bg-card",
+                "isSelf": false,
+                "opacity": "1",
+                "overflow": "hidden/hidden",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 664,
+                  "w": 275,
+                  "x": 2273,
+                  "y": 200
+                },
+                "role": null,
+                "state": null,
+                "tag": "div",
+                "testid": null,
+                "transform": "none",
+                "visibility": "visible",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "flex-1 min-w-0 flex flex-col gap-2",
+                "isSelf": false,
+                "opacity": "1",
+                "overflow": "visible/visible",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 700,
+                  "w": 275,
+                  "x": 2273,
+                  "y": 164
+                },
+                "role": null,
+                "state": null,
+                "tag": "div",
+                "testid": "sftp-pane-remote",
+                "transform": "none",
+                "visibility": "visible",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "p-3 flex gap-3 h-full overflow-hidden flex-col",
+                "isSelf": false,
+                "opacity": "1",
+                "overflow": "hidden/hidden",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 776,
+                  "w": 299,
+                  "x": 2261,
+                  "y": 100
+                },
+                "role": null,
+                "state": null,
+                "tag": "div",
+                "testid": "sftp-file-panes",
+                "transform": "none",
+                "visibility": "visible",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "flex-1 overflow-auto h-full",
+                "isSelf": false,
+                "opacity": "1",
+                "overflow": "auto/auto",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 776,
+                  "w": 299,
+                  "x": 2261,
+                  "y": 100
+                },
+                "role": null,
+                "state": null,
+                "tag": "div",
+                "testid": null,
+                "transform": "none",
+                "visibility": "visible",
+                "zIndex": "auto"
+              }
+            ],
+            "topmostIsSelf": true
+          },
+          "residue": {
+            "path": "/terminal?tab=remote-1795486725501",
+            "portals": [
+              {
+                "cls": "cursor-pointer inline-flex items-center whitespace-nowrap text-sm tran",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 32,
+                  "w": 60,
+                  "x": 137,
+                  "y": 6
+                },
+                "role": "tab",
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center whitespace-nowrap text-sm tran",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 32,
+                  "w": 89,
+                  "x": 231,
+                  "y": 6
+                },
+                "role": "tab",
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center whitespace-nowr",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 32,
+                  "w": 85,
+                  "x": 2357,
+                  "y": 6
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center whitespace-nowr",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 32,
+                  "w": 70,
+                  "x": 2444,
+                  "y": 6
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "relative",
+                "rect": {
+                  "h": 32,
+                  "w": 32,
+                  "x": 2516,
+                  "y": 6
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "flex size-9 items-center justify-center rounded-md transition-colors h",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 36,
+                  "w": 36,
+                  "x": 5,
+                  "y": 52
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "rail-terminal",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "flex size-9 items-center justify-center rounded-md transition-colors t",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 36,
+                  "w": 36,
+                  "x": 5,
+                  "y": 92
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "rail-connections",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "flex size-9 items-center justify-center rounded-md transition-colors h",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 36,
+                  "w": 36,
+                  "x": 5,
+                  "y": 132
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "rail-sftp",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "({isActive:e})=>k(Y(),e&&`bg-secondary text-foreground`)",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 20,
+                  "w": 20,
+                  "x": 13,
+                  "y": 185
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "a",
+                "testid": "rail-hosts",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "({isActive:e})=>k(Y(),e&&`bg-secondary text-foreground`)",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 20,
+                  "w": 20,
+                  "x": 13,
+                  "y": 209
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "a",
+                "testid": "rail-keychain",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "({isActive:e})=>k(Y(),e&&`bg-secondary text-foreground`)",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 20,
+                  "w": 20,
+                  "x": 13,
+                  "y": 233
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "a",
+                "testid": "rail-snippets",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "({isActive:e})=>k(Y(),e&&`bg-secondary text-foreground`)",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 20,
+                  "w": 20,
+                  "x": 13,
+                  "y": 257
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "a",
+                "testid": "rail-port-forward",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "none",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 2093,
+                  "y": 48
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "none",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 2123,
+                  "y": 48
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "none",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 2153,
+                  "y": 48
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "none",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 2183,
+                  "y": 48
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "none",
+                "position": "static",
+                "rect": {
+                  "h": 32,
+                  "w": 32,
+                  "x": 2219,
+                  "y": 46
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "absolute inset-0 overflow-hidden focus-visible:outline-none focus-visi",
+                "opacity": "1",
+                "pointerEvents": "none",
+                "position": "absolute",
+                "rect": {
+                  "h": 796,
+                  "w": 2213,
+                  "x": 46,
+                  "y": 80
+                },
+                "role": "application",
+                "state": "closed",
+                "tag": "div",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 2093,
+                  "y": 48
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 2123,
+                  "y": 48
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 2153,
+                  "y": 48
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 28,
+                  "x": 2183,
+                  "y": 48
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 32,
+                  "w": 32,
+                  "x": 2219,
+                  "y": 46
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "absolute inset-0 overflow-hidden focus-visible:outline-none focus-visi",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "absolute",
+                "rect": {
+                  "h": 796,
+                  "w": 2213,
+                  "x": 46,
+                  "y": 80
+                },
+                "role": "application",
+                "state": "closed",
+                "tag": "div",
+                "testid": null,
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "0",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 24,
+                  "w": 24,
+                  "x": 2511,
+                  "y": 333
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "file-row-actions",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "0",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 24,
+                  "w": 24,
+                  "x": 2511,
+                  "y": 379
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "file-row-actions",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "0",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 24,
+                  "w": 24,
+                  "x": 2511,
+                  "y": 425
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "file-row-actions",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "0",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 24,
+                  "w": 24,
+                  "x": 2511,
+                  "y": 471
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "file-row-actions",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "fixed",
+                "rect": {
+                  "h": 28,
+                  "w": 57,
+                  "x": 43,
+                  "y": 181
+                },
+                "role": null,
+                "state": null,
+                "tag": "div",
+                "testid": null,
+                "zIndex": "50"
+              },
+              {
+                "cls": "z-50 w-fit origin-(--radix-tooltip-content-transform-origin) animate-i",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 57,
+                  "x": 43,
+                  "y": 181
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "div",
+                "testid": null,
+                "zIndex": "50"
+              }
+            ],
+            "viewport": {
+              "dpr": 2,
+              "h": 900,
+              "w": 2560
+            }
+          }
+        }
+      },
+      "fullWindow": {
+        "dock": {
+          "contentWidth": "275",
+          "panel": {
+            "h": 1012,
+            "w": 300,
+            "x": 1620,
+            "y": 44
+          },
+          "panes": {
+            "h": 956,
+            "w": 299,
+            "x": 1621,
+            "y": 100
+          },
+          "presentation": "single",
+          "railPressed": "true"
+        },
+        "refresh": {
+          "centre": {
+            "x": 1881,
+            "y": 223
+          },
+          "present": true,
+          "rect": {
+            "bottom": 237,
+            "h": 28,
+            "left": 1867,
+            "right": 1895,
+            "top": 209,
+            "w": 28
+          },
+          "self": {
+            "display": "flex",
+            "opacity": "1",
+            "pointerEvents": "auto",
+            "position": "static",
+            "transform": "none",
+            "visibility": "visible",
+            "zIndex": "auto"
+          },
+          "stack": [
+            {
+              "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap r",
+              "isSelf": true,
+              "opacity": "1",
+              "overflow": "visible/visible",
+              "pointerEvents": "auto",
+              "position": "static",
+              "rect": {
+                "h": 28,
+                "w": 28,
+                "x": 1867,
+                "y": 209
+              },
+              "role": null,
+              "state": null,
+              "tag": "button",
+              "testid": "sftp-remote-refresh",
+              "transform": "none",
+              "visibility": "visible",
+              "zIndex": "auto"
+            },
+            {
+              "cls": "shrink-0 px-3 py-2 bg-secondary/40 border-b border-border/50 flex items-center g",
+              "isSelf": false,
+              "opacity": "1",
+              "overflow": "visible/visible",
+              "pointerEvents": "auto",
+              "position": "static",
+              "rect": {
+                "h": 45,
+                "w": 273,
+                "x": 1634,
+                "y": 201
+              },
+              "role": null,
+              "state": null,
+              "tag": "div",
+              "testid": null,
+              "transform": "none",
+              "visibility": "visible",
+              "zIndex": "auto"
+            },
+            {
+              "cls": "flex flex-col h-full border border-border/50 rounded-lg overflow-hidden bg-card",
+              "isSelf": false,
+              "opacity": "1",
+              "overflow": "hidden/hidden",
+              "pointerEvents": "auto",
+              "position": "static",
+              "rect": {
+                "h": 844,
+                "w": 275,
+                "x": 1633,
+                "y": 200
+              },
+              "role": null,
+              "state": null,
+              "tag": "div",
+              "testid": null,
+              "transform": "none",
+              "visibility": "visible",
+              "zIndex": "auto"
+            },
+            {
+              "cls": "flex-1 min-w-0 flex flex-col gap-2",
+              "isSelf": false,
+              "opacity": "1",
+              "overflow": "visible/visible",
+              "pointerEvents": "auto",
+              "position": "static",
+              "rect": {
+                "h": 880,
+                "w": 275,
+                "x": 1633,
+                "y": 164
+              },
+              "role": null,
+              "state": null,
+              "tag": "div",
+              "testid": "sftp-pane-remote",
+              "transform": "none",
+              "visibility": "visible",
+              "zIndex": "auto"
+            },
+            {
+              "cls": "p-3 flex gap-3 h-full overflow-hidden flex-col",
+              "isSelf": false,
+              "opacity": "1",
+              "overflow": "hidden/hidden",
+              "pointerEvents": "auto",
+              "position": "static",
+              "rect": {
+                "h": 956,
+                "w": 299,
+                "x": 1621,
+                "y": 100
+              },
+              "role": null,
+              "state": null,
+              "tag": "div",
+              "testid": "sftp-file-panes",
+              "transform": "none",
+              "visibility": "visible",
+              "zIndex": "auto"
+            },
+            {
+              "cls": "flex-1 overflow-auto h-full",
+              "isSelf": false,
+              "opacity": "1",
+              "overflow": "auto/auto",
+              "pointerEvents": "auto",
+              "position": "static",
+              "rect": {
+                "h": 956,
+                "w": 299,
+                "x": 1621,
+                "y": 100
+              },
+              "role": null,
+              "state": null,
+              "tag": "div",
+              "testid": null,
+              "transform": "none",
+              "visibility": "visible",
+              "zIndex": "auto"
+            }
+          ],
+          "topmostIsSelf": true
+        }
+      },
+      "resize": {
+        "before": {
+          "bottom": 237,
+          "h": 28,
+          "left": 1387,
+          "right": 1415,
+          "top": 209,
+          "w": 28
+        },
+        "shrunk": {
+          "bottom": 237,
+          "h": 28,
+          "left": 1227,
+          "right": 1255,
+          "top": 209,
+          "w": 28
+        },
+        "restored": {
+          "bottom": 237,
+          "h": 28,
+          "left": 1387,
+          "right": 1415,
+          "top": 209,
+          "w": 28
+        },
+        "sameTopmost": true
+      },
+      "realClick": {
+        "before": {
+          "rows": 4,
+          "traceLen": 2
+        },
+        "after": {
+          "last": "listed /private/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-sftp-10jMJ1/remote -> 4 entries",
+          "rows": 4,
+          "traceLen": 4
+        },
+        "clicked": true
+      },
+      "verdict": {
+        "presentAt300": true,
+        "topmostIsSelfAt300": true,
+        "topmostIsSelfAt600": true,
+        "blockerAt300": {
+          "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap r",
+          "isSelf": true,
+          "opacity": "1",
+          "overflow": "visible/visible",
+          "pointerEvents": "auto",
+          "position": "static",
+          "rect": {
+            "h": 28,
+            "w": 28,
+            "x": 1387,
+            "y": 209
+          },
+          "role": null,
+          "state": null,
+          "tag": "button",
+          "testid": "sftp-remote-refresh",
+          "transform": "none",
+          "visibility": "visible",
+          "zIndex": "auto"
+        },
+        "residueCount": 30
+      }
+    },
+    "notRunCount": 0
+  }
+}

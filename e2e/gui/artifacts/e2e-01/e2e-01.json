@@ -1,42 +1,50 @@
 {
   "case": "e2e-01",
   "verdict": "PASS",
-  "recordedAt": "2026-11-14T05:32:50.598Z",
+  "recordedAt": "2026-11-24T02:24:38.526Z",
   "platform": {
     "platform": "darwin",
     "release": "24.6.0",
     "arch": "arm64",
-    "node": "v22.12.0",
+    "node": "v24.16.0",
     "osVersion": "Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103"
   },
   "source": {
-    "sha": "4b522bc33e81e87ad3e8e81bc8f1ca14c218d30f",
-    "branch": "feat/tn-03-native-gui-e2e",
+    "sha": "438261c8323486ffb85636afd916bd5dfb300d6d",
+    "branch": "fix/tn-sftp-gui-closure",
     "dirty": true
   },
   "binary": {
     "path": "src-tauri/target/release/terminal",
-    "sha256": "9f7a8717392129f7c447befae2a10efa1023a71ca336d42e3f95f055266b102f",
-    "bytes": 36667568
+    "sha256": "06691d4ff5c2984da8223c863ea0e0f4d938bb3b41ca0bdd0d46c140bc370291",
+    "bytes": 37206256
   },
   "window": {
-    "cssHeight": 740,
-    "cssWidth": 1024,
+    "cssHeight": 800,
+    "cssWidth": 1200,
     "devicePixelRatio": 2,
-    "height": 624,
-    "width": 656
+    "height": 688,
+    "width": 1136
   },
   "terminal": {
-    "cols": 82,
-    "rows": 39,
-    "statusBarText": "ConnectedLocal82×39"
+    "cols": 142,
+    "rows": 43,
+    "statusBarText": "ConnectedLocal142×43"
   },
   "command": {
-    "token": "guie2e1794634350228",
+    "token": "[redacted]",
     "outputLines": 1,
-    "promptMatchesBefore": 2,
-    "promptMatchesAfter": 3,
-    "bufferTail": "liuzhiwei@liuzhiweideMacBook-Pro terminal-gui-e2e-80048-1794634233421 % echo guie2e179463426\n3370\nguie2e1794634263370\nliuzhiwei@liuzhiweideMacBook-Pro terminal-gui-e2e-80048-1794634233421 % echo guie2e179463435\n0228\nguie2e1794634350228\nliuzhiwei@liuzhiweideMacBook-Pro terminal-gui-e2e-80048-1794634233421 % "
+    "promptMatchesBefore": 1,
+    "promptMatchesAfter": 2,
+    "bufferTail": "[user]@[host] terminal-gui-e2e-58228-1795487062639-e2e-01-startup % echo guie2e1795487078370\nguie2e1795487078370\n[user]@[host] terminal-gui-e2e-58228-1795487062639-e2e-01-startup % "
   },
-  "screenshot": "e2e/gui/artifacts/e2e-01/screens/e2e-01-1794634370503.png"
+  "screenshot": "e2e/gui/artifacts/e2e-01/screens/e2e-01-1795487078441.png",
+  "extra": {
+    "localTab": {
+      "ok": true,
+      "wasActive": true
+    },
+    "statusBar": "ConnectedLocal142×43",
+    "gaps": []
+  }
 }

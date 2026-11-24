@@ -113,8 +113,29 @@ export interface SftpTransferActions {
 export function useSftpTransferActions(args: {
   sessionId: string | null
   remotePath: string
+  /**
+   * The server these transfers land on.
+   *
+   * Without it the integrity check cannot tell whether another transfer wrote the same
+   * file, and it degrades to `indeterminate` rather than certifying blind. The dock knows
+   * the host, so it passes it; a caller that only has a session id gets the honest
+   * degraded answer.
+   */
+  connection?: { hostname: string; port: number; username: string } | null
 }): SftpTransferActions {
-  const { sessionId, remotePath } = args
+  const { sessionId, remotePath, connection } = args
+  const targetFor = useCallback(
+    (path: string) =>
+      connection
+        ? {
+            hostname: connection.hostname,
+            port: connection.port,
+            username: connection.username,
+            remotePath: path,
+          }
+        : undefined,
+    [connection],
+  )
 
   const onUpload = useCallback(async () => {
     if (!sessionId) return
@@ -124,8 +145,13 @@ export function useSftpTransferActions(args: {
     // No refresh here. `uploadPaths` resolves when the files are *scheduled*, not
     // when they have landed — the listing is refreshed by
     // `useUploadCompletionRefresh` on each transfer's terminal event.
-    await uploadPaths({ sessionId, remoteDir: remotePath, localPaths: paths })
-  }, [sessionId, remotePath])
+    await uploadPaths({
+      sessionId,
+      remoteDir: remotePath,
+      localPaths: paths,
+      connection,
+    })
+  }, [sessionId, remotePath, connection])
 
   const onDownload = useCallback(
     async (file: FileItem) => {
@@ -139,9 +165,10 @@ export function useSftpTransferActions(args: {
         localPath: target,
         displayName: fileName,
         bytesTotal: file.size,
+        target: targetFor(file.path),
       })
     },
-    [sessionId],
+    [sessionId, targetFor],
   )
 
   return { onUpload, onDownload }

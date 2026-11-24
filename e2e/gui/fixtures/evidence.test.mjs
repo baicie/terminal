@@ -202,3 +202,121 @@ test('an unavailable git counts as dirty, not clean', () => {
   // Evidence that cannot name its source cannot claim to be reproducible.
   assert.deepEqual(dirtySourceLines('unknown'), ['?? git-unavailable'])
 })
+
+/**
+ * 终端提示符里的 `user@host` 必须脱敏。
+ *
+ * ## 为什么
+ *
+ * e2e-05 的证据 `notes` 里带着 PTY 回显：一个 **真实的开发机用户名与设备名**，形如
+ * `<user>@<user>sMacBook-Pro terminal-gui-e2e-… % echo …`。
+ *
+ * 那不是凭据，但它把「谁在哪台机器上跑的」写进了仓库（本仓为 public）。证据是用来
+ * 证明产品行为的，不是用来记录跑它的人。
+ *
+ * 下面的夹具用**合成的**用户名 `runner`：断言的是「这一形态被脱敏」，不是「某个特定
+ * 名字被脱敏」。用真名做夹具会让这个测试文件本身变成那台机器用户名的副本 —— 一个为了
+ * 隐私而写的测试，不该把隐私写进自己的源码里。
+ *
+ * ## 边界
+ *
+ * 只脱敏「提示符形态」：`word@word` 出现在**行首或空白之后**，且后面跟一个空格与
+ * 提示符字符（`%`、`$`、`#`、`>`）。这样不会误伤命令行参数里的邮箱地址、也
+ * 不会改掉 `--user=deploy@app` 这类产品日志中的真实字段值 —— 后者本身也要脱敏，
+ * 但那是另一种形态，由已有的 key=value 规则处理。
+ */
+test('a shell prompt user@host is redacted', () => {
+  const prompt = 'runner@runners-MacBook-Pro terminal-gui-e2e-99802 % echo hi'
+  const out = redact(prompt)
+  assert.doesNotMatch(out, /runner@/)
+  assert.match(out, /% echo hi/, 'the command after the prompt must survive')
+})
+
+test('a username alone in a home path is redacted', () => {
+  const line = 'at /Users/runner/Library/Application Support/com.baicie.termius'
+  assert.doesNotMatch(redact(line), /\/Users\/runner\//)
+})
+
+test('redaction does not touch an email address in prose', () => {
+  // `@` is common outside prompts; the rule is anchored to the prompt shape on purpose.
+  assert.match(
+    redact('contact dev@example.com for access'),
+    /dev@example\.com/,
+    'an address that is not a prompt must survive',
+  )
+})
+
+test('a prompt inside an escaped JSON string is redacted too', () => {
+  /*
+   * The shape that defeated the first version of the rule: PTY output is recorded as a
+   * JSON string, so the prompt is preceded by `"` rather than a space. Measured on
+   * e2e-05's `notes` — the username survived while every other case was covered.
+   */
+  const line =
+    'pty after dock close: {"ok":true,"tail":"someone@their-machine proj % echo hi"}'
+  const out = redact(line)
+  assert.doesNotMatch(out, /someone@their-machine/)
+  assert.match(out, /echo hi/, 'the command after the prompt must survive')
+})
+
+/**
+ * 每一个字符串字段都要过脱敏，包括 `terminal` 与 `command`。
+ *
+ * ## 缺陷
+ *
+ * `notes` 与 `extra` 走了 `redact` / `redactDeep`，而 `terminal` 与 `command` **两条
+ * 路都没有**。e2e-01 的 `bufferTail` 因此带着真实的 `user@machine` 入库，同时其它
+ * 字段都是干净的 —— 一个「规则覆盖了大部分地方」的缺口，比完全没规则更难发现，
+ * 因为随手一查是干净的。
+ *
+ * 这条测试写一个含提示符的记录，断言**整个 JSON 序列化结果**里没有它。断言全量而不是
+ * 逐字段，正是为了让下一个新增字段自动被覆盖。
+ */
+test('every field of a written record is redacted, not just notes and extra', async () => {
+  const prompt = 'someone@their-machine proj % echo marker'
+  const record = await written('e2e-test-all-fields', {
+    terminal: { bufferTail: prompt, cols: 80 },
+    command: { token: 'marker', bufferTail: prompt },
+    notes: prompt,
+    extra: { nested: { deep: prompt }, list: [prompt] },
+  })
+  const raw = JSON.stringify(record)
+  assert.doesNotMatch(
+    raw,
+    /someone@their-machine/,
+    'a field escaped redaction — add it to the record assembly in writeEvidence',
+  )
+  assert.match(raw, /echo marker/, 'the command itself must survive')
+})
+
+/**
+ * `dirty` 必须只在**源码**变化时为真 —— 四种 porcelain 前缀都要认出来。
+ *
+ * ## 缺陷
+ *
+ * `dirtySourceLines` 用 `line.slice(3).startsWith('e2e/gui/artifacts')` 判断。三种形
+ * 式里两种是错的：
+ *
+ *     ` M e2e/…`   未暂存修改（空格+状态+空格+路径）→ slice(3) 正确
+ *     `M  e2e/…`   已暂存修改（状态+空格+空格+路径）→ slice(3) 正确
+ *     `M e2e/…`    已暂存、另一列为空（状态+空格+路径）→ slice(3) **多切一个字符**
+ *     `?? e2e/…`   未跟踪 → 由 startsWith 侥幸命中
+ *
+ * 第三种的后果实测过：一次只改了证据文件的运行报 `dirty: true`，而这个字段的含义是
+ * 「这个二进制能否从记录的 SHA 重建」—— 一条永远为真的脏标记描述不了任何东西。
+ */
+test('every porcelain status shape excludes the evidence directory', () => {
+  for (const line of [
+    'M e2e/gui/artifacts/e2e-01/e2e-01.json',
+    ' M e2e/gui/artifacts/e2e-01/e2e-01.json',
+    'M  e2e/gui/artifacts/e2e-01/e2e-01.json',
+    '?? e2e/gui/artifacts/e2e-01/screens/new.png',
+    '?? e2e/gui/artifacts',
+  ]) {
+    assert.deepEqual(dirtySourceLines(line), [], `should be ignored: ${line}`)
+  }
+  // …and a real source change still counts, in every shape.
+  for (const line of ['M src/app.ts', ' M src/app.ts', 'M  src/app.ts', '?? scripts/x.mjs']) {
+    assert.equal(dirtySourceLines(line).length, 1, `should be kept: ${line}`)
+  }
+})

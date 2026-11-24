@@ -18,6 +18,14 @@
  */
 import { useTransferQueue } from '@/store/transfer-queue'
 import { claimSession } from './sftp-session-claim'
+import {
+  beginRead,
+  completionsOf,
+  isContended,
+  releaseIfIdle,
+  targetKeyOf,
+  targetOfArgs,
+} from './sftp-transfer-target'
 import type { TransferArgs } from './sftp-transfer-types'
 
 /**
@@ -111,9 +119,54 @@ export function handOffVerification(
     return
   }
 
+  /*
+   * ## A target is a server plus a path, and a live write is already a conflict
+   *
+   * The check reads a **remote file**, not "the bytes I wrote". Two transfers onto one
+   * file therefore race: A finishes, A starts hashing, B overwrites, and A's read returns
+   * B's content. Measured: A reported `verified` after its path was overwritten — a
+   * transfer certifying itself with a file that no longer exists anywhere.
+   *
+   * Two things had to change from the first attempt at this guard:
+   *
+   * 1. **The identity cannot be the path alone.** `/srv/shared.bin` on host1 and on host2
+   *    are different files; keying on the path made unrelated servers collide and turned
+   *    a correct check into `indeterminate`. It cannot be the Host row either — two Host
+   *    configs may point at one machine, which is the case where a conflict is most
+   *    likely and least visible. The key is the connection coordinates plus the
+   *    normalised path (see `sftp-transfer-target.ts`).
+   *
+   * 2. **A write that has started counts, not only one that finished.** A counter bumped
+   *    at `done` is blind to B beginning after A's snapshot and still running when A's
+   *    read returns. The read claim below is taken *and* the target is inspected while
+   *    the check is in flight; a writer that overlaps the check is visible even before its
+   *    `done` arrives.
+   *
+   * When the target is unknown (no connection coordinates on the args) the check cannot
+   * decide whether it had a competitor. That is recorded as `indeterminate` — never as
+   * `verified`, because "I could not rule out an overwrite" is not a clean bill of health.
+   */
+  const target = targetOfArgs(args)
+  const readHold = target ? beginRead(target) : null
+  const targetKey = target ? targetKeyOf(target) : null
+  /*
+   * Two independent signals, both taken before the read:
+   *
+   *   - `contendedAtStart`: a writer is running right now. Covers a long write that began
+   *     before this check and is still going.
+   *   - `completionsAtStart`: how many writes had already finished. A check that sees this
+   *     number move later knows a write completed inside its window — the other half of
+   *     the race, which a live counter alone cannot see because the writer released its
+   *     hold before the check looked.
+   */
+  const contendedAtStart =
+    target !== null && isContended(targetKeyOf(target), 'writers')
+  const completionsAtStart = targetKey ? completionsOf(targetKey) : 0
+
   const task = verifier(id, args)
   // Not verifying this transfer: nothing to hold the session for.
   if (task === null) {
+    readHold?.release()
     claim.release()
     return
   }
@@ -124,7 +177,37 @@ export function handOffVerification(
       // A verifier that throws must not leave the row reading "computing" forever.
       failChecksum(id, error instanceof Error ? error.message : String(error))
     })
+    .then(() => {
+      /*
+       * Did anything write this target while the check was reading it?
+       *
+       * `readHold` is still held here, so `writers > 0` means a writer overlapped the
+       * check — whether or not it has finished. `contendedAtStart` covers the writer that
+       * began before this check and is still going; without it, a long write that started
+       * first would be invisible to a short check that ran entirely inside it.
+       */
+      const contested =
+        target === null ||
+        contendedAtStart ||
+        isContended(targetKeyOf(target), 'writers') ||
+        completionsOf(targetKeyOf(target)) > completionsAtStart
+      if (contested) {
+        useTransferQueue.getState().setChecksumResult(id, 'remote', {
+          success: false,
+          error:
+            target === null
+              ? 'This transfer has no server identity, so an overwrite by another ' +
+                'transfer cannot be ruled out and the result is not a certification.'
+              : 'The file was overwritten or is being written by another transfer, so ' +
+                'this result is about different bytes.',
+        })
+      }
+    })
     .finally(() => {
+      readHold?.release()
+      // The reader releases last, so this is where the target's entry can be reclaimed —
+      // otherwise every path the app has ever checked would stay in the map.
+      if (targetKey) releaseIfIdle(targetKey)
       verifyingIds.delete(id)
       claim.release()
     })

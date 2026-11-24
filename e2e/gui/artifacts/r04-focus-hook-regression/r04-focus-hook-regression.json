@@ -1,0 +1,72 @@
+{
+  "case": "r04-focus-hook-regression",
+  "verdict": "PASS",
+  "recordedAt": "2026-11-24T02:18:37.235Z",
+  "platform": {
+    "platform": "darwin",
+    "release": "24.6.0",
+    "arch": "arm64",
+    "node": "v24.16.0",
+    "osVersion": "Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103"
+  },
+  "source": {
+    "sha": "438261c8323486ffb85636afd916bd5dfb300d6d",
+    "branch": "fix/tn-sftp-gui-closure",
+    "dirty": true
+  },
+  "binary": {
+    "path": "src-tauri/target/release/terminal",
+    "sha256": "06691d4ff5c2984da8223c863ea0e0f4d938bb3b41ca0bdd0d46c140bc370291",
+    "bytes": 37206256
+  },
+  "window": null,
+  "terminal": null,
+  "command": null,
+  "screenshot": "e2e/gui/artifacts/r04-focus-hook-regression/screens/r04-focus-hook-regression-1795486717162.png",
+  "notes": "open-dock click 28 ms\nafter-blur click 15 ms on [data-testid=\"rail-terminal\"]\nNOT_RUN MULTI_WINDOW_EVENT_TARGETING — the app is single-instance and single-window by construction (tauri-plugin-single-instance blocks a second process before any database access, and no WebviewWindowBuilder path creates a second window), so \"an event went to the wrong window\" cannot be constructed here\nNOT_RUN SWITCH_TO_WINDOW_SELECTION — switchToWindow(handles[0]) only sets the user-chosen-window cache; whether it picks the right window in a real multi-window session is not observable in this app",
+  "extra": {
+    "clicks": [
+      {
+        "label": "open-dock",
+        "selector": "[data-testid=\"rail-sftp\"]",
+        "elapsedMs": 28
+      },
+      {
+        "label": "close-dock",
+        "selector": "[data-testid=\"rail-sftp\"]",
+        "elapsedMs": 7
+      },
+      {
+        "label": "reopen-dock",
+        "selector": "[data-testid=\"rail-sftp\"]",
+        "elapsedMs": 7
+      },
+      {
+        "label": "activity-rail",
+        "selector": "[data-testid=\"activity-rail\"] [data-testid=\"rail-terminal\"]",
+        "elapsedMs": 8
+      },
+      {
+        "label": "rail-connections",
+        "selector": "[data-testid=\"rail-connections\"]",
+        "elapsedMs": 26
+      },
+      {
+        "label": "after-blur",
+        "selector": "[data-testid=\"rail-terminal\"]",
+        "elapsedMs": 15
+      }
+    ],
+    "failures": [],
+    "slowestClick": {
+      "label": "open-dock",
+      "selector": "[data-testid=\"rail-sftp\"]",
+      "elapsedMs": 28
+    },
+    "clickCount": 6,
+    "notRun": [
+      "NOT_RUN MULTI_WINDOW_EVENT_TARGETING — the app is single-instance and single-window by construction (tauri-plugin-single-instance blocks a second process before any database access, and no WebviewWindowBuilder path creates a second window), so \"an event went to the wrong window\" cannot be constructed here",
+      "NOT_RUN SWITCH_TO_WINDOW_SELECTION — switchToWindow(handles[0]) only sets the user-chosen-window cache; whether it picks the right window in a real multi-window session is not observable in this app"
+    ]
+  }
+}

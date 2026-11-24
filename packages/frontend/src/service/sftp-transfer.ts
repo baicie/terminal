@@ -18,7 +18,7 @@ import {
 import { configureTransferRunner, scheduleTransfer } from './sftp-transfer-queue'
 import { createTransferVerifier } from './sftp-transfer-checksum'
 import { configureTransferVerifier } from './sftp-transfer-verify'
-import type { TransferArgs } from './sftp-transfer-types'
+import type { TransferArgs, TransferTarget } from './sftp-transfer-types'
 
 export {
   MAX_CONCURRENT,
@@ -99,12 +99,15 @@ export async function uploadFile({
   remotePath,
   displayName,
   bytesTotal,
+  target,
 }: {
   sessionId: string
   localPath: string
   remotePath: string
   displayName?: string
   bytesTotal?: number
+  /** The server this file lands on; omitted means "unknown", never "no conflict". */
+  target?: TransferTarget
 }): Promise<void> {
   await startTransfer({
     kind: 'upload',
@@ -113,6 +116,7 @@ export async function uploadFile({
     remotePath,
     displayName,
     bytesTotal,
+    target,
   })
 }
 
@@ -122,12 +126,14 @@ export async function downloadFile({
   localPath,
   displayName,
   bytesTotal,
+  target,
 }: {
   sessionId: string
   remotePath: string
   localPath: string
   displayName?: string
   bytesTotal?: number
+  target?: TransferTarget
 }): Promise<void> {
   await startTransfer({
     kind: 'download',
@@ -136,6 +142,7 @@ export async function downloadFile({
     localPath,
     displayName,
     bytesTotal,
+    target,
   })
 }
 
@@ -144,8 +151,10 @@ export async function uploadPaths(args: {
   sessionId: string
   remoteDir: string
   localPaths: string[]
+  /** The server these land on; each file's own path completes the target. */
+  connection?: { hostname: string; port: number; username: string } | null
 }): Promise<void> {
-  const { sessionId, remoteDir, localPaths } = args
+  const { sessionId, remoteDir, localPaths, connection } = args
   const uploads = localPaths.map(localPath => {
     const parts = localPath.split(/[\\/]+/)
     const name = parts[parts.length - 1] || localPath
@@ -154,7 +163,13 @@ export async function uploadPaths(args: {
   })
   await Promise.allSettled(
     uploads.map(({ localPath, remotePath, name }) =>
-      uploadFile({ sessionId, localPath, remotePath, displayName: name }),
+      uploadFile({
+        sessionId,
+        localPath,
+        remotePath,
+        displayName: name,
+        target: connection ? { ...connection, remotePath } : undefined,
+      }),
     ),
   )
 }
