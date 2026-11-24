@@ -20,6 +20,7 @@ import {
   readKeyCredentialRef,
   retireKeyVersion,
 } from './ssh-key-credentials'
+import { keyIdExists, keyOwnsNoRow, withKeyWriteLock } from './key-write-lock'
 import type { SSHKeyRecord } from './types'
 
 export { readKeyCredentialRef } from './ssh-key-credentials'
@@ -58,7 +59,24 @@ export async function getSSHKeyCredentials(id: string): Promise<{
 export async function createSSHKey(
   key: Omit<SSHKeyRecord, 'created_at' | 'updated_at'>,
 ): Promise<string> {
+  /*
+   * RC03: same per-key lock as the host path, and for the same measured reason. A
+   * duplicate id would write version 1 over the live key's generation and then have
+   * `discardKeyVersion` delete it — the surviving row keeps `credential_ref` and loses
+   * its private key (`privateKeyStillReadable: undefined`, `vaultAfter: {}`).
+   */
+  return withKeyWriteLock(key.id, () => createSSHKeyLocked(key))
+}
+
+async function createSSHKeyLocked(
+  key: Omit<SSHKeyRecord, 'created_at' | 'updated_at'>,
+): Promise<string> {
   const now = Date.now()
+  if (await keyIdExists(key.id)) {
+    throw new Error(
+      `An SSH key with id ${key.id} already exists; refusing to overwrite its credentials`,
+    )
+  }
   const persisted = await persistKeySecrets(
     key.id,
     { privateKey: key.private_key, passphrase: key.passphrase },
@@ -81,7 +99,10 @@ export async function createSSHKey(
       ],
     )
   } catch (error) {
-    if (persisted.ref) await discardKeyVersion(key.id, persisted.ref)
+    // Only when nothing owns the id: a racing create that won reads this very version.
+    if (persisted.ref && (await keyOwnsNoRow(key.id))) {
+      await discardKeyVersion(key.id, persisted.ref)
+    }
     throw error
   }
   return key.id
@@ -102,6 +123,15 @@ export async function createSSHKey(
  * no secret; the new reference is supplied only after the vault write succeeded.
  */
 export async function updateSSHKey(
+  id: string,
+  updates: Partial<SSHKeyRecord>,
+): Promise<void> {
+  // RC03: the same per-key lock `createSSHKey` takes. Two saves that both read version N
+  // compute N+1, and the second overwrites the first's ciphertext while each retires "N".
+  return withKeyWriteLock(id, () => updateSSHKeyLocked(id, updates))
+}
+
+async function updateSSHKeyLocked(
   id: string,
   updates: Partial<SSHKeyRecord>,
 ): Promise<void> {
@@ -217,6 +247,12 @@ export async function clearSSHKeyCredential(id: string): Promise<void> {
 }
 
 export async function deleteSSHKey(id: string): Promise<void> {
+  // RC03: without this, a recreate that lands between the row read and the vault
+  // cleanup writes version 1 again, and the cleanup retires the *new* key's secret.
+  return withKeyWriteLock(id, () => deleteSSHKeyLocked(id))
+}
+
+async function deleteSSHKeyLocked(id: string): Promise<void> {
   // Same ordering as hosts: the row goes first, so a failure after it leaves an
   // unreferenced secret rather than a key whose secret is already gone.
   const existing = await getSSHKeyById(id)
