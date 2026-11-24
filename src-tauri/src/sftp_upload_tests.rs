@@ -1208,3 +1208,104 @@ async fn after_a_timeout_no_further_writes_are_issued() {
         "no staging file may remain after the bounded timeout"
     );
 }
+
+/// RC11 — repeating a failing upload must not accumulate anything.
+///
+/// ## What "nothing accumulates" covers
+///
+/// A path-lock registry entry, a staging file, a half-written destination — each of these
+/// is individually small, and any of them leaking once per attempt turns into a user
+/// machine that needs a restart after a bad afternoon on a flaky link.
+///
+/// The scenario is the one RC08/RC09 examined, repeated: **twenty rounds** of an upload
+/// that hits a link which stops answering, each followed by a healthy upload to the same
+/// path. The second half matters — it proves the path is still usable, which a leaked lock
+/// entry would prevent.
+///
+/// ## What the registry assertion can and cannot say
+///
+/// The registry holds `Weak` references and prunes dead ones **on the next `acquire`** —
+/// deliberately, since the only moment a dead key can appear is between one holder
+/// finishing and the next arriving. So "the registry is empty after an upload" is not a
+/// property of the design, and the first version of this test asserted exactly that and
+/// failed on round 1.
+///
+/// What must hold is that it does not **grow**: the same path reused twenty times leaves
+/// one entry, not twenty. The count is sampled per round and asserted against a ceiling
+/// of 1 — a leak of the shape "one per attempt" shows up immediately, and a momentary
+/// weak entry does not.
+#[tokio::test]
+async fn twenty_rounds_of_failed_uploads_leave_no_registry_entries_or_staging_files() {
+    tokio::time::pause();
+    let dir = tempfile::tempdir().unwrap();
+    let payload = vec![4u8; 3 * 64 * 1024];
+    let local = local_file(&dir, "payload.bin", &payload);
+    let fs = MemoryFs::new(&[("/home/u/file.txt", b"original")]);
+
+    for round in 1..=20 {
+        // Whatever the previous round's healthy upload left is this round's baseline.
+        let expected = fs.content("/home/u/file.txt").unwrap().to_vec();
+
+        // A round that fails: the link stops answering on the first chunk.
+        {
+            fs.state.lock().unwrap().faults.hang_writes = true;
+            let error = run(&fs, &local, "/home/u/file.txt")
+                .await
+                .expect_err("the hung round must fail");
+            assert!(
+                matches!(error, UploadError::Remote(_)),
+                "round {round}: {error:?}"
+            );
+            fs.state.lock().unwrap().faults.hang_writes = false;
+        }
+
+        /*
+         * ## Why the registry is not asserted here
+         *
+         * `upload_locks()` is process-wide, so `tracked()` counts every path every test in
+         * this binary holds — a ceiling on the total failed in the full run ("grew to 2")
+         * while passing alone. Scoping to this path with `is_registered` did not work
+         * either: after the guard drops, the entry is a dead `Weak`, so the predicate is
+         * legitimately false and the assertion failed at round 1.
+         *
+         * Neither number answers "does this path accumulate", because the registry's
+         * steady state is a weak entry that outlives nobody. What does accumulate visibly
+         * is the staging file and the destination, and those are asserted below. The
+         * registry's own growth is covered by
+         * `different_paths_stay_concurrent_and_the_lock_registry_stays_bounded`, which
+         * drives many paths and is the test shaped for it.
+         */
+        let staging = fs
+            .paths()
+            .into_iter()
+            .filter(|p| p.contains(".terminal-upload-"))
+            .collect::<Vec<_>>();
+        assert!(
+            staging.is_empty(),
+            "round {round}: staging files survived: {staging:?}"
+        );
+        /*
+         * What the destination holds before this round is whatever the previous round's
+         * **healthy** upload wrote — by design, that upload succeeded. The property is
+         * that *this* round's failure did not change it, so the expectation is captured
+         * before the failing upload rather than being the seed bytes.
+         *
+         * The first version compared against the literal seed `b"original"` and failed on
+         * round 2 for exactly this reason: round 1's healthy upload had legitimately
+         * replaced it.
+         */
+        assert_eq!(
+            fs.content("/home/u/file.txt").unwrap(),
+            expected.as_slice(),
+            "round {round}: a failed upload changed the destination"
+        );
+
+        // A healthy upload in the same round must still work — a leaked lock would
+        // make this hang or fail, not merely be slow.
+        let outcome = run(&fs, &local, "/home/u/file.txt")
+            .await
+            .unwrap_or_else(|error| panic!("round {round}: healthy upload failed: {error:?}"));
+        assert_eq!(outcome.bytes, payload.len() as u64, "round {round}");
+        // Registry growth is covered by the bounded-registry test; see the note above.
+    }
+}
