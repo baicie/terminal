@@ -256,18 +256,49 @@ describe('R04 — the focus hook no longer taxes every command', () => {
       null,
     )
     const verdict = measurements.failures.length === 0 ? 'PASS' : 'FAIL'
-    const notRun = [
-      'NOT_RUN MULTI_WINDOW_EVENT_TARGETING — the app is single-instance and ' +
-        'single-window by construction (tauri-plugin-single-instance blocks a second ' +
-        'process before any database access, and no WebviewWindowBuilder path creates a ' +
-        'second window), so "an event went to the wrong window" cannot be constructed here',
-      'NOT_RUN SWITCH_TO_WINDOW_SELECTION — switchToWindow(handles[0]) only sets the ' +
-        'user-chosen-window cache; whether it picks the right window in a real ' +
-        'multi-window session is not observable in this app',
+    /*
+     * ## Declared gaps, not free-text NOT_RUNs
+     *
+     * The first version wrote these into `extra.notRun` as prose and nothing else. That
+     * is enough for a human reading the JSON, and it is **not** what the report reads:
+     * `scripts/gui-e2e-report.mjs` computes
+     * `unexplainedNotRun = notRunCount > sum(gaps[].covers)`, so two NOT_RUNs with no
+     * `gaps` entry are a case that "should have worked and did not" — `status: FAIL` with
+     * `passed: 57, failed: 0`.
+     *
+     * Measured on run 45319266818: macOS and Windows both reported exactly that, and the
+     * only failing step was `Summarise the GUI layer`. The suite had passed.
+     *
+     * This is the same defect `e2e-01` had (see the comment in the report script): write
+     * the structured form the reader consumes, and let the prose be generated from it so
+     * the two cannot drift.
+     */
+    const GAPS = [
+      {
+        id: 'MULTI_WINDOW_EVENT_TARGETING',
+        covers: 1,
+        reason:
+          'the app is single-instance and single-window by construction ' +
+          '(tauri-plugin-single-instance blocks a second process before any database ' +
+          'access, and no WebviewWindowBuilder path creates a second window)',
+        needs: 'a build with a second window; none exists to drive',
+      },
+      {
+        id: 'SWITCH_TO_WINDOW_SELECTION',
+        covers: 1,
+        reason:
+          'switchToWindow(handles[0]) only sets the user-chosen-window cache; whether it ' +
+          'picks the right window in a real multi-window session is not observable here',
+        needs: 'the same second window, plus an event that could be misrouted',
+      },
     ]
+    for (const gap of GAPS) {
+      notes.push(`NOT_RUN ${gap.id}: ${gap.reason} (needs ${gap.needs})`)
+    }
+    const notRunCount = notes.filter(note => note.includes('NOT_RUN')).length
     const file = await writeEvidence(CASE, {
-      verdict,
-      notes: [...notes, ...notRun].join('\n'),
+      verdict: verdict === 'FAIL' ? 'FAIL' : notRunCount > 0 ? 'PARTIAL' : 'PASS',
+      notes: notes.join('\n'),
       error:
         verdict === 'FAIL'
           ? `${measurements.failures.length} failed case(s): ` +
@@ -277,7 +308,8 @@ describe('R04 — the focus hook no longer taxes every command', () => {
         ...measurements,
         slowestClick: slowest,
         clickCount: measurements.clicks.length,
-        notRun,
+        notRunCount,
+        gaps: GAPS,
       },
     })
     if (verdict === 'FAIL') {
