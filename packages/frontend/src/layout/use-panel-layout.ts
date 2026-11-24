@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { useIsMobile } from '@/hooks/use-breakpoint'
+import { defaultSettings } from '@/service/database'
 import { useAppStore } from '@/store/app'
 import { useRightPanelStore } from '@/store/right-panel-store'
 import { DOCK_WIDTH } from './right-panel'
@@ -112,9 +113,24 @@ export function usePanelLayout(input: PanelLayoutInput): PanelLayoutDecision {
     fontSize?: number
     fontFamily?: string
   }
+  /*
+   * The same fallback the terminal itself uses, not a local one.
+   *
+   * This read `settings.fontFamily ?? 'monospace'` while `TerminalContainer` read
+   * `settings.fontFamily ?? defaultSettings.fontFamily`. With no font configured — the
+   * default install — the layout measured `monospace` and the terminal rendered
+   * `Menlo, Monaco, "Courier New", monospace`. They are different widths, so the layout
+   * decided against a budget the terminal never had.
+   *
+   * Measured on the Linux GUI runner at 768px: the decision predicted 62 columns from an
+   * 8.4px cell, the terminal actually got 50 columns at ~10.8px. The explorer stayed a
+   * column because the budget said the terminal could afford it, and the terminal could
+   * not. That is the whole 60-column-floor failure in E2E-02, and it is a product defect
+   * — the layout is supposed to yield *before* the terminal is starved.
+   */
   const cellWidth = useMeasuredCellWidth(
-    settings.fontSize ?? 14,
-    settings.fontFamily ?? 'monospace',
+    settings.fontSize ?? defaultSettings.fontSize,
+    settings.fontFamily ?? defaultSettings.fontFamily,
   )
   // The shell, not the window: the window includes OS chrome and any caption
   // buttons, and feeding the already-squeezed terminal element back in is what
