@@ -1,6 +1,7 @@
 import type { TerminalSessionOutputBuffer } from './terminal-session-output-buffer'
 import type { TerminalRecord } from './terminal-session-manager-types'
 import type {
+  TerminalFailureDiagnosis,
   TerminalFailureHop,
   TerminalFailureRecovery,
   TerminalFailureStage,
@@ -20,6 +21,8 @@ export type TerminalReconnectStartResult =
       /** SSH10: which leg of a jump chain failed, when there was one. */
       hop?: TerminalFailureHop
       stage?: TerminalFailureStage
+      /** SSH11: the situation worth naming, when the raw message cannot say it. */
+      diagnosis?: TerminalFailureDiagnosis
     }
 
 export interface TerminalReconnectOptions {

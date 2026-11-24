@@ -41,6 +41,7 @@ export function createTerminalRecord(
     credentialKind: null,
     hop: null,
     stage: null,
+    diagnosis: null,
     closed: false,
   }
 }

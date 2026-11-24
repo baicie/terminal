@@ -32,6 +32,15 @@ vi.mock('react-i18next', () => ({
       }
       if (key === 'terminal.errorOverlay.title') return 'Connection failed'
       if (key === 'terminal.errorOverlay.dismiss') return 'Dismiss'
+      const diagnostics: Record<string, string> = {
+        'terminal.diagnostic.bastionAuthRejected':
+          'The bastion refused this login.',
+        'terminal.diagnostic.targetAuthRejected':
+          'The bastion accepted the connection, but the target host refused this login.',
+        'terminal.diagnostic.tunnelFailed':
+          'The tunnel from the bastion to the target could not be opened.',
+      }
+      if (key in diagnostics) return diagnostics[key]
       return strings[key] ?? key
     },
   }),
@@ -212,5 +221,53 @@ describe('the terminal body mounts the overlay for a real failure', () => {
     expect(screen.getByTestId('terminal-error-action').textContent).toBe(
       'Unlock the vault',
     )
+  })
+})
+
+describe('SSH11 — the pane says which machine refused', () => {
+  it('renders the bastion diagnosis above the raw error', () => {
+    renderOverlay({
+      credentialKind: undefined,
+      errorMessage: 'authentication rejected: password rejected',
+      diagnosis: 'bastion-auth-rejected',
+    })
+    expect(screen.getByTestId('terminal-error-diagnostic').textContent).toBe(
+      'The bastion refused this login.',
+    )
+    // The original error is still there: the diagnosis says where to look, the message
+    // says what happened, and the user needs both.
+    expect(
+      screen.getByText(/authentication rejected: password rejected/i),
+    ).toBeTruthy()
+  })
+
+  it('distinguishes the target from the bastion in the same pane', () => {
+    renderOverlay({
+      credentialKind: undefined,
+      errorMessage: 'authentication rejected: password rejected',
+      diagnosis: 'target-auth-rejected',
+    })
+    expect(screen.getByTestId('terminal-error-diagnostic').textContent).toContain(
+      'target host refused',
+    )
+  })
+
+  it('renders nothing extra when there is no diagnosis', () => {
+    // A direct connection has no bastion. Adding a generic "the target refused" line
+    // here would invent a machine the user never configured.
+    renderOverlay({ credentialKind: undefined, errorMessage: 'connection refused' })
+    expect(screen.queryByTestId('terminal-error-diagnostic')).toBeNull()
+    expect(screen.getByText('connection refused')).toBeTruthy()
+  })
+
+  it('the tunnel diagnosis does not blame either machine', () => {
+    renderOverlay({
+      credentialKind: undefined,
+      errorMessage: 'channel_error',
+      diagnosis: 'tunnel-failed',
+    })
+    const text = screen.getByTestId('terminal-error-diagnostic').textContent ?? ''
+    expect(text).toMatch(/tunnel/i)
+    expect(text).not.toMatch(/bastion refused this login/i)
   })
 })

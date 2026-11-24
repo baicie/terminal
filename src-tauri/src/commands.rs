@@ -717,26 +717,21 @@ mod ssh_command_future_tests {
     use super::{
         agent_forwarding_enabled, session_create_ssh_agent, session_create_ssh_cert,
         session_create_ssh_jump, session_create_ssh_key, session_create_ssh_password, AppHandle,
-        SessionError, SessionFailure,
+        SessionFailure,
     };
     use crate::session::{JumpHostConfig, TerminalProfile};
     use std::future::Future;
 
-    macro_rules! assert_send_command {
-        ($assertion:ident, ($($argument:ty),+)) => {
-            fn $assertion<F, Fut>(_: F)
-            where
-                F: FnOnce($($argument),+) -> Fut,
-                Fut: Future<Output = Result<String, SessionError>> + Send + 'static,
-            {
-            }
-        };
-    }
     /*
-     * The jump command returns `SessionFailure` (SSH06). It gets its own assertion rather
-     * than a loosened shared one: the point of these macros is that each command's future
-     * is `Send` with the error type it actually has, and a `SessionFailure` that stopped
-     * being `Send` would be caught here and nowhere else.
+     * Every connection command returns `SessionFailure` as of SSH06, so there is one
+     * assertion macro, not two. The previous `assert_send_command` asserted
+     * `Result<String, SessionError>` and had no remaining users — it was removed rather
+     * than kept as a looser variant nothing calls, because `-D warnings` rejects a dead
+     * macro and an unused macro is a stale statement about the contract.
+     *
+     * What these macros are for: each command's future must be `Send` with the error type
+     * it actually has. A `SessionFailure` that stopped being `Send` would be caught here
+     * and nowhere else.
      */
     macro_rules! assert_send_failure_command {
         ($assertion:ident, ($($argument:ty),+)) => {

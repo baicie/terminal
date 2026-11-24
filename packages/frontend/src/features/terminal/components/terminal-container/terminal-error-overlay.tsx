@@ -16,6 +16,8 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import type { Host, Tab } from '@/types'
+import type { TerminalFailureDiagnosis } from '../../services/terminal-failure-diagnostic'
+import { connectionDiagnostic } from '../../services/terminal-failure-diagnostic'
 import { vaultActionFor } from './terminal-vault-action'
 
 interface TerminalErrorOverlayProps {
@@ -25,6 +27,14 @@ interface TerminalErrorOverlayProps {
   errorMessage: string
   /** Credential failure kind, when the failure came from the vault layer. */
   credentialKind?: string
+  /**
+   * SSH11: which machine refused, when that can be said better than the raw error.
+   *
+   * Rendered above the error message rather than instead of it: the diagnostic says
+   * where to look, the original message says what happened, and the user needs both to
+   * decide between "fix the bastion's account" and "fix the target's account".
+   */
+  diagnosis?: TerminalFailureDiagnosis
   onRetry?: () => void
   onDismiss: () => void
 }
@@ -45,6 +55,18 @@ export function TerminalErrorOverlay(props: TerminalErrorOverlayProps) {
   if (props.status !== 'error' && props.status !== 'disconnected') return null
 
   const action = vaultActionFor(props.credentialKind, props.status)
+  /*
+   * The diagnostic is looked up here, not stored on the record: switching the locale
+   * while the pane is showing an error must re-render the sentence in the new language.
+   * `connectionDiagnostic` returns the original message when there is nothing better to
+   * say, so a pane with no context looks exactly as it did before SSH11.
+   */
+  const diagnostic = connectionDiagnostic(
+    props.diagnosis,
+    props.errorMessage,
+    t,
+  )
+  const hasDiagnostic = diagnostic !== props.errorMessage
 
   return (
     <div
@@ -62,6 +84,14 @@ export function TerminalErrorOverlay(props: TerminalErrorOverlayProps) {
             <p className="text-xs text-muted-foreground">
               {targetLabel(props.tab, props.host)}
             </p>
+            {hasDiagnostic ? (
+              <p
+                className="text-sm font-medium"
+                data-testid="terminal-error-diagnostic"
+              >
+                {diagnostic}
+              </p>
+            ) : null}
             <p className="break-words text-sm">{props.errorMessage}</p>
           </div>
         </div>

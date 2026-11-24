@@ -25,6 +25,7 @@ function record(overrides: Partial<TerminalRecord> = {}): TerminalRecord {
     credentialKind: null,
     hop: null,
     stage: null,
+    diagnosis: null,
     closed: false,
     ...overrides,
   }

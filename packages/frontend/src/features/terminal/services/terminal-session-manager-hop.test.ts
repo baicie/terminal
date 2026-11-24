@@ -208,4 +208,51 @@ describe('SSH10 — the record does not inherit a stale hop', () => {
     expect(snapshot.hop).toBeUndefined()
     expect(snapshot.stage).toBeUndefined()
   })
+
+  it('a failure with no diagnosis clears the previous one', async () => {
+    /*
+     * SSH11. The same stale-claim problem as `hop`, one level up: the diagnosis is the
+     * sentence the pane renders, so inheriting "the bastion refused this login" onto a
+     * direct-connection failure sends the user to a machine that is not involved.
+     *
+     * Found by mutation: deleting the clear in `updateTerminalState` left every test
+     * green, because nothing asserted the second render.
+     */
+    const { record } = await makeRecord()
+
+    updateTerminalState(record, {
+      status: 'error',
+      error: 'bastion refused',
+      retryable: false,
+      recovery: 'manual',
+      hop: 'bastion',
+      diagnosis: 'bastion-auth-rejected',
+    })
+    expect(getTerminalSnapshot(record).diagnosis).toBe('bastion-auth-rejected')
+
+    updateTerminalState(record, {
+      status: 'error',
+      error: 'network dropped',
+      retryable: true,
+      recovery: 'automatic',
+    })
+
+    expect(
+      getTerminalSnapshot(record).diagnosis,
+      'a failure with no diagnosis must not inherit the previous one',
+    ).toBeUndefined()
+  })
+
+  it('a successful connection clears the diagnosis', async () => {
+    const { record } = await makeRecord()
+    updateTerminalState(record, {
+      status: 'error',
+      error: 'tunnel died',
+      retryable: false,
+      recovery: 'manual',
+      diagnosis: 'tunnel-failed',
+    })
+    updateTerminalState(record, { status: 'connected', sessionId: 's-1' })
+    expect(getTerminalSnapshot(record).diagnosis).toBeUndefined()
+  })
 })

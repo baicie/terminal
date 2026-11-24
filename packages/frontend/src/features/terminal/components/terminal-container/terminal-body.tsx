@@ -9,6 +9,7 @@ import {
 import { createPortal } from 'react-dom'
 import type { Host, Tab } from '@/types'
 import type { UseTerminalResult } from '@/hooks/terminal-session-types'
+import type { TerminalFailureDiagnosis } from '../../services/terminal-failure-diagnostic'
 import { TerminalKeyboardBar } from './keyboard-bar'
 import { TerminalPaneHeader } from './terminal-pane-header'
 import { TerminalSurface } from './terminal-surface'
@@ -23,6 +24,8 @@ interface TerminalBodyProps {
   reconnectReason?: string
   reconnectRetryable?: boolean
   credentialKind?: string
+  /** SSH11: what situation the last failure was, when the raw message cannot say it. */
+  diagnosis?: TerminalFailureDiagnosis
   /** Cleared by the pane when the user dismisses the failure overlay. */
   errorDismissed: boolean
   onDismissError: () => void
@@ -119,6 +122,7 @@ export function TerminalBody(props: TerminalBodyProps) {
           status={props.status}
           readableError={props.readableError}
           credentialKind={props.credentialKind}
+          diagnosis={props.diagnosis}
           errorDismissed={props.errorDismissed}
           isMobile={props.isMobile}
           term={props.term}

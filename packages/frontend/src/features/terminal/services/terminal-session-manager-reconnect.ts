@@ -214,6 +214,9 @@ export class TerminalSessionReconnect {
           // must say so, not just "authentication rejected".
           ...(result.hop !== undefined ? { hop: result.hop } : {}),
           ...(result.stage !== undefined ? { stage: result.stage } : {}),
+          ...(result.diagnosis !== undefined
+            ? { diagnosis: result.diagnosis }
+            : {}),
         })
         return
       }

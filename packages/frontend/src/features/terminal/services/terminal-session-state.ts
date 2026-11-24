@@ -61,6 +61,16 @@ export function updateTerminalState(
   } else if (next.status === 'error' || next.status === 'reconnecting') {
     record.stage = null
   }
+  /*
+   * SSH11 — same rule once more. A diagnosis is a claim about *which machine* refused;
+   * inheriting "check the bastion's account" onto a failure that has no bastion would
+   * send the user to the wrong machine, which is worse than saying nothing.
+   */
+  if (next.diagnosis !== undefined) {
+    record.diagnosis = next.diagnosis
+  } else if (next.status === 'error' || next.status === 'reconnecting') {
+    record.diagnosis = null
+  }
   if (next.status !== undefined && leavesFailureBehind(next.status)) {
     // A retryable flag with no failure behind it keeps advertising a recovery
     // nothing is going to perform. Cleared here rather than at each call site.
@@ -69,6 +79,7 @@ export function updateTerminalState(
     record.credentialKind = null
     record.hop = null
     record.stage = null
+    record.diagnosis = null
   }
   const snapshot = getTerminalSnapshot(record)
   record.audience.publishState(snapshot)

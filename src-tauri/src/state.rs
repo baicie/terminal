@@ -245,7 +245,31 @@ pub struct ClientHandler {
     /// incoming connections to the forwarder task.
     /// std::sync::RwLock is safe here: the guard is always dropped before any await.
     pub(crate) forward_listener: ForwardListenerSlot,
+    /// Set to the rejection message when `check_server_key` refuses the server.
+    ///
+    /// ## Why a side channel instead of the error type
+    ///
+    /// `Handler::Error` is `anyhow::Error`, so a rejection raised inside the handler
+    /// reaches `connect_*` as an opaque `anyhow` value indistinguishable from a TCP
+    /// reset or a KEX failure. Both connect helpers map anything they receive to
+    /// `SessionError::ConnectionFailed` — which is why `HostKeyRejected` existed as a
+    /// variant with **no producer**: the frontend's `NON_RETRYABLE_KINDS` entry for
+    /// `host_key_rejected` could only ever fire on a sentence match, and the pane could
+    /// never say "the *bastion's* key changed" because the kind never arrived.
+    ///
+    /// Changing `Handler::Error` to a typed enum would touch every handler in the crate
+    /// plus four generic bounds, to recover one bit. This records the bit where the
+    /// decision is made and the connect helpers read it back after a failed handshake.
+    ///
+    /// `Arc` because the handler is moved into russh's connect future; the connection
+    /// owner keeps a clone and reads it after the future returns.
+    pub(crate) host_key_rejection: HostKeyRejectionSlot,
 }
+
+/// Where a `check_server_key` refusal is recorded so the connect helpers can see it.
+///
+/// See `ClientHandler::host_key_rejection` for why this exists at all.
+pub type HostKeyRejectionSlot = std::sync::Arc<StdMutex<Option<String>>>;
 
 impl ClientHandler {
     /// The slot the connection owner installs a remote-forward listener into.
@@ -255,6 +279,30 @@ impl ClientHandler {
 
     pub fn for_host(host: impl Into<String>, port: u16) -> Self {
         Self::for_host_with_agent_forwarding(host, port, false)
+    }
+
+    /// The slot the connection owner reads after a failed handshake.
+    ///
+    /// See the field documentation for why a refusal cannot travel back through
+    /// `Handler::Error` as its own type.
+    pub fn host_key_rejection_slot(&self) -> HostKeyRejectionSlot {
+        std::sync::Arc::clone(&self.host_key_rejection)
+    }
+
+    /// Record a refusal, then hand back the error to return.
+    ///
+    /// Written as one call so a refusal cannot be logged and then forgotten, or
+    /// returned without being recorded — both would put back the silent
+    /// `connection_failed` this replaces.
+    fn reject_host_key(&self, message: String) -> anyhow::Error {
+        if let Ok(mut slot) = self.host_key_rejection.lock() {
+            // First refusal wins: the first key the server presents is the one that
+            // failed, and later callbacks in the same handshake describe the same key.
+            if slot.is_none() {
+                *slot = Some(message.clone());
+            }
+        }
+        anyhow!(message)
     }
 
     /// A handler that already trusts one server key.
@@ -286,6 +334,7 @@ impl ClientHandler {
             agent_socket: get_ssh_agent_socket().map(PathBuf::from),
             session_id: None,
             forward_listener: std::sync::Arc::new(std::sync::RwLock::new(None)),
+            host_key_rejection: std::sync::Arc::new(StdMutex::new(None)),
         }
     }
 
@@ -311,6 +360,7 @@ impl ClientHandler {
             agent_socket: get_ssh_agent_socket().map(PathBuf::from),
             session_id: None,
             forward_listener: std::sync::Arc::new(std::sync::RwLock::new(None)),
+            host_key_rejection: std::sync::Arc::new(StdMutex::new(None)),
         }
     }
 
@@ -325,6 +375,7 @@ impl ClientHandler {
             agent_socket: get_ssh_agent_socket().map(PathBuf::from),
             session_id: None,
             forward_listener: std::sync::Arc::new(std::sync::RwLock::new(None)),
+            host_key_rejection: std::sync::Arc::new(StdMutex::new(None)),
         }
     }
 }
@@ -371,11 +422,10 @@ impl Handler for ClientHandler {
                 true
             }
             Some(_) => {
-                return Err(anyhow!(
+                return Err(self.reject_host_key(format!(
                     "host key verification failed for {}:{}: server key does not match the preflight key",
-                    self.host,
-                    self.port
-                ));
+                    self.host, self.port
+                )));
             }
             None => false,
         };
@@ -389,17 +439,14 @@ impl Handler for ClientHandler {
         match verified {
             Ok(true) => Ok(true),
             Ok(false) if has_matching_preflight_key => Ok(true),
-            Ok(false) => Err(anyhow!(
+            Ok(false) => Err(self.reject_host_key(format!(
                 "host key verification failed for {}:{}: key not found in known_hosts",
-                self.host,
-                self.port
-            )),
-            Err(error) => Err(anyhow!(
+                self.host, self.port
+            ))),
+            Err(error) => Err(self.reject_host_key(format!(
                 "host key verification failed for {}:{}: {}",
-                self.host,
-                self.port,
-                error
-            )),
+                self.host, self.port, error
+            ))),
         }
     }
 
@@ -657,6 +704,62 @@ mod tests {
 
         std::fs::remove_file(path).unwrap();
         assert!(error.to_string().contains("host key verification failed"));
+    }
+
+    /*
+     * SSH11 — the slot is what makes `host_key_rejected` a kind that can actually
+     * arrive.
+     *
+     * Before this, the variant, its DTO mapping and its `kind` string all existed and
+     * NOTHING in the product produced them: `check_server_key` returned an `anyhow`
+     * value that both connect helpers mapped to `connection_failed`. A test asserting
+     * the variant existed would have passed the whole time.
+     */
+    #[tokio::test]
+    async fn a_changed_key_is_recorded_for_the_connect_path_to_report() {
+        let path = std::env::temp_dir().join(format!(
+            "terminal-slot-known-hosts-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::write(&path, format!("example.com {ED25519_PUBLIC_KEY}\n")).unwrap();
+        let changed_key = russh::keys::PublicKey::from(
+            russh::keys::ssh_key::public::Ed25519PublicKey([0x42; 32]),
+        );
+        let mut handler = ClientHandler::for_host_with_known_hosts("example.com", 22, path.clone());
+        let slot = handler.host_key_rejection_slot();
+
+        let error = handler
+            .check_server_key(&presented(&changed_key))
+            .await
+            .unwrap_err();
+
+        std::fs::remove_file(path).unwrap();
+        assert!(error.to_string().contains("host key verification failed"));
+        let recorded = slot.lock().unwrap().clone();
+        assert_eq!(
+            recorded.as_deref(),
+            Some(error.to_string().as_str()),
+            "the refusal the handler reported must be the one the connect path reads back"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_accepted_key_records_no_rejection() {
+        // The negative half. Without it, a slot that is always written would pass the
+        // test above while turning every connection into a host-key failure.
+        let path = std::env::temp_dir().join(format!(
+            "terminal-slot-ok-known-hosts-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::write(&path, format!("example.com {ED25519_PUBLIC_KEY}\n")).unwrap();
+        let key = russh::keys::PublicKey::from_openssh(ED25519_PUBLIC_KEY).unwrap();
+        let mut handler = ClientHandler::for_host_with_known_hosts("example.com", 22, path.clone());
+        let slot = handler.host_key_rejection_slot();
+
+        handler.check_server_key(&presented(&key)).await.unwrap();
+
+        std::fs::remove_file(path).unwrap();
+        assert!(slot.lock().unwrap().is_none());
     }
 
     #[tokio::test]

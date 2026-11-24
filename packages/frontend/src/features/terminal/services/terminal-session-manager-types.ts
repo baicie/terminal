@@ -3,6 +3,7 @@ import type { TabType } from '../types'
 import type { TerminalSessionIo, TerminalSessionIoSnapshot } from './terminal-session-io'
 import type { TerminalSessionAudience } from './terminal-session-output-buffer'
 import type {
+  TerminalFailureDiagnosis,
   TerminalFailureHop,
   TerminalFailureRecovery,
   TerminalFailureStage,
@@ -94,6 +95,13 @@ export interface TerminalSessionSnapshot {
   hop?: TerminalFailureHop
   /** Where in the connection sequence the failure happened. */
   stage?: TerminalFailureStage
+  /**
+   * SSH11: the situation this failure is, when the raw message cannot say it.
+   *
+   * An enum, not a sentence: the pane renders it in the language active *now*, which is
+   * not necessarily the one that was active when the connection dropped.
+   */
+  diagnosis?: TerminalFailureDiagnosis
 }
 
 export interface TerminalOutputReceipt {
@@ -147,6 +155,8 @@ export interface TerminalRecord {
   hop: TerminalFailureHop | null
   /** SSH10: which connection step the last failure happened at. */
   stage: TerminalFailureStage | null
+  /** SSH11: what situation the last failure was, when it is worth naming. */
+  diagnosis: TerminalFailureDiagnosis | null
   closed: boolean
 }
 
@@ -179,6 +189,7 @@ export function getTerminalSnapshot(
   }
   if (record.hop !== null) snapshot.hop = record.hop
   if (record.stage !== null) snapshot.stage = record.stage
+  if (record.diagnosis !== null) snapshot.diagnosis = record.diagnosis
   return snapshot
 }
 

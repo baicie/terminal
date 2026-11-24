@@ -29,7 +29,7 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::{broadcast, Mutex, Notify};
 
 use super::shell_integration::compose_startup_command;
-use crate::state::ClientHandler;
+use crate::state::{ClientHandler, HostKeyRejectionSlot};
 
 /// SSH sessions storage for SFTP and port forwarding
 type SshSessions = Arc<Mutex<HashMap<String, Arc<client::Handle<ClientHandler>>>>>;
@@ -226,10 +226,6 @@ pub(crate) fn cancel_all_connection_attempts() {
     for entry in registry.values() {
         entry.cancellation.cancel();
     }
-}
-
-fn connection_cancelled_error() -> SessionError {
-    SessionError::ConnectionCancelled
 }
 
 /// Run one SSH creation future until it completes or the owning frontend tab
@@ -576,12 +572,43 @@ fn connection_failure_error(
     SessionError::ConnectionFailed(format!("{operation} failed: {error}"))
 }
 
+/// The same mapping, but a host-key refusal keeps its own kind.
+///
+/// `ClientHandler::check_server_key` returns `anyhow` (that is what `Handler::Error`
+/// is), so by the time a handshake fails here the value is indistinguishable from a
+/// reset or a KEX failure. The handler records *why* it refused in a slot the
+/// connection owner holds a clone of, and this reads it back.
+///
+/// Without this the ONLY thing that ever produced `host_key_rejected` was a sentence
+/// match in the frontend classifier: the variant had a DTO mapping, a `kind` string and
+/// a test, and no producer in the product. A pane could therefore never say which
+/// machine's key changed, because the kind never arrived at all.
+fn handshake_failure_error(
+    operation: &'static str,
+    error: impl std::fmt::Display,
+    rejection: Option<&HostKeyRejectionSlot>,
+) -> SessionError {
+    // `try_lock` rather than `lock`: this runs on the failure path of a handshake that
+    // may have been abandoned mid-callback, and blocking a Tokio worker to read a
+    // diagnostic would trade a wrong message for a stalled runtime. A poisoned or busy
+    // slot falls back to the plain mapping, which is what every build did before.
+    if let Some(rejection) = rejection {
+        if let Ok(slot) = rejection.try_lock() {
+            if let Some(message) = slot.as_ref() {
+                return SessionError::HostKeyRejected(message.clone());
+            }
+        }
+    }
+    connection_failure_error(operation, error)
+}
+
 pub(crate) async fn connect_tcp_with_shutdown<H, A>(
     config: Arc<client::Config>,
     address: A,
     handler: H,
     deadline: tokio::time::Instant,
     operation: &'static str,
+    host_key_rejection: Option<&HostKeyRejectionSlot>,
 ) -> Result<(client::Handle<H>, TcpShutdownGuard), SessionError>
 where
     H: client::Handler + Send + 'static,
@@ -612,7 +639,11 @@ where
 
     match tokio::time::timeout_at(deadline, &mut connection).await {
         Ok(Ok(handle)) => Ok((handle, shutdown_guard)),
-        Ok(Err(error)) => Err(connection_failure_error(operation, error)),
+        Ok(Err(error)) => Err(handshake_failure_error(
+            operation,
+            error,
+            host_key_rejection,
+        )),
         Err(_) => {
             if let Err(error) = shutdown_guard.shutdown() {
                 tracing::warn!(%error, %operation, "failed to interrupt timed-out SSH handshake");
@@ -630,6 +661,7 @@ pub(crate) async fn connect_stream_with_deadline<H, S>(
     deadline: tokio::time::Instant,
     operation: &'static str,
     transport: Option<&TcpShutdownGuard>,
+    host_key_rejection: Option<&HostKeyRejectionSlot>,
 ) -> Result<client::Handle<H>, SessionError>
 where
     H: client::Handler + Send + 'static,
@@ -642,7 +674,11 @@ where
 
     match tokio::time::timeout_at(deadline, &mut connection).await {
         Ok(Ok(handle)) => Ok(handle),
-        Ok(Err(error)) => Err(connection_failure_error(operation, error)),
+        Ok(Err(error)) => Err(handshake_failure_error(
+            operation,
+            error,
+            host_key_rejection,
+        )),
         Err(_) => {
             if let Some(transport) = transport {
                 if let Err(error) = transport.shutdown() {
@@ -1624,12 +1660,15 @@ impl SshSession {
         )
         .await
         /*
-         * `create` returns the bare error: it is shared with the direct-connection paths,
-         * which have no hop. The jump path wraps here, so errors from shared code arrive
-         * context-free (`hop: None`) rather than with an invented one. SSH07–SSH09 attach
-         * the real context inside `connect_via_jump_inner`, where the hop is known.
+         * No wrapping here: `create` already returns `SessionFailure`, because the
+         * direct-connection paths inside it have no hop and must say so rather than
+         * inherit one. SSH07–SSH09 attach the real context inside
+         * `connect_via_jump_inner`, where the hop is known.
+         *
+         * This used to be `.map_err(SessionFailure::from)`, which became an identity
+         * conversion once `create`'s signature changed — clippy rejects that under
+         * `-D warnings`.
          */
-        .map_err(SessionFailure::from)
     }
 
     /// 内部创建方法
@@ -1663,9 +1702,9 @@ impl SshSession {
          * call — would attach a hop two frames deeper and then discard it on the way out,
          * which is the exact shape this feature exists to remove.
          */
-        validate_terminal_size(cols, rows).map_err(SessionError::from)?;
+        validate_terminal_size(cols, rows)?;
         let profile = profile.unwrap_or_default();
-        profile.validate().map_err(SessionError::from)?;
+        profile.validate()?;
         if host.is_empty() {
             return Err(SessionFailure::bare(SessionError::InvalidInput(
                 "Host cannot be empty".to_string(),
@@ -1731,6 +1770,7 @@ impl SshSession {
             let addr = stage_target.clone();
             let (handler, forward_slot) =
                 client_handler(host, port, expected_host_key, agent_forwarding);
+            let host_key_rejection = handler.host_key_rejection_slot();
             forward_listener_slot = forward_slot;
             let (mut direct, direct_shutdown) = connect_tcp_with_shutdown(
                 config,
@@ -1738,6 +1778,7 @@ impl SshSession {
                 handler,
                 stage_deadline(deadline, SSH_CONNECT_TIMEOUT),
                 "connect SSH server",
+                Some(&host_key_rejection),
             )
             .await?;
             crate::startup_trace::stage("ssh-tcp-handshake-done", &stage_target);
@@ -2079,6 +2120,9 @@ impl SshSession {
             target.expected_host_key,
             target.allow_agent_forwarding,
         );
+        // SSH11 — the target's own key refusal has to keep its kind, or the pane can
+        // only say "connection failed" for a host whose identity changed.
+        let target_host_key_rejection = target_handler.host_key_rejection_slot();
         let target_connection = connect_stream_with_deadline(
             config,
             target_stream,
@@ -2086,6 +2130,7 @@ impl SshSession {
             stage_deadline(deadline, SSH_CONNECT_TIMEOUT),
             "connect target host through jump host",
             Some(&jump_shutdown),
+            Some(&target_host_key_rejection),
         )
         .await;
         let mut target_handle = match target_connection {
@@ -2571,18 +2616,22 @@ pub(crate) async fn connect_authenticated_jump_host_with_shutdown(
     let connect_deadline = connection_deadline
         .map(|deadline| stage_deadline(deadline, SSH_CONNECT_TIMEOUT))
         .unwrap_or_else(|| tokio::time::Instant::now() + SSH_CONNECT_TIMEOUT);
+    let (bastion_handler, _bastion_forward_slot) = client_handler(
+        jump_host.host.clone(),
+        jump_host.port,
+        expected_host_key,
+        false,
+    );
+    // SSH11 — a changed key on the bastion is its own diagnosis, and the only way to
+    // reach it is to read the handler's refusal record after the handshake fails.
+    let bastion_host_key_rejection = bastion_handler.host_key_rejection_slot();
     let (mut handle, shutdown_guard) = connect_tcp_with_shutdown(
         config,
         (jump_host.host.as_str(), jump_host.port),
-        client_handler(
-            jump_host.host.clone(),
-            jump_host.port,
-            expected_host_key,
-            false,
-        )
-        .0,
+        bastion_handler,
         connect_deadline,
         "connect jump host",
+        Some(&bastion_host_key_rejection),
     )
     .await
     /*
@@ -3708,6 +3757,7 @@ mod tests {
             tokio::time::Instant::now() + std::time::Duration::from_millis(20),
             "connect stalled SSH stream",
             None,
+            None,
         )
         .await;
         let result_description = match result {
@@ -3761,6 +3811,7 @@ mod tests {
                 client_handler("127.0.0.1".to_string(), address.port(), None, false).0,
                 tokio::time::Instant::now() + std::time::Duration::from_millis(20),
                 "connect stalled SSH server",
+                None,
             ),
         )
         .await

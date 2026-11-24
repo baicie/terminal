@@ -300,6 +300,8 @@ pub async fn ssh_host_key_probe(
         handler,
         deadline,
         "connect host-key probe",
+        // The probe reports its own typed errors; it never needs the side channel.
+        None,
     )
     .await
     .map_err(map_session_error)?;
@@ -385,6 +387,7 @@ pub async fn ssh_host_key_probe_via_jump(
         deadline,
         "inspect host key through jump host",
         Some(&jump_shutdown),
+        None,
     )
     .await
     {

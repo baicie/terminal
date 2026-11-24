@@ -3,6 +3,11 @@ import type { Host } from '@/types'
 import type { Terminal as XTerminal } from '@baicie/xterm'
 import type { TerminalOutputSchedulerSnapshot } from '@/features/terminal/services/terminal-output-scheduler'
 import type { TerminalSessionIoSnapshot } from '@/features/terminal/services/terminal-session-io'
+import type {
+  TerminalFailureHop,
+  TerminalFailureStage,
+} from '@/features/terminal/services/terminal-failure-context'
+import type { TerminalFailureDiagnosis } from '@/features/terminal/services/terminal-failure-diagnostic'
 
 export interface ShellOutput {
   session_id: string
@@ -77,6 +82,18 @@ export interface UseTerminalResult {
   recovery?: 'automatic' | 'manual' | 'after-vault'
   /** Which credential failure this was, so the pane can offer the right fix. */
   credentialKind?: string
+  /**
+   * SSH11: which leg of a jump chain failed, and at what step.
+   *
+   * Reaching the pane is the whole point of SSH05–SSH09: a refusal on the bastion and
+   * a refusal on the host behind it are two different logins, and the user can only
+   * fix the right one if the pane says which. Absent means the context was not
+   * recorded — never "target".
+   */
+  hop?: TerminalFailureHop
+  stage?: TerminalFailureStage
+  /** SSH11: the situation worth naming, resolved to a sentence by the pane. */
+  diagnosis?: TerminalFailureDiagnosis
   getInputDiagnostics: () => TerminalSessionIoSnapshot | null
   getOutputDiagnostics: () => TerminalOutputSchedulerSnapshot | null
   write: (data: string) => void
