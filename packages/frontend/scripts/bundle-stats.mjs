@@ -285,7 +285,26 @@ const budgets = {
   // upgrade. It did not — the install had failed silently and the command read the
   // dist/ left behind by the main worktree. The CI numbers across two heads
   // (656.83 → 659.23) are the trustworthy comparison.
-  totalGzip: 660 * 1024,
+  //
+  // 661 KB (was 660 KB). RC12: a download's identity now includes its local
+  // destination, so two downloads of different remote files onto one local path are
+  // visible to each other instead of certifying each other's overwrite. Measured:
+  //
+  //   660.00 KB ceiling, build came in at 660.02 KB on CI run 45355695204
+  //
+  // The overage is 0.02 KB — twenty bytes. Raising the ceiling for twenty bytes is the
+  // honest option because the alternatives are all worse:
+  //
+  //   - dropping the local key returns a real integrity defect (two downloads onto one
+  //     file both reporting `verified`);
+  //   - shaving twenty bytes elsewhere to stay under a round number is a change made to
+  //     satisfy a number, and the next contributor would meet the same wall a commit
+  //     later.
+  //
+  // 661 KB leaves ~0.98 KB — the same order of headroom as every previous adjustment
+  // (0.8 KB before, 0.78 KB before that). The pattern is worth naming: this ceiling has
+  // been raised by 1 KB three times now, each for a change that could not be shrunk.
+  totalGzip: 661 * 1024,
   maxJavaScriptRaw: 500 * 1024,
 }
 
