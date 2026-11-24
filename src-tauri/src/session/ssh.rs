@@ -4292,6 +4292,134 @@ mod ssh_jump_e2e_tests {
         );
     }
 
+    /// SSH15 — disconnecting a jump connection closes **both** transports.
+    ///
+    /// ## Why this needs a real daemon
+    ///
+    /// The leak it guards against is invisible in a unit test: `disconnect_jump_connections`
+    /// takes the target handle and the bastion handle and must finish both. A mock has no
+    /// socket to leave open, so "the session ended" and "the bastion is still connected"
+    /// look identical.
+    ///
+    /// The assertion is on the server side, not on the client's own bookkeeping: after the
+    /// disconnect, the fixture must report the bastion as no longer having a live session.
+    /// Reading the client's own handle would only prove the client stopped caring.
+    #[tokio::test]
+    #[ignore = "needs scripts/verify-install/ssh-jump-e2e.mjs to start two daemons"]
+    async fn disconnecting_a_jump_session_releases_both_legs() {
+        let fixture = match fixture() {
+            FixtureLookup::Ready(fixture) => fixture,
+            FixtureLookup::NotConfigured => {
+                eprintln!("SSH_JUMP_E2E_* not set; skipping");
+                return;
+            }
+            FixtureLookup::Broken(reason) => panic!("the harness is not usable: {reason}"),
+        };
+        let target = JumpTarget {
+            host: "127.0.0.1".to_string(),
+            port: fixture.target_port,
+            username: fixture.user.clone(),
+            password: None,
+            private_key: Some(fixture.target_key.clone()),
+            certificate: None,
+            expected_host_key: Some(russsh_public_key(&fixture.target_host_key)),
+            use_agent: false,
+            allow_agent_forwarding: false,
+        };
+        let (target_handle, jump_handle, guard, _slot) = SshSession::connect_via_jump(
+            Arc::new(interactive_ssh_config()),
+            target,
+            jump_config(&fixture),
+            tokio::time::Instant::now() + std::time::Duration::from_secs(20),
+        )
+        .await
+        .expect("the healthy fixture must connect");
+
+        /*
+         * The control: *before* disconnecting, the bastion really does have this
+         * session. Without it the loop below passes against a `count_established` that
+         * always returns 0 — measured by mutation, which is exactly what was happening:
+         * the assertion could not fail, so it proved nothing.
+         */
+        /*
+         * The control, and the reason it exists: the first version of this test
+         * asserted "nothing is connected afterwards" against an `lsof` counter that
+         * returned 0 at every point in the run — measured by mutation, the assertion
+         * could not fail. `lsof` in the cargo child cannot see those sockets, so the
+         * whole check was decoration.
+         *
+         * So the evidence is the bastion's own TCP port: while the session is live, a
+         * connect to it succeeds and is accepted; once the client disconnects, the
+         * daemon has released it. A refused/timed-out connect after the disconnect is
+         * the server-side statement that the session is gone.
+         */
+        assert!(
+            established_connections(fixture.bastion_port) > 0,
+            "the bastion must show an established session before the disconnect, or this \
+             check cannot tell a released session from a counter that sees nothing"
+        );
+
+        disconnect_jump_connections_with_shutdown(
+            target_handle,
+            jump_handle,
+            guard,
+            "test disconnect",
+            tokio::time::Instant::now() + std::time::Duration::from_secs(10),
+        )
+        .await;
+
+        /*
+         * The daemons are asked, not the client. A lingering bastion session after the
+         * target closed is the exact shape of the leak: the user closed one tab and the
+         * jump host kept an authenticated connection to it.
+         *
+         * `sshd` releases the session within a moment, so this polls rather than
+         * sampling once.
+         */
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            if established_connections(fixture.bastion_port) == 0 {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "the bastion still has an established session after disconnect"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
+
+    /// Established TCP connections involving a loopback port, read from `netstat`.
+    ///
+    /// ## Why not `lsof`, and why not "can I connect?"
+    ///
+    /// `lsof -iTCP:<port>` inside the cargo test child returned **empty at every point in
+    /// the run**, including while the session was demonstrably live — measured. An
+    /// assertion built on it could not fail, which is the vacuous-guard shape this
+    /// repository keeps meeting.
+    ///
+    /// A plain `TcpStream::connect` is also the wrong question: the daemon keeps
+    /// *listening* after a session ends, because the listening socket belongs to the
+    /// process, not the session. Measured — that version failed with "still accepts
+    /// connections after disconnect", which is correct behaviour being reported as a leak.
+    ///
+    /// What is actually being counted is ESTABLISHED sockets, which is the only thing
+    /// that says "somebody still has a session here".
+    fn established_connections(port: u16) -> usize {
+        let output = std::process::Command::new("netstat")
+            .args(["-an", "-p", "tcp"])
+            .output();
+        let text = match output {
+            Ok(output) => String::from_utf8_lossy(&output.stdout).to_string(),
+            Err(error) => panic!("netstat is required to check for leaked sessions: {error}"),
+        };
+        let needle = format!(".{port} ");
+        text.lines()
+            .filter(|line| line.contains("ESTABLISHED"))
+            .filter(|line| line.contains(&needle) || line.contains(&format!(".{port}\t")))
+            .count()
+    }
+
     /// Reads a public key from the fixture's `.pub` text.
     fn russsh_public_key(value: &str) -> russh::keys::PublicKey {
         russh::keys::PublicKey::from_openssh(value.trim())
