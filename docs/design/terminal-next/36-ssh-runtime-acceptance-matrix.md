@@ -174,3 +174,38 @@ connection failed: connect host-key probe failed: Connection refused (os error 6
 **`NATIVE_GUI_VERIFIED` 现在有证据了**，依据是这两条 case 在真实 WebView 上跑过，
 不是「写了用例」。它覆盖的是「失败原因显示在面板里」这一个最小闭环，**不是** SSH
 全部行——矩阵其余各行仍是原状态。
+
+### 独立审查推翻了我第一版的分类
+
+合并前用四个视角（分类器 / 接线 / e2e 用例 / fixture）各查一遍，每条发现再由一个
+agent 拿真实文件去证伪。5 条判真，其中 3 条是同一类错误：
+
+`map_session_error` 只保留三个变体，把 `AuthenticationRejected`、`HostKeyRejected`
+等**全部压成 `ConnectionFailed`**。我的第一版对 `connection_failed` 兜底成
+`unreachable`，于是：
+
+| 真实形态 | Rust 生产者 | 第一版判定 | 应是 |
+| --- | --- | --- | --- |
+| 跳板拒绝凭据 | `ssh.rs:2763`、`ssh.rs:3957` | 服务器没应答 | 跳板拒绝凭据 |
+| 跳板密钥不符 | `types.rs:124` + `state.rs:426` | 服务器没应答 | known_hosts |
+| 隧道后不是 SSH 服务 | `ssh_host_key.rs:404` | 服务器没应答 | 握手失败 |
+
+三台机器都应答了。这正是本轮要修的那类误判，只是换了个位置。
+
+修法：把「服务器做出的决定」排在「传输症状」之前；兜底从 `unreachable` 改成
+`handshake` —— 两者都是猜测，但后者只说「没拿到可用的主机密钥」，这是每一个走到
+那行的失败都成立的事实。
+
+同一轮还查出 `jump-authentication` 这个桶在生产上**不可达**（真实凭据拒绝走
+`AuthenticationRejected`，被压成 `connection_failed`），它那三条文案与为它写的用例
+此前一个都不会渲染。已按文案兜底识别，根因（应给 `AuthenticationRejected` 单独的
+`SshHostKeyError` 变体）写在代码注释里。
+
+变红证据：兜底改回 `unreachable` → 3 项红；从 en 删一个 key → 文案枚举守卫红。
+
+### `e2e-07` 自己也有一个「通过得不对」的洞
+
+`ef8e3c4` 上六个文案键缺失，浮层标题渲染成 `terminal.hostKeyUnreachable`，而
+**e2e-07 依然 PASS**：它只断言标题不等于旧的 host-key 那句，裸 key 满足该条件。
+新增 `looksUntranslated` 断言（点号标识符、无空格），已在真实输入上验证，包括
+漏过去的那个。
