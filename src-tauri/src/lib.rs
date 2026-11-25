@@ -523,7 +523,12 @@ pub fn run() {
             return;
         }
 
-        let app = app.clone();
+        /*
+         * No `app` clone: the cleanup ends with `std::process::exit` (see below), so this
+         * task never needs the handle. It did when the last act was `app.exit()`, and the
+         * unused binding survived that change — `clippy --all-targets -D warnings` is what
+         * caught it.
+         */
         let exit_state = std::sync::Arc::clone(&exit_state);
         let shared_state = std::sync::Arc::clone(&shared_state);
         tauri::async_runtime::spawn(async move {

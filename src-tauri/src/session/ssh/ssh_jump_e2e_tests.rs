@@ -57,8 +57,14 @@ struct Fixture {
 
 #[derive(Clone, Copy)]
 struct FixtureProxies {
+    /// The proxy in front of the **bastion**, which is the leg a case interrupts.
+    ///
+    /// There is no `target` field: a jump connection never dials the target directly — it
+    /// asks the bastion to forward to an address, and `PermitOpen` names that address. The
+    /// first version carried a target proxy port and pointed the product at it, which
+    /// measured as `AdministrativelyProhibited`: the bastion correctly refusing an address
+    /// it had never been configured for.
     bastion: u16,
-    target: u16,
 }
 
 #[derive(Clone)]
@@ -83,7 +89,13 @@ struct SecondFixture {
 /// A missing fixture and a malformed fixture are different problems for the person
 /// running this, and the harness needs to tell them apart from the test's own output.
 enum FixtureLookup {
-    Ready(Fixture),
+    /*
+     * Boxed because `Fixture` grew when F11/F12 added `second` and `proxies`: the other
+     * two variants are unit-sized, and `clippy::large_enum_variant` refuses the resulting
+     * gap. Boxing keeps every `FixtureLookup` small on the stack, and the deref cost is
+     * irrelevant for something constructed once per test.
+     */
+    Ready(Box<Fixture>),
     /// Nothing is configured — the harness is not running. Skip, do not fail.
     NotConfigured,
     /// Configured and unusable — a harness bug that must be loud.
@@ -150,7 +162,7 @@ fn fixture() -> FixtureLookup {
             proxies: fixture_proxies(),
         })
     })() {
-        Ok(fixture) => FixtureLookup::Ready(fixture),
+        Ok(fixture) => FixtureLookup::Ready(Box::new(fixture)),
         Err(reason) => FixtureLookup::Broken(reason),
     }
 }
@@ -214,7 +226,6 @@ fn fixture_proxies() -> Option<FixtureProxies> {
     let port = |name: &str| -> Option<u16> { std::env::var(name).ok()?.parse().ok() };
     Some(FixtureProxies {
         bastion: port("SSH_JUMP_E2E_BASTION_PROXY_PORT")?,
-        target: port("SSH_JUMP_E2E_TARGET_PROXY_PORT")?,
     })
 }
 
@@ -955,10 +966,13 @@ async fn a_jump_session_registers_one_pool_entry_and_releases_it() {
 /// different targets through two different bastions and checked which credential ended up
 /// where.
 ///
-/// ## What is asserted, and why the marker is a nonce
+/// ## What is asserted, and why the marker is the far end's own
 ///
-/// Each target echoes a value generated for this run. Reading it back proves the session
-/// reached *that* target; a constant would still pass if the targets were swapped.
+/// Each target answers with the marker its own wrapper produces, so reading it back
+/// proves the session reached *that* target. A value the test sends and the far end merely
+/// echoes would be weaker: any machine that received the request could echo it back. The
+/// first version did exactly that with a per-run nonce, and the fixture's `command=`
+/// wrapper swallowed the request — the marker is what the wrapper actually answers.
 ///
 /// ## Why this skips rather than fails without the second fixture
 ///
@@ -981,15 +995,6 @@ async fn four_machines_keep_their_own_identity() {
         return;
     };
 
-    let nonce = format!(
-        "f11-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|elapsed| elapsed.as_nanos())
-            .unwrap_or_default()
-    );
-
     /// Connect with one exact credential set and return what the far end printed.
     #[allow(clippy::too_many_arguments)]
     async fn marker_through(
@@ -1000,7 +1005,6 @@ async fn four_machines_keep_their_own_identity() {
         bastion_key: String,
         bastion_host_key: String,
         user: String,
-        nonce: String,
     ) -> Result<String, String> {
         let target = JumpTarget {
             host: "127.0.0.1".to_string(),
@@ -1112,7 +1116,6 @@ async fn four_machines_keep_their_own_identity() {
         fixture.bastion_key.clone(),
         fixture.bastion_host_key.clone(),
         fixture.user.clone(),
-        nonce.clone(),
     )
     .await
     .expect("the first target must accept its own credential");
@@ -1124,13 +1127,13 @@ async fn four_machines_keep_their_own_identity() {
         fixture.bastion_key.clone(),
         fixture.bastion_host_key.clone(),
         fixture.user.clone(),
-        nonce.clone(),
     )
     .await
     .expect("the bastion may forward to a second target");
     assert_eq!(
         to_first, to_second,
-        "both targets echo this run's nonce; a mismatch means the second connection \\
+        "both targets answer with their own wrapper's marker; a mismatch means the second \
+         connection \\
          reached the first target"
     );
 
@@ -1143,7 +1146,6 @@ async fn four_machines_keep_their_own_identity() {
         second.bastion_key.clone(),
         second.bastion_host_key.clone(),
         fixture.user.clone(),
-        nonce.clone(),
     )
     .await
     .expect("the second bastion must reach the same target independently");
@@ -1161,7 +1163,6 @@ async fn four_machines_keep_their_own_identity() {
         second.bastion_key.clone(),
         fixture.bastion_host_key.clone(),
         fixture.user.clone(),
-        nonce,
     )
     .await;
     assert!(
@@ -1217,8 +1218,9 @@ async fn a_healthy_connection_through_the_proxies_succeeds() {
          * Pointing it at a proxy port produced `AdministrativelyProhibited` — measured —
          * which is the bastion correctly refusing an address it was not configured for.
          *
-         * The target leg is therefore shaped by proxying the **bastion's** dial to the
-         * target instead (see the harness), and the bastion leg by the bastion proxy.
+         * What this case therefore controls is the **bastion** leg: it dials the bastion
+         * through the proxy, so an injected fault there is felt on a real connection.
+         * The target leg is not proxied, and the case does not claim to shape it.
          */
         port: fixture.target_port,
         username: fixture.user.clone(),
