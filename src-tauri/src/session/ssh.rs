@@ -3543,6 +3543,74 @@ mod tests {
         ));
     }
 
+    /// F13 — a stage never outlives the connection's own deadline.
+    ///
+    /// ## The property this pins
+    ///
+    /// A two-hop connection runs connect → handshake → auth → tunnel → target handshake →
+    /// target auth. If each stage took its own full timeout, the user would wait for the
+    /// **sum** of them, and a user-facing "connect timeout" would be a number nobody could
+    /// predict from the settings. `stage_deadline` therefore clamps every stage to
+    /// `min(connection_deadline, now + stage_timeout)`.
+    ///
+    /// The margin below is 3× the stage timeout: if the clamp were ever removed, each
+    /// stage would get its own 200 ms and the total would exceed it. Sizes are small on
+    /// purpose — this is a property test, not a timing benchmark.
+    #[tokio::test]
+    async fn stage_deadlines_cannot_add_up_past_the_connection_deadline() {
+        const STAGE: std::time::Duration = std::time::Duration::from_millis(200);
+        let connection_deadline = tokio::time::Instant::now() + STAGE;
+        let started = tokio::time::Instant::now();
+
+        // Six stages, each asking for the full stage timeout: the shape of a two-hop
+        // connection. Each one must be clamped to what is left of the whole.
+        for stage in 0..6 {
+            let deadline = stage_deadline(connection_deadline, STAGE);
+            assert!(
+                deadline <= connection_deadline,
+                "stage {stage} was granted time past the connection deadline"
+            );
+            // Sleeping to the granted deadline must not overshoot the outer one.
+            tokio::time::sleep_until(deadline).await;
+        }
+
+        assert!(
+            started.elapsed() <= STAGE + std::time::Duration::from_millis(150),
+            "six stages took {:?}; the point is that they share one budget of {STAGE:?}",
+            started.elapsed()
+        );
+    }
+
+    /// The same rule with the deadline already in the past: a stage gets no time at all,
+    /// and cleanup gets none either.
+    #[tokio::test]
+    async fn an_expired_deadline_grants_no_stage_time() {
+        let expired = tokio::time::Instant::now() - std::time::Duration::from_secs(1);
+        assert!(stage_deadline(expired, std::time::Duration::from_secs(15)) <= expired);
+        assert!(cleanup_deadline(expired) <= expired);
+    }
+
+    /// F13 — `cleanup_deadline` is bounded but genuinely separate.
+    ///
+    /// Resource recovery must still happen when the connect budget is spent, so cleanup
+    /// gets its own window — but that window is itself capped, or a server that never
+    /// acknowledges a close would hold the process open indefinitely.
+    #[tokio::test]
+    async fn cleanup_has_its_own_bounded_window() {
+        let future = tokio::time::Instant::now() + std::time::Duration::from_secs(60);
+        let cleanup = cleanup_deadline(future);
+        let now = tokio::time::Instant::now();
+
+        assert!(
+            cleanup <= now + SSH_CLEANUP_TIMEOUT + std::time::Duration::from_millis(50),
+            "cleanup must not inherit the whole connection budget"
+        );
+        assert!(
+            cleanup > now,
+            "a live connection deadline must still leave cleanup some time"
+        );
+    }
+
     #[tokio::test]
     async fn expired_connection_deadline_does_not_grant_cleanup_more_time() {
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(5);
