@@ -35,6 +35,7 @@ import { rm } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { launchProcess, stopProcess } from './process-lifecycle.mjs'
 import { startTerminalSmokeSshd } from '../terminal-smoke-sshd.mjs'
+import { startShapingProxy } from '../sftp-shaping-proxy.mjs'
 
 const PROJECT_ROOT = path.resolve(import.meta.dirname, '..', '..')
 
@@ -76,6 +77,7 @@ async function main() {
 
   const runDirectory = mkdtempSync(path.join(os.homedir(), '.tmp-ssh12-'))
   const daemons = []
+  const proxies = []
   try {
     /*
      * The target first: the bastion's `PermitOpen` has to name the port the target will
@@ -90,27 +92,24 @@ async function main() {
     daemons.push(target)
     report.target = { port: target.port }
 
-    const bastion = await startTerminalSmokeSshd({
-      runDirectory: path.join(runDirectory, 'bastion'),
-      mode: 'key',
-      role: 'jump',
-      shell: 'sh',
-      targetPort: target.port,
-    })
-    daemons.push(bastion)
-    report.bastion = { port: bastion.port }
-
     /*
-     * F11 — a second bastion/target pair, for the identity-isolation matrix.
+     * F11 — bastion A may reach **both** targets.
      *
-     * Four daemons rather than two, because the question the matrix asks is whether a
-     * credential can end up on the wrong machine, and that is unanswerable with one of
-     * each. Target B is reachable through **both** bastions; bastion B reaches target A.
-     * The test connects along every one of those paths and checks which key worked.
+     * The isolation matrix asks whether a credential can end up on the wrong machine, and
+     * that question only has an answer if the bastion is allowed to go to the wrong one.
+     * With `PermitOpen` naming a single address, "the connection reached target B" is
+     * impossible rather than isolated, and the case would pass on a product that never
+     * isolated anything.
+     */
+    /*
+     * F11 — target B is created **before** bastion A, because bastion A has to be
+     * configured with every address it may forward to, and that list includes target B.
      *
-     * Started unconditionally: a case that silently skipped for want of a fixture is what
-     * this repository keeps recording as a false green. If a daemon cannot start, that is
-     * a harness failure and the run says so.
+     * The isolation matrix asks whether a credential can end up on the wrong machine, and
+     * that question only has an answer if the bastion is *allowed* to reach the wrong one.
+     * A `PermitOpen` naming a single address makes "reached the other target" impossible
+     * rather than isolated, and the case would then pass on a product that never isolated
+     * anything.
      */
     const targetB = await startTerminalSmokeSshd({
       runDirectory: path.join(runDirectory, 'target-b'),
@@ -121,18 +120,57 @@ async function main() {
     daemons.push(targetB)
     report.targetB = { port: targetB.port }
 
+    const bastion = await startTerminalSmokeSshd({
+      runDirectory: path.join(runDirectory, 'bastion'),
+      mode: 'key',
+      role: 'jump',
+      shell: 'sh',
+      targetPort: target.port,
+      targetPorts: [target.port, targetB.port],
+    })
+    daemons.push(bastion)
+    report.bastion = { port: bastion.port }
+
+
+
     const bastionB = await startTerminalSmokeSshd({
       runDirectory: path.join(runDirectory, 'bastion-b'),
       mode: 'key',
       role: 'jump',
       shell: 'sh',
       targetPort: targetB.port,
+      // Bastion B may also reach target A, so "the same target through either bastion"
+      // is a real question rather than one the configuration makes impossible.
+      targetPorts: [targetB.port, target.port],
     })
     daemons.push(bastionB)
     report.bastionB = { port: bastionB.port }
     console.log(
-      `[ssh12] bastion 127.0.0.1:${bastion.port} -> target 127.0.0.1:${target.port}`,
+      `[ssh12] bastion 127.0.0.1:${bastion.port} -> targets ${target.port}/${targetB.port}, ` +
+        `bastion-b 127.0.0.1:${bastionB.port} -> targets ${targetB.port}/${target.port}`,
     )
+
+    /*
+     * F12 — a proxy in front of each daemon, so a case can break a *specific* leg at a
+     * *specific* moment.
+     *
+     * The scenarios are the ones `sftp-shaping-proxy.mjs` already implements and tests:
+     * `resetAfterMs` kills the connection mid-handshake, `cutAfterBytes` breaks a stream
+     * that was working, `blackhole` accepts and says nothing. Injecting them at the
+     * proxy rather than inside a daemon keeps the daemons real and the injection honest:
+     * the product sees exactly what a network fault looks like.
+     *
+     * One proxy per leg, because "which transport was interrupted" is the whole question a
+     * disconnect matrix has to answer. A single shared proxy could only say "something
+     * broke".
+     */
+    const targetProxy = await startShapingProxy({ targetPort: target.port })
+    const bastionProxy = await startShapingProxy({ targetPort: bastion.port })
+    proxies.push(targetProxy, bastionProxy)
+    report.proxies = {
+      target: { port: targetProxy.port },
+      bastion: { port: bastionProxy.port },
+    }
 
     console.log(`[ssh12] env: bastion=${bastion.port} target=${target.port} key=${String(bastion.privateKey).slice(0, 24)}...`)
     const cargo = launchProcess(
@@ -161,6 +199,8 @@ async function main() {
           SSH_JUMP_E2E_TARGET_HOST_KEY: target.expectedHostKey
             ? target.expectedHostKey.toString()
             : '',
+          SSH_JUMP_E2E_BASTION_PROXY_PORT: String(bastionProxy.port),
+          SSH_JUMP_E2E_TARGET_PROXY_PORT: String(targetProxy.port),
           SSH_JUMP_E2E_B_PORT: String(bastionB.port),
           SSH_JUMP_E2E_B_TARGET_PORT: String(targetB.port),
           SSH_JUMP_E2E_B_BASTION_KEY: bastionB.privateKey,
@@ -212,6 +252,13 @@ async function main() {
       finish('PASS')
     }
   } finally {
+    for (const proxy of proxies) {
+      try {
+        await proxy.close()
+      } catch (error) {
+        report.notes.push(`proxy cleanup failed: ${error.message}`)
+      }
+    }
     for (const daemon of daemons.reverse()) {
       try {
         await daemon.stop()

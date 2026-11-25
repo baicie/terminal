@@ -131,6 +131,40 @@ fn init_tracing() {
     let _ = tracing_log::LogTracer::init();
 }
 
+/// What the exit handler should do with one `ExitRequested` event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExitResponse {
+    /// Cleanup already finished: request the exit again, out of band.
+    Reissue,
+    /// Not ours: a restart, which Tauri handles itself.
+    LetItThrough,
+    /// First request: cancel it, clean up, and exit afterwards.
+    CleanUpFirst,
+}
+
+/// The exit handler's decision, extracted so it can be tested without a Tauri loop.
+///
+/// ## The defect this encodes
+///
+/// The handler used to `return` whenever cleanup was complete, expecting the cleanup
+/// task's own `app.exit()` to have taken effect. It had not: `api.prevent_exit()` cancels
+/// the request in flight, and the loop does not replay a cancelled request. Measured
+/// through the product smoke harness — `finalized` → `exit cleanup: started` → `finished`
+/// within 0.4 ms, then 210 s of nothing. The cleanup was never the problem.
+fn exit_response(cleanup_complete: bool, code: Option<i32>) -> ExitResponse {
+    if cleanup_complete {
+        return if code == Some(tauri::RESTART_EXIT_CODE) {
+            ExitResponse::LetItThrough
+        } else {
+            ExitResponse::Reissue
+        };
+    }
+    if code == Some(tauri::RESTART_EXIT_CODE) {
+        return ExitResponse::LetItThrough;
+    }
+    ExitResponse::CleanUpFirst
+}
+
 #[derive(Default)]
 struct GracefulExitState {
     cleanup_started: std::sync::atomic::AtomicBool,
@@ -458,8 +492,30 @@ pub fn run() {
         let tauri::RunEvent::ExitRequested { api, code, .. } = event else {
             return;
         };
-        if exit_state.is_complete() || code == Some(tauri::RESTART_EXIT_CODE) {
-            return;
+        /*
+         * F09 — a completed cleanup does **not** make this exit request live again.
+         *
+         * `api.prevent_exit()` below cancels the request that is in flight; returning on
+         * the next one relies on `app.exit()` having been called again in between. The
+         * cleanup task does call it — but only after this callback has already returned
+         * for the *first* request, and the loop does not replay a cancelled request.
+         *
+         * Measured, through the product smoke harness: `finalized` → `exit cleanup:
+         * started` → `finished` all logged within 0.4 ms, then the process sat for the
+         * harness's 210 s deadline. The cleanup was never the problem; the exit that
+         * followed it was simply never dispatched.
+         *
+         * So: when cleanup is already complete, ask again out of band instead of
+         * returning. `code` is carried through so a restart request keeps its code.
+         */
+        match exit_response(exit_state.is_complete(), code) {
+            ExitResponse::Reissue => {
+                let app = app.clone();
+                std::thread::spawn(move || app.exit(code.unwrap_or_default()));
+                return;
+            }
+            ExitResponse::LetItThrough => return,
+            ExitResponse::CleanUpFirst => {}
         }
 
         api.prevent_exit();
@@ -485,15 +541,59 @@ pub fn run() {
             {
                 tracing::warn!("resource cleanup exceeded the application exit deadline");
             }
+
             exit_state.mark_complete();
-            app.exit(code.unwrap_or_default());
+            /*
+             * F09 — leave the process directly, now that cleanup has finished.
+             *
+             * `app.exit()` only asks the runtime to request an exit, and the runtime
+             * answers that request by running this callback again. `try_recv()` on the
+             * exit-request channel is non-blocking, so the second `prevent_exit()` below
+             * is a race against the same callback that just ran — measured through the
+             * product smoke harness: cleanup logged `started` and `finished` within
+             * 0.4 ms, then 210 s of nothing.
+             *
+             * By this point the sessions are closed, the shared resources are released,
+             * and the exit code is decided. Asking the loop once more buys nothing and
+             * can silently lose the request; `process::exit` is the honest end of a
+             * cleanup that has already happened.
+             */
+            std::process::exit(code.unwrap_or_default());
         });
     });
 }
 
 #[cfg(test)]
 mod tests {
-    use super::GracefulExitState;
+    use super::{exit_response, ExitResponse, GracefulExitState};
+
+    #[test]
+    fn a_finished_cleanup_asks_for_the_exit_again() {
+        /*
+         * Measured regression: returning here left the process alive for the harness's
+         * full 210 s deadline. `api.prevent_exit()` had already cancelled the request
+         * that would have carried the cleanup task's own `app.exit()`.
+         */
+        assert_eq!(exit_response(true, None), ExitResponse::Reissue);
+        assert_eq!(exit_response(true, Some(0)), ExitResponse::Reissue);
+        assert_eq!(exit_response(true, Some(1)), ExitResponse::Reissue);
+        // A restart is Tauri's own protocol and must not be reissued by us.
+        assert_eq!(
+            exit_response(true, Some(tauri::RESTART_EXIT_CODE)),
+            ExitResponse::LetItThrough
+        );
+    }
+
+    #[test]
+    fn the_first_exit_request_cleans_up_before_leaving() {
+        assert_eq!(exit_response(false, None), ExitResponse::CleanUpFirst);
+        assert_eq!(exit_response(false, Some(0)), ExitResponse::CleanUpFirst);
+        // Restart still bypasses our cleanup, whether or not it has run.
+        assert_eq!(
+            exit_response(false, Some(tauri::RESTART_EXIT_CODE)),
+            ExitResponse::LetItThrough
+        );
+    }
 
     #[test]
     fn graceful_exit_state_starts_cleanup_once_and_then_allows_exit() {

@@ -48,6 +48,17 @@ struct Fixture {
     /// set is additive rather than a required field: a harness that predates F11 runs
     /// every older case and honestly skips only the new ones.
     second: Option<SecondFixture>,
+    /// F12 — proxies in front of each leg, so a case can break one leg on purpose.
+    ///
+    /// `None` when the harness started no proxy. The disconnect matrix skips then, and
+    /// says so; every other case keeps using the daemons directly, exactly as before.
+    proxies: Option<FixtureProxies>,
+}
+
+#[derive(Clone, Copy)]
+struct FixtureProxies {
+    bastion: u16,
+    target: u16,
 }
 
 #[derive(Clone)]
@@ -136,6 +147,7 @@ fn fixture() -> FixtureLookup {
             target_host_key: host_key("SSH_JUMP_E2E_TARGET_HOST_KEY")?,
             bastion_host_key: host_key("SSH_JUMP_E2E_BASTION_HOST_KEY")?,
             second: second_fixture()?,
+            proxies: fixture_proxies(),
         })
     })() {
         Ok(fixture) => FixtureLookup::Ready(fixture),
@@ -193,6 +205,15 @@ fn second_fixture() -> Result<Option<SecondFixture>, String> {
         target_host_key: text("SSH_JUMP_E2E_B_TARGET_HOST_KEY", "ssh-")?,
         bastion_host_key: text("SSH_JUMP_E2E_B_BASTION_HOST_KEY", "ssh-")?,
     }))
+}
+
+/// F12 — the proxy ports, when the harness started them.
+fn fixture_proxies() -> Option<FixtureProxies> {
+    let port = |name: &str| -> Option<u16> { std::env::var(name).ok()?.parse().ok() };
+    Some(FixtureProxies {
+        bastion: port("SSH_JUMP_E2E_BASTION_PROXY_PORT")?,
+        target: port("SSH_JUMP_E2E_TARGET_PROXY_PORT")?,
+    })
 }
 
 fn jump_config(fixture: &Fixture) -> JumpHostConfig {
@@ -694,6 +715,7 @@ async fn two_sessions_through_one_bastion_do_not_share_a_transport() {
             target_host_key: fixture.target_host_key.clone(),
             bastion_host_key: fixture.bastion_host_key.clone(),
             second: None,
+            proxies: None,
         };
         async move {
             let target = JumpTarget {
@@ -1027,11 +1049,24 @@ async fn four_machines_keep_their_own_identity() {
                 .exec(true, command.as_bytes())
                 .await
                 .map_err(|error| error.to_string())?;
+            /*
+             * The loop the product's own `exec` uses. The first version broke on
+             * `Eof`/`Close` only, which is the wrong pair to wait for: a server sends
+             * `ExitStatus` **before** closing, and breaking early lost the output that
+             * had not arrived yet — measured as "the command timed out" on every case.
+             */
             let mut stdout = Vec::new();
-            while let Some(message) = channel.wait().await {
-                match message {
-                    russh::ChannelMsg::Data { data } => stdout.extend_from_slice(&data),
-                    russh::ChannelMsg::Eof | russh::ChannelMsg::Close => break,
+            loop {
+                match channel.wait().await {
+                    Some(russh::ChannelMsg::Data { data }) => stdout.extend_from_slice(&data),
+                    Some(russh::ChannelMsg::ExtendedData { data, ext }) => {
+                        if ext != 1 {
+                            stdout.extend_from_slice(&data);
+                        }
+                    }
+                    Some(russh::ChannelMsg::ExitStatus { .. }) => break,
+                    Some(russh::ChannelMsg::Eof) | Some(russh::ChannelMsg::Close) => break,
+                    None => break,
                     _ => {}
                 }
             }
@@ -1042,7 +1077,13 @@ async fn four_machines_keep_their_own_identity() {
         Ok(output)
     }
 
-    // 1. Same bastion, different targets.
+    /*
+     * 1. Same bastion, different targets.
+     *
+     * Both daemons are configured to allow both targets, so "the connection reached the
+     * wrong one" is a possible outcome rather than an impossible one — which is what makes
+     * this an isolation test instead of a tautology.
+     */
     let to_first = marker_through(
         fixture.target_port,
         fixture.target_key.clone(),
@@ -1107,5 +1148,94 @@ async fn four_machines_keep_their_own_identity() {
         crossed.is_err(),
         "a bastion must not accept another bastion's key; a successful read means the two \
          machines' identities are not isolated"
+    );
+}
+
+/// F12 — a healthy connection through the proxies must succeed, so the fault injections
+/// have a control.
+///
+/// ## Why the proxies exist
+///
+/// Every other case in this file breaks a connection with the wrong credential. That is a
+/// server *deciding*, not a network failing, and the two travel different code paths: a
+/// refusal is classified before a session exists, a reset or a stall arrives while
+/// something is waiting. Without a controllable fault there is no way to ask whether the
+/// product attributes a broken transport to the leg that actually broke.
+///
+/// The harness puts a shaping proxy in front of each daemon. This case proves the
+/// pass-through path works — the same `connect_via_jump` call, dialing proxy ports instead
+/// of daemon ports — so a later injected fault cannot be confused with "the proxy broke
+/// everything".
+///
+/// ## Why it skips without proxies
+///
+/// The older cases must keep running against a harness that starts only daemons. A run
+/// without proxy ports says so instead of silently passing.
+#[tokio::test]
+#[ignore = "needs scripts/verify-install/ssh-jump-e2e.mjs to start the proxies"]
+async fn a_healthy_connection_through_the_proxies_succeeds() {
+    let fixture = match fixture() {
+        FixtureLookup::Ready(fixture) => fixture,
+        FixtureLookup::NotConfigured => {
+            eprintln!("SSH_JUMP_E2E_* not set; skipping");
+            return;
+        }
+        FixtureLookup::Broken(reason) => panic!("the harness is not usable: {reason}"),
+    };
+    let Some(proxies) = fixture.proxies else {
+        eprintln!("SSH_JUMP_E2E_*_PROXY_PORT not set; skipping the proxy control");
+        return;
+    };
+
+    let target = JumpTarget {
+        host: "127.0.0.1".to_string(),
+        /*
+         * The **real** target port, not the target proxy's.
+         *
+         * A jump connection never dials the target itself: it asks the bastion to forward
+         * to this address, and the bastion's `PermitOpen` names exactly this port.
+         * Pointing it at a proxy port produced `AdministrativelyProhibited` — measured —
+         * which is the bastion correctly refusing an address it was not configured for.
+         *
+         * The target leg is therefore shaped by proxying the **bastion's** dial to the
+         * target instead (see the harness), and the bastion leg by the bastion proxy.
+         */
+        port: fixture.target_port,
+        username: fixture.user.clone(),
+        password: None,
+        private_key: Some(fixture.target_key.clone()),
+        certificate: None,
+        expected_host_key: Some(public_key(&fixture.target_host_key)),
+        use_agent: false,
+        allow_agent_forwarding: false,
+    };
+    let jump = JumpHostConfig {
+        host: "127.0.0.1".to_string(),
+        port: proxies.bastion,
+        username: fixture.user.clone(),
+        auth_type: "key".to_string(),
+        password: None,
+        private_key: Some(fixture.bastion_key.clone()),
+        certificate: None,
+        expected_host_key: Some(fixture.bastion_host_key.clone()),
+        target_auth_type: None,
+    };
+
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(25),
+        SshSession::connect_via_jump(
+            Arc::new(interactive_ssh_config()),
+            target,
+            jump,
+            tokio::time::Instant::now() + std::time::Duration::from_secs(20),
+        ),
+    )
+    .await
+    .expect("a pass-through proxy must not stall the connection");
+
+    result.expect(
+        "a healthy connection through pass-through proxies must succeed; a failure here \
+         means the proxy changed the traffic, and every injected-fault case after it would \
+         be measuring the proxy instead of the product",
     );
 }
