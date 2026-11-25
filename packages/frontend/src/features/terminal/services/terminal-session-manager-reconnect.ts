@@ -8,6 +8,11 @@ import type {
 import { updateTerminalState, terminalFailureState } from './terminal-session-state'
 import type { TerminalFailure } from './terminal-session-manager-errors'
 import { TerminalSessionRecoveryTimer } from './terminal-session-recovery-timer'
+import {
+  prepareReconnectIo,
+  prepareReconnectRecord,
+  scheduleReconnectRecovery,
+} from './terminal-session-reconnect-prepare'
 import { TerminalSessionWakeRecovery } from './terminal-session-wake-recovery'
 import type { TerminalRecord } from './terminal-session-manager-types'
 
@@ -157,7 +162,8 @@ export class TerminalSessionReconnect {
     while (attempt < attempts) {
       attempt += 1
       if (attempt > 1) this.prepareIo(record, mode)
-      const delay = mode === 'automatic' ? this.delayFor(attempt) : 0
+      const delay =
+        mode === 'automatic' ? reconnectDelayFor(this.policy, attempt) : 0
       updateTerminalState(record, {
         status: 'reconnecting',
         sessionId: null,
@@ -257,54 +263,26 @@ export class TerminalSessionReconnect {
   }
 
   private scheduleRecovery(record: TerminalRecord): void {
-    if (
-      record.closed ||
-      record.request.tabType !== 'remote' ||
-      record.retryable !== true
-    ) {
-      return
-    }
-    this.recoveryTimer.schedule(record, this.policy.recoveryDelayMs, () => {
-      if (
-        record.closed ||
-        record.status !== 'error' ||
-        record.retryable !== true ||
-        record.reconnectPromise
-      ) {
-        return
-      }
-      this.launch(record, 'automatic', 'Retrying after automatic backoff')
-    })
+    scheduleReconnectRecovery(
+      record,
+      this.recoveryTimer,
+      this.policy.recoveryDelayMs,
+      () => this.launch(record, 'automatic', 'Retrying after automatic backoff'),
+    )
   }
 
   private prepare(
     record: TerminalRecord,
     mode: NonNullable<TerminalRecord['reconnectMode']> | false,
   ): string | null {
-    const sessionId = record.sessionId
-    record.sessionId = null
-    if (mode) {
-      record.audience.retireAll()
-      this.prepareIo(record, mode)
-    }
-    if (!sessionId) return null
-    this.dependencies.sessionToTab.delete(sessionId)
-    this.dependencies.pendingOutput.retire(sessionId)
-    this.dependencies.retireLifecycle(sessionId)
-    record.audience.retire(sessionId)
-    return sessionId
+    return prepareReconnectRecord(record, mode, this.dependencies)
   }
 
   private prepareIo(
     record: TerminalRecord,
     mode: NonNullable<TerminalRecord['reconnectMode']>,
   ): void {
-    if (mode === 'automatic') record.io.prepareForAutomaticReconnect()
-    else record.io.prepareForReconnect()
-  }
-
-  private delayFor(attempt: number): number {
-    return reconnectDelayFor(this.policy, attempt)
+    prepareReconnectIo(record, mode)
   }
 
   private isActive(record: TerminalRecord, generation: number): boolean {
