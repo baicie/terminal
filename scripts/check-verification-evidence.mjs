@@ -678,7 +678,35 @@ export async function findTestModuleFiles(
     )) {
       const [, pathAttribute, moduleName] = match
       const explicit = pathAttribute === undefined ? undefined : paths[pathIndex++]
-      const directory = path.posix.dirname(relativePath)
+      /*
+       * Rust's module rule, not `dirname`.
+       *
+       * For `session/ssh.rs`, a `mod foo;` lives at `session/ssh/foo.rs` — the file
+       * stem becomes a directory. For `session/mod.rs` (and `lib.rs`, `main.rs`), the
+       * siblings sit directly beside it. Using `dirname` for both resolved
+       * `#[cfg(test)] mod ssh_jump_e2e_tests;` in `session/ssh.rs` to
+       * `session/ssh_jump_e2e_tests.rs`, which does not exist — so the real file at
+       * `session/ssh/ssh_jump_e2e_tests.rs` was never excluded, every edit to it
+       * invalidated the six acceptance-evidence documents, and the check reported a
+       * path that is nowhere on disk.
+       *
+       * Measured: with the test in its correct location the fingerprint still moved,
+       * and `findTestModuleFiles` listed `src-tauri/src/session/ssh_jump_e2e_tests.rs`.
+       */
+      const parent = path.posix.dirname(relativePath)
+      const stem = path.posix.basename(relativePath, '.rs')
+      /*
+       * `#[path]` is resolved against the declaring file's own directory, which is what
+       * Rust does too — `ssh_host_key.rs` declares
+       * `#[path = "ssh_host_key_tests.rs"]` and the file sits beside it, not inside an
+       * `ssh_host_key/` directory. Only the implicit form (`mod foo;`) gets the
+       * stem-becomes-directory rule.
+       */
+      const directory = explicit !== undefined
+        ? parent
+        : stem === 'mod' || stem === 'lib' || stem === 'main'
+          ? parent
+          : path.posix.join(parent, stem)
       const declared = explicit ?? `${moduleName}.rs`
       const resolved = path.posix.normalize(path.posix.join(directory, declared))
       // A `#[path]` escaping `src-tauri/src` names a file this collector cannot

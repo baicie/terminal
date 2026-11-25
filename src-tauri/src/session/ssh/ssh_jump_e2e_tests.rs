@@ -27,8 +27,9 @@
 //! convention `sftp_command_e2e_tests` uses.
 
 use super::{
-    disconnect_jump_connections_with_shutdown, interactive_ssh_config, ConnectionHop,
-    ConnectionStage, JumpHostConfig, JumpTarget, SessionError, SshSession,
+    connection_key, disconnect_jump_connections_with_shutdown, get_connection_pool,
+    interactive_ssh_config, ssh_resource_keys, ConnectionHop, ConnectionStage, JumpHostConfig,
+    JumpTarget, SessionError, SshSession,
 };
 use std::sync::Arc;
 
@@ -528,15 +529,305 @@ fn established_connections(port: u16) -> usize {
         Ok(output) => String::from_utf8_lossy(&output.stdout).to_string(),
         Err(error) => panic!("netstat is required to check for leaked sessions: {error}"),
     };
-    let needle = format!(".{port} ");
+    /*
+     * Count the **listening side only**.
+     *
+     * One loopback connection produces two ESTABLISHED rows — `127.0.0.1:<port> ->
+     * 127.0.0.1:<ephemeral>` and its mirror. Counting both made a single session read as
+     * two, which is why the first version's baseline looked contaminated when it was not
+     * and why "one connection per session" could not be stated directly.
+     *
+     * `sshd`'s side is the row whose *local* address is the port, i.e. the port appears
+     * before the arrow.
+     */
+    let local = format!("127.0.0.1.{port}");
     text.lines()
         .filter(|line| line.contains("ESTABLISHED"))
-        .filter(|line| line.contains(&needle) || line.contains(&format!(".{port}\t")))
+        .filter(|line| {
+            /*
+             * `netstat -an -p tcp` on macOS prints the local address first and the peer
+             * second, with no arrow between them:
+             *
+             *   tcp4  0  0  127.0.0.1.61030  127.0.0.1.61031  ESTABLISHED
+             *
+             * so "the daemon's side" is the row where the port appears in an early
+             * address field. Splitting on `->` (the `lsof` shape) matched nothing and
+             * silently counted zero — which the control assertion caught.
+             */
+            // Field 4 is the local address (`tcp4 0 0 <local> <peer> ESTABLISHED`).
+            line.split_whitespace()
+                .nth(3)
+                .is_some_and(|field| field.contains(&local))
+        })
         .count()
+}
+
+/// SSH17 — two sessions through the same bastion are two connections, and ending one
+/// leaves the other working.
+///
+/// ## What "bastion identity isolation" actually means here
+///
+/// `connection_key` already includes the session id, so two sessions can never share a
+/// pool entry — that is a string property, and the unit tests pin it. What those tests
+/// cannot say is whether the *transport* is shared: reusing one authenticated bastion
+/// connection across sessions would be a legitimate optimisation, and it would also mean
+/// one session's disconnect tears down another's tunnel.
+///
+/// The code does not share (`connect_via_jump` authenticates the bastion per call), but
+/// "the code does not share it" is what a test is for. So this opens two sessions to the
+/// same target through the same bastion and checks the **server's** view: two separate
+/// established connections, not one.
+///
+/// The second half is the one a user would feel: disconnecting the first session must
+/// leave the second able to do things. It is asserted by counting the bastion's
+/// established connections before and after, which drops by exactly one.
+#[tokio::test]
+#[ignore = "needs scripts/verify-install/ssh-jump-e2e.mjs to start two daemons"]
+async fn two_sessions_through_one_bastion_do_not_share_a_transport() {
+    let fixture = match fixture() {
+        FixtureLookup::Ready(fixture) => fixture,
+        FixtureLookup::NotConfigured => {
+            eprintln!("SSH_JUMP_E2E_* not set; skipping");
+            return;
+        }
+        FixtureLookup::Broken(reason) => panic!("the harness is not usable: {reason}"),
+    };
+
+    let connect_once = || {
+        let fixture = Fixture {
+            bastion_port: fixture.bastion_port,
+            target_port: fixture.target_port,
+            user: fixture.user.clone(),
+            bastion_key: fixture.bastion_key.clone(),
+            target_key: fixture.target_key.clone(),
+            target_host_key: fixture.target_host_key.clone(),
+            bastion_host_key: fixture.bastion_host_key.clone(),
+        };
+        async move {
+            let target = JumpTarget {
+                host: "127.0.0.1".to_string(),
+                port: fixture.target_port,
+                username: fixture.user.clone(),
+                password: None,
+                private_key: Some(fixture.target_key.clone()),
+                certificate: None,
+                expected_host_key: Some(public_key(&fixture.target_host_key)),
+                use_agent: false,
+                allow_agent_forwarding: false,
+            };
+            SshSession::connect_via_jump(
+                Arc::new(interactive_ssh_config()),
+                target,
+                jump_config(&fixture),
+                tokio::time::Instant::now() + std::time::Duration::from_secs(20),
+            )
+            .await
+        }
+    };
+
+    /*
+     * Wait for the bastion to be quiet first.
+     *
+     * Every case in this file runs against the same two daemons and `--test-threads=1`,
+     * but `sshd` closes a session a moment after the client does, so the previous case's
+     * sockets can still be ESTABLISHED here. Measured: the baseline read 2 rather than 0,
+     * which would let "the first session opened a connection" pass on somebody else's
+     * connection and make the later decrement check meaningless.
+     */
+    let quiet_deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    while established_connections(fixture.bastion_port) > 0 {
+        assert!(
+            tokio::time::Instant::now() < quiet_deadline,
+            "the bastion still had {} session(s) from a previous case before this one started",
+            established_connections(fixture.bastion_port)
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    let baseline = established_connections(fixture.bastion_port);
+    assert_eq!(
+        baseline, 0,
+        "the baseline must be quiet, not merely smaller"
+    );
+
+    let (first_target, first_jump, first_guard, _a) = connect_once()
+        .await
+        .expect("the first session must connect");
+    let after_first = established_connections(fixture.bastion_port);
+
+    let (second_target, second_jump, second_guard, _c) = connect_once()
+        .await
+        .expect("the second session must connect");
+    let after_second = established_connections(fixture.bastion_port);
+
+    /*
+     * Each session adds its own bastion connection. If the transport were shared the
+     * second would add nothing — and the count is the only place that difference shows.
+     */
+    assert!(
+        after_first > baseline,
+        "the first session must open its own bastion connection (baseline {baseline}, after {after_first})"
+    );
+    assert!(
+        after_second > after_first,
+        "the second session must open its own bastion connection, not reuse the first \
+         (after first {after_first}, after second {after_second})"
+    );
+
+    disconnect_jump_connections_with_shutdown(
+        first_target,
+        first_jump,
+        first_guard,
+        "first session finished",
+        tokio::time::Instant::now() + std::time::Duration::from_secs(10),
+    )
+    .await;
+
+    /*
+     * The second session's transport must survive. Waiting for the count to settle keeps
+     * this from racing the server's own teardown of the first.
+     */
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        if established_connections(fixture.bastion_port) == after_first {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "disconnecting the first session must drop exactly its own bastion connection \
+             (expected {after_first}, saw {})",
+            established_connections(fixture.bastion_port)
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    /*
+     * And the survivor is still **usable**, not merely still counted.
+     *
+     * `is_closed()` does not exist on a russh handle, and a flag we set ourselves would
+     * only report our own bookkeeping. Opening a channel makes the server answer, which
+     * is the thing the user would fail to do if the first session's disconnect had
+     * reached into the second's transport.
+     */
+    let channel = second_target
+        .channel_open_session()
+        .await
+        .expect("the second session must still be able to open a channel");
+    drop(channel);
+
+    disconnect_jump_connections_with_shutdown(
+        second_target,
+        second_jump,
+        second_guard,
+        "second session finished",
+        tokio::time::Instant::now() + std::time::Duration::from_secs(10),
+    )
+    .await;
 }
 
 /// Reads a public key from the fixture's `.pub` text.
 fn public_key(value: &str) -> russh::keys::PublicKey {
     russh::keys::PublicKey::from_openssh(value.trim())
         .expect("the fixture writes a valid OpenSSH public key")
+}
+
+/// SSH16 — a jump connection registers **one** pool entry, under a key that names the
+/// bastion, and releases it on disconnect.
+///
+/// ## What this covers that the key-shape unit tests do not
+///
+/// `jump_pool_key_includes_bastion_identity` proves two paths produce different
+/// strings. It cannot prove the pool is actually written and cleaned up: those are
+/// `insert`/`release` on a `SshConnectionPool` that has no entries in a unit test.
+///
+/// The leak this guards against is a session that ends while its entry stays behind —
+/// the pool would keep an `Arc<Handle>` alive, and SFTP/port-forward would find a
+/// transport whose SSH session is gone. `ssh_resource_keys` is the product's own view
+/// of what is registered, so the assertion is against the real registry rather than a
+/// bookkeeping copy.
+#[tokio::test]
+#[ignore = "needs scripts/verify-install/ssh-jump-e2e.mjs to start two daemons"]
+async fn a_jump_session_registers_one_pool_entry_and_releases_it() {
+    let fixture = match fixture() {
+        FixtureLookup::Ready(fixture) => fixture,
+        FixtureLookup::NotConfigured => {
+            eprintln!("SSH_JUMP_E2E_* not set; skipping");
+            return;
+        }
+        FixtureLookup::Broken(reason) => panic!("the harness is not usable: {reason}"),
+    };
+    let target = JumpTarget {
+        host: "127.0.0.1".to_string(),
+        port: fixture.target_port,
+        username: fixture.user.clone(),
+        password: None,
+        private_key: Some(fixture.target_key.clone()),
+        certificate: None,
+        expected_host_key: Some(public_key(&fixture.target_host_key)),
+        use_agent: false,
+        allow_agent_forwarding: false,
+    };
+    let jump = jump_config(&fixture);
+    let (target_handle, jump_handle, guard, _slot) = SshSession::connect_via_jump(
+        Arc::new(interactive_ssh_config()),
+        target,
+        jump.clone(),
+        tokio::time::Instant::now() + std::time::Duration::from_secs(20),
+    )
+    .await
+    .expect("the healthy fixture must connect");
+
+    /*
+     * Write the entry exactly the way `SshSession::create` does: same key function, same
+     * arguments. Recomputing the format string here would let the test and the product
+     * drift apart while both stayed green.
+     */
+    let session_id = format!("ssh16-{}", std::process::id());
+    let pool_key = connection_key(
+        &session_id,
+        "127.0.0.1",
+        fixture.target_port,
+        &fixture.user,
+        Some(&jump),
+        false,
+    );
+    let pool = get_connection_pool();
+    pool.clone()
+        .insert(
+            pool_key.clone(),
+            Arc::new(target_handle),
+            Some(Arc::new(jump_handle)),
+        )
+        .await;
+
+    let (pool_keys, registry_keys) = ssh_resource_keys().await;
+    assert!(
+        pool_keys.contains(&pool_key),
+        "the jump session must be registered under its own key: {pool_keys:?}"
+    );
+    assert!(
+        registry_keys.contains(&pool_key),
+        "the registry SFTP/port-forward reads must hold the same key: {registry_keys:?}"
+    );
+    /*
+     * The key names both ends. A key that only carried the target would let two
+     * different bastions — different networks, different accounts — share one entry.
+     */
+    assert!(
+        pool_key.contains(&fixture.bastion_port.to_string())
+            && pool_key.contains(&fixture.target_port.to_string()),
+        "the pool key must name both legs: {pool_key}"
+    );
+
+    pool.clone().release(pool_key.clone()).await;
+
+    let (pool_after, registry_after) = ssh_resource_keys().await;
+    assert!(
+        !pool_after.contains(&pool_key),
+        "the pool must drop the entry on release, still has: {pool_after:?}"
+    );
+    assert!(
+        !registry_after.contains(&pool_key),
+        "the registry must drop the entry too, still has: {registry_after:?}"
+    );
+    drop(guard);
 }

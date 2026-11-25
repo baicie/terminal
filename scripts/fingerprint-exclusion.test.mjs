@@ -419,3 +419,75 @@ test('no real Rust source is excluded unless a cfg(test) declaration names it', 
     )
   }
 })
+
+test('a test module declared in `foo.rs` resolves into `foo/`, as Rust does', async () => {
+  /*
+   * ## The rule this pins, and the bug it was hiding
+   *
+   * Rust resolves `mod bar;` in `session/ssh.rs` to `session/ssh/bar.rs` — the file
+   * stem becomes a directory. For `session/mod.rs` (and `lib.rs` / `main.rs`) the
+   * siblings sit beside the file instead.
+   *
+   * The resolver used `dirname` for every case. Nothing in this crate had a
+   * `foo/bar.rs` module tree until SSH12 put its tests in
+   * `session/ssh/ssh_jump_e2e_tests.rs`, so the wrong rule was invisible: it resolved
+   * the declaration to `session/ssh_jump_e2e_tests.rs`, a path that is nowhere on disk,
+   * and the real file therefore stayed inside the fingerprint. Every edit to those
+   * tests re-opened all six acceptance-evidence documents.
+   *
+   * `#[path = "…"]` is exempt from the stem rule — Rust resolves it against the
+   * declaring file's own directory, and `ssh_host_key.rs` relies on that.
+   *
+   * The fixture sits under `src-tauri/src/` because the resolver hard-codes that root
+   * (`RUST_SOURCE_ROOT`); a module outside it is deliberately not claimed as a test.
+   */
+  const root = await mkdtemp(path.join(tmpdir(), 'terminal-module-rule-'))
+  const crate = path.join(root, 'src-tauri/src')
+  try {
+    await mkdir(path.join(crate, 'nested'), { recursive: true })
+    await mkdir(path.join(crate, 'module'), { recursive: true })
+    await writeFile(path.join(crate, 'module.rs'), '#[cfg(test)]\nmod module_tests;\n')
+    await writeFile(path.join(crate, 'module/module_tests.rs'), '// tests\n')
+    await writeFile(path.join(crate, 'nested/mod.rs'), '#[cfg(test)]\nmod sibling_tests;\n')
+    await writeFile(path.join(crate, 'nested/sibling_tests.rs'), '// tests\n')
+    await writeFile(
+      path.join(crate, 'attributed.rs'),
+      '#[cfg(test)]\n#[path = "attributed_tests.rs"]\nmod tests;\n',
+    )
+    await writeFile(path.join(crate, 'attributed_tests.rs'), '// tests\n')
+
+    const modules = await discoverTestModules(root, 'src-tauri/src')
+
+    // The stem becomes a directory.
+    assert.ok(
+      modules.has('src-tauri/src/module/module_tests.rs'),
+      `expected src-tauri/src/module/module_tests.rs, got ${[...modules].sort().join(', ')}`,
+    )
+    // `mod.rs` keeps its siblings beside it.
+    assert.ok(modules.has('src-tauri/src/nested/sibling_tests.rs'))
+    // `#[path]` names a sibling of the declaring file, not a child directory.
+    assert.ok(
+      modules.has('src-tauri/src/attributed_tests.rs'),
+      `expected the #[path] target beside its declaring file, got ${[...modules].sort().join(', ')}`,
+    )
+    // The paths the old rule invented must NOT appear.
+    assert.equal(modules.has('src-tauri/src/module_tests.rs'), false)
+    assert.equal(modules.has('src-tauri/src/nested/mod/sibling_tests.rs'), false)
+    assert.equal(modules.has('src-tauri/src/attributed/attributed_tests.rs'), false)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('the jump tests at their real location stay out of the fingerprint', async () => {
+  /*
+   * The end-to-end statement, against the real tree: adding a line to
+   * `session/ssh/ssh_jump_e2e_tests.rs` must not move the digest. This is the exact
+   * cost the resolver bug imposed, measured rather than argued.
+   */
+  assert.equal(
+    await changesFingerprint('src-tauri/src/session/ssh/ssh_jump_e2e_tests.rs'),
+    false,
+    'editing a declared cfg(test) module must not invalidate the acceptance evidence',
+  )
+})
