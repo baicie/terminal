@@ -43,6 +43,10 @@ export const EXPECTED_JOBS = {
   'zsh-probe-diagnostic': { optional: true, reason: 'diagnostic; continue-on-error by design' },
   'source-size': { optional: false },
   rust: { optional: false },
+  // F17 — real two-hop matrix against actual `sshd` daemons. Blocking: it asserts
+  // deterministic attribution and pool-release facts, which is the only kind of claim
+  // this repository lets a CI job gate on.
+  'real-ssh-jump': { optional: false },
   'cargo-audit': { optional: false },
   docker: { optional: false },
   tauri: { optional: false },
@@ -72,6 +76,10 @@ export const AGGREGATED_JOBS = [
   'team-server',
   'source-size',
   'rust',
+  // F17 — the real two-hop matrix. Blocking, not advisory: it asserts deterministic
+  // facts (which leg was blamed, whether the pool returned to zero), and a regression
+  // there is exactly what the SSH book exists to prevent.
+  'real-ssh-jump',
   'cargo-audit',
   'docker',
   'tauri',
