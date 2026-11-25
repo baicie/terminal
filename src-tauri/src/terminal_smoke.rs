@@ -19,6 +19,9 @@ const RESULT_PATH_ENV: &str = "TERMINAL_SMOKE_RESULT_PATH";
 const SSH_CONFIG_PATH_ENV: &str = "TERMINAL_SMOKE_SSH_CONFIG_PATH";
 const RECONNECT_CONTROL_PATH_ENV: &str = "TERMINAL_SMOKE_RECONNECT_CONTROL_PATH";
 const HOST_WAKE_PATH_ENV: &str = "TERMINAL_SMOKE_HOST_WAKE_PATH";
+/// SSH19 — run the same product path against a host that never answers, and require the
+/// ladder to end in a user-visible failure that carries a structured reason.
+const FAILURE_ENV: &str = "TERMINAL_SMOKE_FAILURE";
 const RENDERER_HEARTBEAT_ENDPOINT_ENV: &str = "TERMINAL_SMOKE_RENDERER_HEARTBEAT_ENDPOINT";
 const RENDERER_HEARTBEAT_TOKEN_ENV: &str = "TERMINAL_SMOKE_RENDERER_HEARTBEAT_TOKEN";
 const LOAD_BYTES: usize = 8 * 1024 * 1024;
@@ -104,6 +107,18 @@ pub(crate) struct TerminalSmokeConfig {
     // host-wake path. Kept separate from `reconnect_required` because a plain
     // reconnect case must never synthesize a wake it did not need.
     host_wake_required: bool,
+    /// SSH19 — the connection must **never** succeed, and the ladder must end in a
+    /// user-visible failure carrying a structured reason.
+    ///
+    /// Every other case in this harness asserts "eventually connected". That leaves the
+    /// path a user actually hits on a wrong key or a dead port untested at the backend:
+    /// the ladder runs, exhausts, and the pane shows an error nobody verified reached it.
+    ///
+    /// Kept a separate flag rather than a field on the result so the existing nine
+    /// scenarios keep their exact contract (`deny_unknown_fields` on the SSH config makes
+    /// silent drift impossible, and this follows the same pattern).
+    #[serde(default)]
+    failure_required: bool,
     ssh: TerminalSmokeSshConfig,
 }
 
@@ -130,6 +145,35 @@ pub(crate) struct TerminalSmokeResizeObservation {
     observed_rows: u16,
 }
 
+/// SSH19 — what the terminal told the user when the connection gave up.
+///
+/// ## Why these fields, and not just a boolean
+///
+/// Any failure satisfies "it did not connect". What this case exists to prove is that the
+/// **reason** survives the whole path: Rust's `SessionFailure` → IPC → the frontend
+/// classifier → the record the pane renders from. A boolean would pass on an empty pane.
+///
+/// `diagnosis` is the SSH11 enum (`bastion-auth-rejected`, `tunnel-failed`, …), `hop` and
+/// `stage` are SSH10's context. They are optional because a direct connection has no hop
+/// and a transport fault has no stage — absent means "not recorded", never "target".
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TerminalSmokeFailureReason {
+    /// The classified error sentence the pane showed. Not asserted on for content —
+    /// it is recorded so a failure report says what the user read.
+    #[serde(default)]
+    message: Option<String>,
+    #[serde(default)]
+    diagnosis: Option<String>,
+    #[serde(default)]
+    hop: Option<String>,
+    #[serde(default)]
+    stage: Option<String>,
+    /// How many attempts the ladder actually made before giving up.
+    #[serde(default)]
+    attempts: Option<u64>,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct TerminalSmokeResult {
@@ -151,6 +195,14 @@ pub(crate) struct TerminalSmokeResult {
     /// True only when the run actually spent a synthetic host wake, proving the
     /// exhausted-budget recovery path ran instead of the ladder succeeding.
     host_wake_synthesized: bool,
+    /// SSH19 — the terminal's own failure report, when the run was supposed to fail.
+    ///
+    /// `diagnosis` is the SSH11 enum serialised by the frontend; `hop`/`stage` come from
+    /// the same SSH10 plumbing. They are recorded rather than merely checked so a reader
+    /// of the result JSON can see *what* the user would have been told, not just that
+    /// something failed.
+    #[serde(default)]
+    failure_reason: Option<TerminalSmokeFailureReason>,
     stale_output_rejected: bool,
     first_connection_ms: u64,
 }
@@ -684,6 +736,20 @@ fn load_smoke_configuration(
     let mut config = smoke_config(read_ssh_config(&ssh_path)?);
     config.reconnect_required = reconnect_path.is_some();
     config.host_wake_required = host_wake_path.is_some();
+    /*
+     * SSH19 — mutually exclusive with the recovery scenarios by construction.
+     *
+     * A run cannot both "recover after an outage" and "never connect"; accepting both
+     * flags would produce a config whose expected verdict depends on which check runs
+     * first, and the smoke harness's whole value is that its verdict is unambiguous.
+     */
+    config.failure_required = enabled_value(std::env::var(FAILURE_ENV).ok().as_deref());
+    if config.failure_required && config.reconnect_required {
+        return Err(format!(
+            "{FAILURE_ENV} expects a connection that never succeeds, so it cannot be \
+             combined with {RECONNECT_CONTROL_PATH_ENV}"
+        ));
+    }
     Ok((result_path, reconnect_path, host_wake_path, config))
 }
 
@@ -702,6 +768,9 @@ fn smoke_config(ssh: TerminalSmokeSshConfig) -> TerminalSmokeConfig {
         rounds: ROUNDS,
         reconnect_required: false,
         host_wake_required: false,
+        // SSH19: the failure scenario is selected by its own runner flag, never by the
+        // fixture, so the happy-path config keeps this false.
+        failure_required: false,
         ssh,
     }
 }
@@ -862,6 +931,7 @@ fn normalize_completion_for_mode(
         reconnect_required,
         stale_probe_emitted,
         false,
+        false,
     )
 }
 
@@ -871,7 +941,41 @@ fn normalize_completion_for_mode_with_wake(
     reconnect_required: bool,
     stale_probe_emitted: bool,
     host_wake_required: bool,
+    failure_required: bool,
 ) -> TerminalSmokeResult {
+    /*
+     * SSH19 — the failure case inverts the usual verdict.
+     *
+     * Every other mode treats "did not connect" as the failure. This one exists to prove
+     * the opposite path, so a run that connects is the failure and a run that gives up is
+     * the success — but only when it gives up *with a reason*. A pane that goes blank is
+     * the defect this case is meant to catch, so an empty `failure_reason` fails the run
+     * even though the connection correctly never succeeded.
+     */
+    if failure_required {
+        if result.ok {
+            result.ok = false;
+            result.stage = "rust-validation".to_string();
+            result.error = Some(
+                "the failure scenario connected, so nothing about giving up was tested".to_string(),
+            );
+            return result;
+        }
+        if result.failure_reason.is_none() {
+            result.ok = false;
+            result.stage = "rust-validation".to_string();
+            result.error = Some(
+                "the terminal failed without reporting a structured reason; a pane that                  says nothing is the defect this scenario exists to catch"
+                    .to_string(),
+            );
+            return result;
+        }
+        // The frontend's own report is the evidence; the backend only adjudicates.
+        result.ok = true;
+        result.stage = "failure-observed".to_string();
+        result.error = None;
+        return result;
+    }
     if !result.ok {
         return result;
     }
@@ -907,6 +1011,7 @@ fn failure_result(stage: &str, error: String, elapsed: Duration) -> TerminalSmok
         resize_trace: Vec::new(),
         reconnect_observed: false,
         host_wake_synthesized: false,
+        failure_reason: None,
         stale_output_rejected: false,
         first_connection_ms: 0,
     }
@@ -1078,6 +1183,7 @@ pub(crate) async fn terminal_smoke_complete(
         run.config.reconnect_required,
         run.stale_probe_emitted.load(Ordering::Acquire),
         run.config.host_wake_required,
+        run.config.failure_required,
     );
     finalize(app, run, result).await;
     Ok(())

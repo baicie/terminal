@@ -56,6 +56,19 @@ export function terminalSmokeFailure(
     hostWakeSynthesized: progress.result?.hostWakeSynthesized ?? false,
     staleOutputRejected: progress.result?.staleOutputRejected ?? false,
     firstConnectionMs: progress.result?.firstConnectionMs ?? 0,
+    /*
+     * SSH19 — carried through, not rebuilt.
+     *
+     * The orchestrator re-derives a failure result at several points (resource
+     * verification, duplicate sessions). Each of those used to construct a fresh result
+     * and drop this field, so the reason the terminal reported never reached the backend:
+     * the run was correctly rejected with "the terminal failed without reporting a
+     * structured reason" while the reason had in fact been collected and thrown away
+     * here.
+     */
+    ...(progress.result?.failureReason === undefined
+      ? {}
+      : { failureReason: progress.result.failureReason }),
   }
 }
 

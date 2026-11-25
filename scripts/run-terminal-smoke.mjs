@@ -102,8 +102,19 @@ function invalidResult(message) {
   return new Error(`Invalid terminal smoke result: ${message}`)
 }
 
+/**
+ * SSH19 — one optional key, and only one.
+ *
+ * `failureReason` exists only on the failure scenario's result, so folding it into the
+ * exact set would force every other case to carry a field it has no meaning for. It is
+ * allowed to be present and nothing else is: the set stays exact, minus this one name.
+ */
+const OPTIONAL_RESULT_KEYS = ['failureReason']
+
 function hasExactKeys(value) {
-  const keys = Object.keys(value).sort()
+  const keys = Object.keys(value)
+    .filter(key => !OPTIONAL_RESULT_KEYS.includes(key))
+    .sort()
   return (
     keys.length === RESULT_KEYS.length &&
     keys.every((key, index) => key === RESULT_KEYS[index])
@@ -112,7 +123,7 @@ function hasExactKeys(value) {
 
 export function parseTerminalSmokeResult(
   serialized,
-  { reconnectRequired = false, hostWakeRequired = false } = {},
+  { reconnectRequired = false, hostWakeRequired = false, failureRequired = false } = {},
 ) {
   let value
   try {
@@ -134,6 +145,25 @@ export function parseTerminalSmokeResult(
     const error =
       typeof value.error === 'string' ? value.error : 'no error reported'
     throw invalidResult(`smoke failed at stage ${stage}: ${error}`)
+  }
+  /*
+   * SSH19 — the failure scenario's success looks different on purpose.
+   *
+   * Every other case ends at `complete` with no error. This one ends at
+   * `failure-observed`: the connection correctly never succeeded, and the run passed
+   * because the terminal reported a structured reason. Requiring `complete` here would
+   * make the scenario impossible to pass.
+   */
+  if (failureRequired) {
+    if (value.stage !== 'failure-observed') {
+      throw invalidResult(`expected stage failure-observed, got ${String(value.stage)}`)
+    }
+    if (value.failureReason === undefined || value.failureReason === null) {
+      throw invalidResult(
+        'the failure scenario must report why the terminal gave up; a blank pane is the defect it exists to catch',
+      )
+    }
+    return value
   }
   if (value.stage !== 'complete' || value.error !== null) {
     throw invalidResult('smoke did not report a successful completion')
@@ -794,7 +824,11 @@ async function startSmokeFixtures({
   dependencies,
   signal,
   onLateCleanup,
+  failureRequired = false,
 }) {
+  if (failureRequired) {
+    return startUnreachableFixture({ runDirectory, dependencies, signal, onLateCleanup })
+  }
   if (auth === 'password') {
     return {
       fixture: await startAbortable(
@@ -931,6 +965,32 @@ async function startSmokeFixtures({
   }
 }
 
+/**
+ * SSH19 — a host that is reachable in configuration but never answers.
+ *
+ * ## Why this shape and not a "dead port" constant
+ *
+ * The fixture already writes a `connection.json` carrying the key, the pinned host key
+ * and the user name — everything the product needs to *attempt* a connection. Starting
+ * the daemon and then stopping it leaves that configuration intact while the port goes
+ * silent, which is exactly what a VPN that never came up or a machine that is off looks
+ * like from the client.
+ *
+ * A hard-coded unused port would work today and break the first time something else bound
+ * it; this reuses the fixture's own port selection and only changes when the daemon
+ * listens.
+ */
+async function startUnreachableFixture({ runDirectory, dependencies, signal, onLateCleanup }) {
+  const fixture = await startAbortable(
+    () => dependencies.startSshd({ runDirectory }),
+    signal,
+    onLateCleanup,
+  )
+  // The configuration file survives; only the listener goes away.
+  await fixture.stop()
+  return { fixture, agent: null }
+}
+
 async function runTerminalSmokeAttempt({
   cwd = PROJECT_ROOT,
   env = process.env,
@@ -938,6 +998,14 @@ async function runTerminalSmokeAttempt({
   outageHoldMs,
   firstConnectOutageHoldMs,
   hostWakeRequired = false,
+  /**
+   * SSH19 — connect to a host that never answers, and require the ladder to end in a
+   * user-visible failure carrying a structured reason.
+   *
+   * The other scenarios all assert "eventually connected", which leaves the path a user
+   * hits on a dead port untested at the backend.
+   */
+  failureRequired = false,
   auth = 'key',
   skipBuild = false,
   release = false,
@@ -973,6 +1041,7 @@ async function runTerminalSmokeAttempt({
       auth,
       dependencies,
       signal,
+      failureRequired,
       onLateCleanup: cleanup => lateFixtureCleanups.push(cleanup),
     }))
     // The first-connect outage has to be armed before the application spawns,
@@ -1015,6 +1084,7 @@ async function runTerminalSmokeAttempt({
       ...(hostWakeRequired
         ? { TERMINAL_SMOKE_HOST_WAKE_PATH: hostWakeControlPath }
         : {}),
+      ...(failureRequired ? { TERMINAL_SMOKE_FAILURE: '1' } : {}),
       ...(rendererHeartbeat
         ? {
             TERMINAL_SMOKE_RENDERER_HEARTBEAT_ENDPOINT:
@@ -1095,6 +1165,7 @@ async function runTerminalSmokeAttempt({
     const result = parseTerminalSmokeResult(serialized, {
       reconnectRequired: reconnect,
       hostWakeRequired,
+      failureRequired,
     })
     return result
   } catch (error) {
@@ -1244,6 +1315,7 @@ if (isDirectRun) {
   runTerminalSmoke({
     reconnect: argv.includes('--reconnect'),
     release: argv.includes('--release'),
+    failureRequired: argv.includes('--failure'),
     auth,
   })
     .then(result => {
