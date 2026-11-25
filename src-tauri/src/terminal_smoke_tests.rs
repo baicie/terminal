@@ -32,6 +32,7 @@ fn passing_result() -> TerminalSmokeResult {
             .collect(),
         reconnect_observed: false,
         host_wake_synthesized: false,
+        failure_reason: None,
         stale_output_rejected: false,
         first_connection_ms: 1_234,
     }
@@ -108,6 +109,9 @@ fn smoke_config_has_the_exact_public_contract_without_a_path() {
             "rounds": 10,
             "reconnectRequired": false,
             "hostWakeRequired": false,
+            // SSH19: the failure scenario is a mode of this same contract, so it is
+            // part of the exact shape rather than an optional extra.
+            "failureRequired": false,
             "ssh": {
                 "host": "127.0.0.1",
                 "port": 42_222,
@@ -740,4 +744,103 @@ async fn terminal_resource_snapshot_state_boundary_rejects_non_smoke_mode() {
         .expect_err("resource diagnostics must not be available outside terminal smoke mode");
 
     assert_eq!(error, "terminal smoke mode is not enabled");
+}
+
+// SSH19 — the failure scenario inverts the verdict, and only with a reason.
+
+#[test]
+fn a_failure_run_that_connects_fails_the_scenario() {
+    /*
+     * The premise of the scenario is that the connection cannot succeed. A run that
+     * connects proved nothing about giving up, so it must be reported as the failure —
+     * otherwise a misconfigured fixture (pointed at a healthy host) would look like a
+     * passing case.
+     */
+    let mut result = passing_result();
+    result.failure_reason = Some(TerminalSmokeFailureReason {
+        message: Some("unused".to_string()),
+        ..Default::default()
+    });
+    let normalized = normalize_completion_for_mode_with_wake(
+        result,
+        Duration::from_secs(2),
+        false,
+        false,
+        false,
+        true,
+    );
+    assert!(!normalized.ok);
+    assert_eq!(normalized.stage, "rust-validation");
+    assert!(normalized
+        .error
+        .as_deref()
+        .unwrap_or_default()
+        .contains("connected, so nothing about giving up was tested"));
+}
+
+#[test]
+fn a_failure_run_without_a_structured_reason_does_not_pass() {
+    /*
+     * This is the defect the scenario exists to catch: a pane that goes blank. The
+     * connection correctly never succeeded, and the run is still a failure because the
+     * user was told nothing.
+     */
+    let mut result = passing_result();
+    result.ok = false;
+    result.error = Some("connection failed".to_string());
+    result.failure_reason = None;
+    let normalized = normalize_completion_for_mode_with_wake(
+        result,
+        Duration::from_secs(2),
+        false,
+        false,
+        false,
+        true,
+    );
+    assert!(!normalized.ok);
+    assert!(normalized
+        .error
+        .as_deref()
+        .unwrap_or_default()
+        .contains("without reporting a structured reason"));
+}
+
+#[test]
+fn a_failure_run_with_a_reason_passes_and_keeps_it() {
+    let mut result = passing_result();
+    result.ok = false;
+    result.error = Some("authentication rejected".to_string());
+    result.failure_reason = Some(TerminalSmokeFailureReason {
+        message: Some("authentication rejected".to_string()),
+        diagnosis: Some("bastion-auth-rejected".to_string()),
+        hop: Some("bastion".to_string()),
+        stage: Some("authentication".to_string()),
+        attempts: Some(5),
+    });
+    let normalized = normalize_completion_for_mode_with_wake(
+        result,
+        Duration::from_secs(2),
+        false,
+        false,
+        false,
+        true,
+    );
+    assert!(normalized.ok);
+    assert_eq!(normalized.stage, "failure-observed");
+    let reason = normalized
+        .failure_reason
+        .expect("the reason is the evidence");
+    assert_eq!(reason.diagnosis.as_deref(), Some("bastion-auth-rejected"));
+    assert_eq!(reason.hop.as_deref(), Some("bastion"));
+    assert_eq!(reason.attempts, Some(5));
+}
+
+#[test]
+fn a_normal_run_still_ignores_the_failure_fields() {
+    // The guard for every other scenario: `failure_required: false` must behave exactly
+    // as it did before this field existed.
+    let normalized =
+        normalize_completion_for_mode(passing_result(), Duration::from_secs(2), false, false);
+    assert!(normalized.ok);
+    assert!(normalized.failure_reason.is_none());
 }

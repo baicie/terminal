@@ -18,6 +18,8 @@ export type {
   TerminalSmokeSshConfig,
 } from './terminal-smoke-ssh-config'
 
+import type { TerminalSmokeFailureReason } from './terminal-smoke-failure-reason'
+
 export interface TerminalSmokeConfig {
   loadBytes: number
   initialCols: number
@@ -35,6 +37,8 @@ export interface TerminalSmokeConfig {
    * visibility-change path that no other case can reach.
    */
   hostWakeRequired: boolean
+  /** SSH19 — the connection must never succeed; see `terminal-smoke-failure-reason.ts`. */
+  failureRequired: boolean
   ssh: TerminalSmokeSshConfig
 }
 
@@ -81,7 +85,16 @@ export interface TerminalSmokeResult {
   staleOutputRejected: boolean
   /** Milliseconds from application start to the first connected session. */
   firstConnectionMs: number
+  /**
+   * SSH19 — what the pane told the user when the connection gave up.
+   *
+   * Present only for the failure scenario. Every field is optional because the shape of
+   * a failure varies: a direct connection has no hop, a transport fault has no stage.
+   * Absent means "not recorded", never a default.
+   */
+  failureReason?: TerminalSmokeFailureReason
 }
+
 
 export interface TerminalSmokeStaleOutputProbe {
   staleMarker: string
@@ -130,6 +143,7 @@ const CONFIG_KEYS = [
   ...Object.keys(FIXED_CONFIG),
   'reconnectRequired',
   'hostWakeRequired',
+  'failureRequired',
   'ssh',
 ].sort()
 
@@ -164,10 +178,22 @@ export function parseTerminalSmokeConfig(raw: unknown): TerminalSmokeConfig {
   if (typeof raw.hostWakeRequired !== 'boolean') {
     throw new Error('Invalid terminal smoke config')
   }
+  if (typeof raw.failureRequired !== 'boolean') {
+    throw new Error('Invalid terminal smoke config')
+  }
+  /*
+   * The failure scenario and the recovery scenarios are mutually exclusive: one expects
+   * the connection never to succeed, the others expect it to come back. Accepting both
+   * would make the expected verdict depend on which check ran first.
+   */
+  if (raw.failureRequired === true && raw.reconnectRequired === true) {
+    throw new Error('Invalid terminal smoke config')
+  }
   return {
     ...FIXED_CONFIG,
     reconnectRequired: raw.reconnectRequired,
     hostWakeRequired: raw.hostWakeRequired,
+    failureRequired: raw.failureRequired,
     ssh: parseTerminalSmokeSshConfig(raw.ssh),
   }
 }

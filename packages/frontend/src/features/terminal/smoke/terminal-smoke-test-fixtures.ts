@@ -19,6 +19,7 @@ export const terminalSmokeTestConfig: TerminalSmokeConfig = {
   rounds: 10,
   reconnectRequired: false,
   hostWakeRequired: false,
+  failureRequired: false,
   ssh: {
     host: '127.0.0.1',
     port: 42_222,

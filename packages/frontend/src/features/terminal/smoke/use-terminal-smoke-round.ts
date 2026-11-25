@@ -6,6 +6,7 @@ import {
   waitForTerminalSmokeInteractive,
 } from './run-terminal-smoke'
 import { collectTerminalSmokeDiagnostics } from './terminal-smoke-diagnostics'
+import { useTerminalSmokeFailureReport } from './use-terminal-smoke-failure-report'
 import { createInteractiveReporter } from './terminal-smoke-interactive'
 import { useTerminalSmokeHostWakeFallback } from './use-terminal-smoke-host-wake-fallback'
 import { useTerminalSmokeRoundLifecycle } from './use-terminal-smoke-round-lifecycle'
@@ -65,6 +66,7 @@ export function useTerminalSmokeRound({
     getInputDiagnostics,
     getOutputDiagnostics,
     retryable,
+    ...failureSignals
   } = useTerminal(term, {
     ...terminalSmokeRequest(config, roundIndex),
     onOutput: event => {
@@ -117,6 +119,21 @@ export function useTerminalSmokeRound({
     if (signal.aborted) abort()
     return () => signal.removeEventListener('abort', abort)
   }, [controller, signal])
+  useTerminalSmokeFailureReport({
+    enabled: config.failureRequired,
+    status,
+    signals: { error, ...failureSignals },
+    cols: term.cols,
+    rows: term.rows,
+    startedAt: applicationStartedAt,
+    config,
+    completed: completedRef.current,
+    onComplete: result => {
+      completedRef.current = true
+      onCompleteRef.current(roundIndex, tabId, [], result)
+    },
+  })
+
   useEffect(() => {
     if (status !== 'connected' || !sessionId || completedRef.current) return
     const isReconnect = terminalSmokeSessionIsReconnect(
@@ -201,6 +218,9 @@ export function useTerminalSmokeRound({
       } catch (runError) {
         if (reconnectObservedRef.current && statusRef.current !== 'error')
           return
+        // SSH19: the failure report hook owns this case — it waits for the terminal's
+        // own `error` state so the reason travels with the result.
+        if (config.failureRequired) return
         completeOnce(
           activeSessionId,
           terminalSmokeRoundFailure(term, config, runError),
@@ -276,6 +296,5 @@ export function useTerminalSmokeRound({
     status,
     term,
   })
-
   return containerRef
 }

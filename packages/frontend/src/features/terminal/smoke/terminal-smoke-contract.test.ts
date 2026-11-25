@@ -25,6 +25,7 @@ const validConfig = {
   rounds: 10,
   reconnectRequired: false,
   hostWakeRequired: false,
+  failureRequired: false,
   ssh: {
     host: '127.0.0.1',
     port: 42_222,
@@ -314,5 +315,38 @@ describe('emitTerminalSmokeStaleOutput', () => {
         invoke: vi.fn().mockResolvedValue(raw),
       }),
     ).rejects.toThrow('Invalid terminal smoke stale-output probe')
+  })
+})
+
+describe('SSH19 — the failure scenario in the contract', () => {
+  it('accepts failureRequired and keeps it', () => {
+    const parsed = parseTerminalSmokeConfig({ ...validConfig, failureRequired: true })
+    expect(parsed.failureRequired).toBe(true)
+  })
+
+  it('rejects a config that asks for both failure and recovery', () => {
+    /*
+     * The two expect opposite outcomes for the same run: one says the connection must
+     * never succeed, the other says it must come back. Accepting both would make the
+     * expected verdict depend on which check ran first, and the harness's whole value is
+     * that its verdict is unambiguous.
+     */
+    expect(() =>
+      parseTerminalSmokeConfig({
+        ...validConfig,
+        failureRequired: true,
+        reconnectRequired: true,
+      }),
+    ).toThrow('Invalid terminal smoke config')
+  })
+
+  it('requires the flag to be present and boolean, like its siblings', () => {
+    const { failureRequired: _omitted, ...withoutFlag } = validConfig
+    expect(() => parseTerminalSmokeConfig(withoutFlag)).toThrow(
+      'Invalid terminal smoke config',
+    )
+    expect(() =>
+      parseTerminalSmokeConfig({ ...validConfig, failureRequired: 'yes' }),
+    ).toThrow('Invalid terminal smoke config')
   })
 })

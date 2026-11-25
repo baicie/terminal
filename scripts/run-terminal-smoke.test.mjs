@@ -1401,3 +1401,61 @@ test('stops after three attempts when the frontmost precondition never holds', a
   )
 })
 
+
+// SSH19 — the failure scenario's result shape, and why it differs from every other case.
+
+test('the failure scenario accepts a reported reason and requires it', () => {
+  const failing = {
+    ...passingResult,
+    ok: true,
+    stage: 'failure-observed',
+    error: null,
+    failureReason: {
+      message: 'authentication rejected',
+      diagnosis: 'bastion-auth-rejected',
+      hop: 'bastion',
+      stage: 'authentication',
+      attempts: 5,
+    },
+  }
+  const parsed = parseTerminalSmokeResult(JSON.stringify(failing), {
+    failureRequired: true,
+  })
+  assert.equal(parsed.stage, 'failure-observed')
+  assert.equal(parsed.failureReason.diagnosis, 'bastion-auth-rejected')
+  assert.equal(parsed.failureReason.attempts, 5)
+})
+
+test('a failure run without a reason is rejected, because that is the defect', () => {
+  /*
+   * The connection correctly never succeeded and the run is still a failure: the user was
+   * told nothing. A blank pane is exactly what this scenario exists to catch.
+   */
+  const blank = { ...passingResult, ok: true, stage: 'failure-observed', error: null }
+  assert.throws(
+    () => parseTerminalSmokeResult(JSON.stringify(blank), { failureRequired: true }),
+    /must report why the terminal gave up/,
+  )
+})
+
+test('a failure run that ended at the success stage is rejected', () => {
+  const wrongStage = {
+    ...passingResult,
+    failureReason: { message: 'x' },
+  }
+  assert.throws(
+    () =>
+      parseTerminalSmokeResult(JSON.stringify(wrongStage), {
+        failureRequired: true,
+      }),
+    /expected stage failure-observed/,
+  )
+})
+
+test('a normal run still rejects the failure stage, so the modes stay distinct', () => {
+  const failingStage = { ...passingResult, stage: 'failure-observed' }
+  assert.throws(
+    () => parseTerminalSmokeResult(JSON.stringify(failingStage)),
+    /Invalid terminal smoke result/,
+  )
+})
