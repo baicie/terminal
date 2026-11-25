@@ -333,7 +333,7 @@ async function writeSecure(filePath, contents, mode, dependencies) {
   await dependencies.chmod(filePath, mode)
 }
 
-function daemonConfiguration(paths, port, username, options) {
+export function daemonConfiguration(paths, port, username, options) {
   const lines = [
     `Port ${port}`,
     `ListenAddress ${LOOPBACK}`,
@@ -366,7 +366,19 @@ function daemonConfiguration(paths, port, username, options) {
     lines.push(
       'AllowTcpForwarding yes',
       'AllowStreamLocalForwarding no',
-      `PermitOpen ${LOOPBACK}:${options.targetPort}`,
+      /*
+       * F11 — more than one forward target, for the isolation matrix.
+       *
+       * A bastion that may reach only one address cannot be asked the question the matrix
+       * asks: "did a credential end up on the machine it belongs to?" That needs a
+       * bastion that *can* reach two, so the product has somewhere wrong to go.
+       *
+       * `targetPorts` is additive: the single-port form is what every existing case was
+       * written against, and it must keep producing byte-identical sshd configuration.
+       */
+      ...(Array.isArray(options.targetPorts) && options.targetPorts.length > 1
+        ? [`PermitOpen ${options.targetPorts.map(port => `${LOOPBACK}:${port}`).join(' ')}`]
+        : [`PermitOpen ${LOOPBACK}:${options.targetPort}`]),
       'PermitTTY no',
     )
   } else {
@@ -556,6 +568,8 @@ export async function startTerminalSmokeSshd({
   shell = 'sh',
   emitPromptMarker = true,
   targetPort,
+  /** F11 — every port this bastion may forward to; defaults to `targetPort` alone. */
+  targetPorts,
   connectionExtra = {},
   dependencies: overrides = {},
   // Opt-in SFTP subsystem. Off by default so the existing 45 fixture tests keep
@@ -588,6 +602,18 @@ export async function startTerminalSmokeSshd({
   if (role === 'jump') {
     if (!Number.isInteger(targetPort) || targetPort < 1 || targetPort > 65_535) {
       throw new Error('terminal smoke jump hosts require a target port')
+    }
+    if (targetPorts !== undefined) {
+      if (
+        !Array.isArray(targetPorts) ||
+        targetPorts.length === 0 ||
+        targetPorts.some(port => !Number.isInteger(port) || port < 1 || port > 65_535)
+      ) {
+        throw new Error('terminal smoke jump host targetPorts must be valid ports')
+      }
+      if (!targetPorts.includes(targetPort)) {
+        throw new Error('terminal smoke jump host targetPorts must include targetPort')
+      }
     }
   }
   if (typeof runDirectory !== 'string' || !path.isAbsolute(runDirectory)) {
@@ -657,6 +683,7 @@ export async function startTerminalSmokeSshd({
         mode,
         role,
         targetPort,
+        targetPorts,
         enableSftp,
         sftpServerPath,
       })
@@ -721,6 +748,15 @@ export async function startTerminalSmokeSshd({
       configPath: paths.connection,
       homePath: paths.home,
       knownHostsPath: paths.knownHosts,
+      /**
+       * F09 — what this daemon logged, for diagnosing a scenario that fails.
+       *
+       * The fixture already pipes sshd's stderr into `collectOutput`; until now it was
+       * only used for start-up errors, so a scenario that failed *after* the daemon was
+       * up had no server-side evidence at all. Reading it is how "the product retried a
+       * refused credential" is told apart from "every attempt really was reset".
+       */
+      daemonLog: () => daemon.stderr(),
       shell,
       /** Raw client identity, unaffected by connectionExtra overrides. */
       identityKey: privateKey,

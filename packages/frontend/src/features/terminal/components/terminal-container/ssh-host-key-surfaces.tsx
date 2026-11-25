@@ -1,6 +1,8 @@
 import type { SshHostKeyProbeResult } from '@/features/terminal/services/ssh-host-key'
 import type { SshHostKeyRole } from '@/features/terminal/hooks/use-ssh-host-key-gate'
-import { SshHostKeyDialog, SshHostKeyGateOverlay } from './ssh-host-key-dialog'
+import type { SshHostKeyGateFailure } from '@/features/terminal/hooks/ssh-host-key-gate-failure'
+import { SshHostKeyDialog } from './ssh-host-key-dialog'
+import { SshHostKeyGateOverlay } from './ssh-host-key-gate-overlay'
 
 interface HostKeyGateSurfaceState {
   status: 'checking' | 'ready' | 'prompt' | 'blocked' | 'error'
@@ -8,6 +10,8 @@ interface HostKeyGateSurfaceState {
   prompt: SshHostKeyProbeResult | null
   saving: boolean
   error: string | null
+  /** Which preflight step failed, when a probe produced the error. */
+  failure?: SshHostKeyGateFailure
   trustOnce: () => void
   trustAndSave: () => void
   cancel: () => void
@@ -24,6 +28,7 @@ export function SshHostKeyOverlaySurface({
     <SshHostKeyGateOverlay
       status={gate.status}
       error={gate.error}
+      failure={gate.failure}
       onRetry={gate.retry}
     />
   )

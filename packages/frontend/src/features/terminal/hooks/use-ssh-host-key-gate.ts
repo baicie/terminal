@@ -173,6 +173,12 @@ export function useSshHostKeyGate(options: UseSshHostKeyGateOptions) {
     state.status === 'blocked'
       ? state.error
       : null
+  /*
+   * Only the `error` state carries `failure`. A dialog on top of a prompt shows the
+   * reject of *learning* the key, which has no transport step to name; passing a stale
+   * one through would relabel a save failure as a connection failure.
+   */
+  const failure = state.status === 'error' ? state.failure : undefined
 
   return {
     status: state.status,
@@ -194,6 +200,7 @@ export function useSshHostKeyGate(options: UseSshHostKeyGateOptions) {
         ? state.saving
         : false,
     error,
+    failure,
     trustOnce,
     trustAndSave,
     cancel,

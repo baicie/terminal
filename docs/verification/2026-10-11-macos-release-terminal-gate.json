@@ -1,8 +1,8 @@
 {
-  "recordedAt": "2026-11-25T08:27:34.269Z",
+  "recordedAt": "2026-11-25T16:34:51.811Z",
   "recordedDate": "2026-11-25",
   "kind": "tauri-release-ten-second-terminal-gate",
-  "why": "Release artifact b7e69349d46ee7fc61b50bc0d5026b5666ef72fa5862e384eca2ee1e59f9e1d4 was built and measured by GitHub Actions run 45572910848 attempt 1 at commit b39909ea62e5b6b9714db30ee4fe6df696693317; this record re-measures the ten-second terminal gate the earlier local captures described, on the artifact that run produced.",
+  "why": "Release artifact e645e56076075479033518c519fdf49266007e25834f1c0bd16e14ec6eba10dc was built and measured by GitHub Actions run 45650550577 attempt 1 at commit 75e87654eab1d8d957d7903031c6a6b335a1b313; this record re-measures the ten-second terminal gate the earlier local captures described, on the artifact that run produced.",
   "environment": {
     "os": "macOS 26.7.2",
     "architecture": "arm64",
@@ -10,13 +10,13 @@
   },
   "revision": {
     "head": "",
-    "commit": "b39909e",
+    "commit": "75e8765",
     "dirtyWorktree": false
   },
   "build": {
     "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --no-bundle",
     "binary": "src-tauri/target/release/terminal",
-    "sha256": "b7e69349d46ee7fc61b50bc0d5026b5666ef72fa5862e384eca2ee1e59f9e1d4",
+    "sha256": "e645e56076075479033518c519fdf49266007e25834f1c0bd16e14ec6eba10dc",
     "devServerRequired": false,
     "smokeInstrumented": true
   },
@@ -26,52 +26,52 @@
     "measuredFrom": "child-spawn-event",
     "readinessTarget": "terminal",
     "repeatSpawnToReadyMs": [
-      3932,
-      3755,
-      4364
+      4493,
+      4429,
+      4085
     ],
     "readyUnder10s": true,
     "terminalRuns": [
       {
         "run": 1,
-        "capturedAt": "2026-11-25T08:25:06.055Z",
-        "pid": 62697,
+        "capturedAt": "2026-11-25T16:32:17.449Z",
+        "pid": 75766,
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 3932,
-        "requestToReadyMs": 3935,
+        "spawnToReadyMs": 4493,
+        "requestToReadyMs": 4497,
         "probeCaseName": "cat-eof",
         "ok": true
       },
       {
         "run": 2,
-        "capturedAt": "2026-11-25T08:25:10.555Z",
-        "pid": 63010,
+        "capturedAt": "2026-11-25T16:32:22.895Z",
+        "pid": 75944,
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 3755,
-        "requestToReadyMs": 3757,
+        "spawnToReadyMs": 4429,
+        "requestToReadyMs": 4432,
         "probeCaseName": "cat-eof",
         "ok": true
       },
       {
         "run": 3,
-        "capturedAt": "2026-11-25T08:25:15.731Z",
-        "pid": 63060,
+        "capturedAt": "2026-11-25T16:32:28.179Z",
+        "pid": 76007,
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 4364,
-        "requestToReadyMs": 4370,
+        "spawnToReadyMs": 4085,
+        "requestToReadyMs": 4090,
         "probeCaseName": "cat-eof",
         "ok": true
       }
     ]
   },
   "source": {
-    "fingerprint": "f53d75d03385ccf5d64f6f95f597680886c89bab1a7ec9725014828f40c513e9",
+    "fingerprint": "00d7a5121e0ad2e1c2cb62d780e64607745c1c72a806d3fdfab425909f06a611",
     "note": "Computed over FINGERPRINT_PATHS by scripts/check-verification-evidence.mjs on the checked-out CI sources at evidence build time."
   },
   "limitations": [
@@ -84,12 +84,12 @@
   "instrumentationCaveat": "This binary is built with VITE_TERMINAL_SMOKE_BUILD=1, which compiles the smoke and input-probe entry points and the experiments nav item into the frontend. A shipping build omits all of them, so these numbers describe a slightly larger bundle than a user receives and are a conservative upper bound.",
   "provenance": {
     "source": "github-actions",
-    "runId": "45572910848",
+    "runId": "45650550577",
     "runAttempt": "1",
     "workflow": "Real-machine terminal matrix",
     "job": "macos-ssh-matrix",
-    "commit": "b39909ea62e5b6b9714db30ee4fe6df696693317",
-    "fingerprint": "f53d75d03385ccf5d64f6f95f597680886c89bab1a7ec9725014828f40c513e9",
+    "commit": "75e87654eab1d8d957d7903031c6a6b335a1b313",
+    "fingerprint": "00d7a5121e0ad2e1c2cb62d780e64607745c1c72a806d3fdfab425909f06a611",
     "runner": {
       "os": "macOS",
       "arch": "ARM64"

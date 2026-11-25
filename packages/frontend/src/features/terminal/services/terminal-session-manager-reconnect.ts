@@ -6,6 +6,7 @@ import type {
   TerminalReconnectOptions,
 } from './terminal-session-reconnect-types'
 import { updateTerminalState, terminalFailureState } from './terminal-session-state'
+import { recordTerminalConnectionFailure } from './terminal-connection-failure-log'
 import type { TerminalFailure } from './terminal-session-manager-errors'
 import { TerminalSessionRecoveryTimer } from './terminal-session-recovery-timer'
 import {
@@ -195,7 +196,12 @@ export class TerminalSessionReconnect {
               retryable: true,
               recovery: 'automatic',
             })
-            this.scheduleRecovery(record)
+            scheduleReconnectRecovery(
+      record,
+      this.recoveryTimer,
+      this.policy.recoveryDelayMs,
+      () => this.launch(record, 'automatic', 'Retrying after automatic backoff'),
+    )
           }
           return
         }
@@ -241,28 +247,24 @@ export class TerminalSessionReconnect {
           status: 'error',
           sessionId: null,
           ...terminalFailureState(lastFailure),
+          attempt,
         })
         return
       }
     }
     if (!this.isActive(record, generation)) return
-    /*
-     * F06 — the ladder is exhausted, so this verdict describes its *last* attempt.
-     *
-     * Every field comes from that attempt's failure, not from whichever attempt happened
-     * to carry a hop. `recovery` stays `'automatic'`: the budget for this ladder is spent,
-     * but `scheduleRecovery` may open another one, and the pane's "waiting to retry" is
-     * still true.
-     */
+    // F06 — exhausted: describe the *last* attempt, never whichever one carried a hop.
+    // `recovery` stays `'automatic'`; a recovery timer may still open another ladder.
     updateTerminalState(record, {
       status: 'error',
       sessionId: null,
       ...terminalFailureState(lastFailure),
+      // F10 — "the attempt that ended", republished by the snapshot as `attempts`.
+      attempt,
     })
-    this.scheduleRecovery(record)
-  }
-
-  private scheduleRecovery(record: TerminalRecord): void {
+    // F18 — the ladder's verdict is a finished connection; the start path's terminal
+    // branch does not record, so exactly one of the two runs per logical connection.
+    recordTerminalConnectionFailure(record.request, lastFailure)
     scheduleReconnectRecovery(
       record,
       this.recoveryTimer,
@@ -270,6 +272,7 @@ export class TerminalSessionReconnect {
       () => this.launch(record, 'automatic', 'Retrying after automatic backoff'),
     )
   }
+
 
   private prepare(
     record: TerminalRecord,
@@ -293,3 +296,4 @@ export class TerminalSessionReconnect {
     )
   }
 }
+

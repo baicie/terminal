@@ -1,4 +1,6 @@
-import { spawn } from 'node:child_process'
+import { execFile as execFileCallback, spawn } from 'node:child_process'
+import { createServer as createNetServer } from 'node:net'
+import { promisify } from 'node:util'
 import { createHash } from 'node:crypto'
 import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
@@ -12,6 +14,13 @@ import {
   ensureMacProcessFrontmost,
 } from './macos-frontmost.mjs'
 import { startTerminalSmokeRendererHeartbeat } from './terminal-smoke-renderer-heartbeat.mjs'
+import {
+  assertKnownScenario,
+  compareFailureObservation,
+  FAILURE_EXPECTATIONS,
+} from './terminal-smoke-failure-scenarios.mjs'
+
+const execFileAsync = promisify(execFileCallback)
 
 export const APP_TIMEOUT_MS = 210_000
 export const CARGO_METADATA_TIMEOUT_MS = 30_000
@@ -31,6 +40,7 @@ const MAX_RESULT_DURATION_MS = 180_000
 const FIRST_CONNECTION_DEADLINE_MS = 10_000
 const SSH_AGENT_PATH = '/usr/bin/ssh-agent'
 const SSH_ADD_PATH = '/usr/bin/ssh-add'
+const SSH_KEYGEN = '/usr/bin/ssh-keygen'
 const SUPPORTED_AUTH_MODES = ['key', 'password', 'agent', 'cert', 'jump']
 const RESULT_KEYS = [
   'afterLoadVisible',
@@ -75,6 +85,8 @@ export function terminalExecutablePath(
 
 const defaultDependencies = {
   access,
+  createServer: createNetServer,
+  execFile: execFileAsync,
   clearTimeout: globalThis.clearTimeout,
   killProcess: process.kill,
   mkdtemp,
@@ -825,7 +837,24 @@ async function startSmokeFixtures({
   signal,
   onLateCleanup,
   failureRequired = false,
+  failureScenario,
 }) {
+  /*
+   * F09 — a scenario names which side of the connection is broken.
+   *
+   * `--failure` alone keeps SSH19's meaning (a direct connection to a dead port). A
+   * scenario selects a specific break, including jump-host ones, which `--auth jump` could
+   * not express: `--auth` says how to authenticate, not what should go wrong.
+   */
+  if (failureScenario !== undefined) {
+    return startFailureScenarioFixture({
+      runDirectory,
+      scenario: failureScenario,
+      dependencies,
+      signal,
+      onLateCleanup,
+    })
+  }
   if (failureRequired) {
     return startUnreachableFixture({ runDirectory, dependencies, signal, onLateCleanup })
   }
@@ -980,6 +1009,240 @@ async function startSmokeFixtures({
  * it; this reuses the fixture's own port selection and only changes when the daemon
  * listens.
  */
+/**
+ * F09 — build the fixture a named failure scenario describes.
+ *
+ * Each branch sets up exactly one broken thing and leaves everything else real: real
+ * `sshd` daemons, real keys, real host keys. Nothing here fabricates a Rust error object;
+ * the product is expected to discover each break on its own.
+ *
+ * The two-hop branches need two daemons. Where a scenario needs one side to refuse a key
+ * it does not have, the fixture's real `authorized_keys` is replaced *after* the daemon is
+ * up with a key that is not the client's — the daemon keeps the exact configuration it was
+ * validated with, and the refusal is the server's own.
+ */
+async function startFailureScenarioFixture({
+  runDirectory,
+  scenario,
+  dependencies,
+  signal,
+  onLateCleanup,
+}) {
+  assertKnownScenario(scenario)
+  const expectations = FAILURE_EXPECTATIONS[scenario]
+
+  if (scenario === 'DIRECT_UNREACHABLE') {
+    // The same fixture SSH19 uses: a real config whose listener was stopped, so the
+    // product dials a port nothing answers on.
+    return startUnreachableFixture({ runDirectory, dependencies, signal, onLateCleanup })
+  }
+
+  const target = await startAbortable(
+    () =>
+      dependencies.startSshd({
+        runDirectory: path.join(runDirectory, 'target'),
+        role: 'target',
+      }),
+    signal,
+    onLateCleanup,
+  )
+  /*
+   * `TUNNEL_OPEN_FAILED` needs the bastion to refuse the forward. The fixture expresses
+   * that by pointing `PermitOpen` at a port nothing listens on, so sshd answers the
+   * `direct-tcpip` request itself — a real refusal, not a simulated one.
+   */
+  const forbidden =
+    scenario === 'TUNNEL_OPEN_FAILED' ? await reserveForbiddenPort(dependencies) : null
+  const jumpTargetPort = forbidden ? forbidden.port : target.port
+  let jump
+  try {
+    jump = await startAbortable(
+      () =>
+        dependencies.startSshd({
+          runDirectory: path.join(runDirectory, 'jump'),
+          role: 'jump',
+          targetPort: jumpTargetPort,
+        }),
+      signal,
+      onLateCleanup,
+    )
+
+    if (scenario === 'BASTION_UNREACHABLE') {
+      /*
+       * The config keeps pointing at the bastion; only its listener goes away. Same shape
+       * SSH19 uses for the direct case, so the product dials a port nothing answers on.
+       */
+      await jump.stop()
+    }
+
+    const servedHostKey = hostKeyLine(await dependencies.readFile(jump.knownHostsPath, 'utf8'))
+
+    const composed = {
+      host: target.host,
+      port: target.port,
+      username: target.username,
+      authMode: 'key',
+      // A pinned key the server does not present: the refusal is the product's own
+      // comparison, which is the point of the scenario.
+      expectedHostKey:
+        scenario === 'TARGET_HOST_KEY_REJECTED'
+          ? await generatedPublicKey(runDirectory, 'target-pin', dependencies)
+          : target.expectedHostKey,
+      /*
+       * ## How a credential refusal is produced, and how it is not
+       *
+       * The first implementation replaced the daemon's `authorized_keys` with a foreign
+       * key after the fixture was up. Measured: every connection to that daemon then died
+       * with `Connection reset by peer` during the handshake — six retries, then the
+       * smoke gave up. Isolated by disabling only the replacement, with the same jump
+       * topology and the same failure flag: the run connected end to end. So the topology
+       * was always fine and the file mutation was the whole problem.
+       *
+       * The repository already had a proven way to produce both refusals, in
+       * `src-tauri/src/session/ssh/ssh_jump_e2e_tests.rs`: hand the client a **real** key
+       * that the server it is talking to does not know. Nothing on disk changes, the
+       * refusal is the server's own, and the case is already known to attribute correctly.
+       * These scenarios copy that instead of inventing a second mechanism.
+       */
+      privateKey:
+        scenario === 'TARGET_AUTH_REJECTED'
+          ? // The target does not know the bastion's key. The bastion still recognises
+            // the jump credential, so the tunnel opens and the refusal comes from behind
+            // it — which is what makes this a *target* refusal.
+            jump.privateKey
+          : target.privateKey,
+      password: null,
+      certificate: null,
+      jump: {
+        host: jump.host,
+        port: jump.port,
+        username: jump.username,
+        privateKey:
+          scenario === 'BASTION_AUTH_REJECTED'
+            ? // The bastion recognises only its own key; the target's is a real key it
+              // has never seen.
+              target.privateKey
+            : jump.privateKey,
+        expectedHostKey:
+          scenario === 'BASTION_HOST_KEY_REJECTED'
+            ? await generatedPublicKey(runDirectory, 'bastion-pin', dependencies)
+            : servedHostKey,
+      },
+    }
+    await dependencies.writeFile(target.configPath, `${JSON.stringify(composed)}\n`, {
+      encoding: 'utf8',
+      mode: 0o600,
+    })
+
+    return {
+      fixture: {
+        ...composed,
+        configPath: target.configPath,
+        scenario,
+        expectations,
+        targetLog: () =>
+          typeof target.daemonLog === 'function' ? target.daemonLog() : '',
+        jumpLog: () => (typeof jump.daemonLog === 'function' ? jump.daemonLog() : ''),
+        stop: async () => {
+          try {
+            await target.stop()
+            await jump.stop()
+          } finally {
+            await forbidden?.release()
+          }
+        },
+      },
+      agent: null,
+    }
+  } catch (error) {
+    try {
+      await jump?.stop()
+    } catch {
+      // Preserve the setup failure.
+    }
+    try {
+      await target.stop()
+    } catch {
+      // Preserve the setup failure.
+    }
+    throw error
+  }
+}
+
+/**
+ * Replace a daemon's `authorized_keys` with a key the client does not hold.
+ *
+ * The daemon is not restarted: OpenSSH re-reads `authorized_keys` for each connection, and
+ * `StrictModes` only checks the directory the file lives in, which the fixture already
+ * made private. The replacement key is generated here so the refusal is a real key
+ * mismatch rather than a missing file.
+ */
+/**
+ * The tail of each daemon's log, as a suffix for an error message.
+ *
+ * Bounded on purpose: sshd's VERBOSE log is long, and the lines that matter are the last
+ * few — the connection attempts the product just made.
+ */
+function daemonLogDetail(fixture) {
+  const parts = []
+  for (const [label, log] of [
+    ['target', fixture?.targetLog],
+    ['jump', fixture?.jumpLog],
+  ]) {
+    if (typeof log !== 'function') continue
+    const text = String(log() ?? '').trim()
+    if (text === '') continue
+    parts.push(`\n[${label} sshd, last 25 lines]\n${text.split('\n').slice(-25).join('\n')}`)
+  }
+  return parts.length === 0 ? '' : parts.join('')
+}
+
+/** The `[host]:port KEY` text `known_hosts` holds, reduced to the key. */
+function hostKeyLine(knownHosts) {
+  const line = knownHosts.trim().split('\n')[0] ?? ''
+  const parts = line.trim().split(/\s+/)
+  return parts.slice(1).join(' ')
+}
+
+/**
+ * A real public key that matches nothing the fixture serves.
+ *
+ * Generated by `ssh-keygen` rather than written as a constant. Two reasons, both learned
+ * from this repository's own mistakes: the Rust smoke config validator calls
+ * `PublicKey::from_openssh` and rejects anything malformed, and a hand-assembled base64
+ * string is the kind of thing that looks plausible and fails on the first real run. A
+ * generated key parses by construction and cannot collide with the fixture's fresh
+ * per-run host key.
+ */
+async function generatedPublicKey(runDirectory, label, dependencies) {
+  const keyPath = path.join(runDirectory, `${label}-pin`)
+  await dependencies.execFile(SSH_KEYGEN, ['-q', '-t', 'ed25519', '-N', '', '-f', keyPath])
+  return (await dependencies.readFile(`${keyPath}.pub`, 'utf8')).trim()
+}
+
+/**
+ * A loopback port the bastion is not permitted to forward to.
+ *
+ * The port is chosen by binding and *staying bound* for the lifetime of the run. Closing
+ * the probe socket and reusing its number would let the OS hand that port to the target
+ * daemon — the earlier version did exactly that and could have produced a scenario where
+ * the forbidden forward silently became an allowed one.
+ *
+ * The returned release function must be called from the fixture's `stop`.
+ */
+async function reserveForbiddenPort(dependencies) {
+  const server = dependencies.createServer?.()
+  if (!server) throw new Error('the smoke harness needs net.createServer to pick a forbidden port')
+  const port = await new Promise((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => resolve(server.address().port))
+  })
+  return {
+    port,
+    release: () => new Promise(resolve => server.close(() => resolve())),
+  }
+}
+
 async function startUnreachableFixture({ runDirectory, dependencies, signal, onLateCleanup }) {
   const fixture = await startAbortable(
     () => dependencies.startSshd({ runDirectory }),
@@ -1006,6 +1269,8 @@ async function runTerminalSmokeAttempt({
    * hits on a dead port untested at the backend.
    */
   failureRequired = false,
+  /** F09 — which concrete break to set up; implies `failureRequired`. */
+  failureScenario,
   auth = 'key',
   skipBuild = false,
   release = false,
@@ -1041,7 +1306,8 @@ async function runTerminalSmokeAttempt({
       auth,
       dependencies,
       signal,
-      failureRequired,
+      failureRequired: failureRequired || failureScenario !== undefined,
+      ...(failureScenario === undefined ? {} : { failureScenario }),
       onLateCleanup: cleanup => lateFixtureCleanups.push(cleanup),
     }))
     // The first-connect outage has to be armed before the application spawns,
@@ -1084,7 +1350,20 @@ async function runTerminalSmokeAttempt({
       ...(hostWakeRequired
         ? { TERMINAL_SMOKE_HOST_WAKE_PATH: hostWakeControlPath }
         : {}),
-      ...(failureRequired ? { TERMINAL_SMOKE_FAILURE: '1' } : {}),
+      /*
+       * F09 — the scenario implies the failure mode, and this is where it has to be said.
+       *
+       * The option was already widened to `failureRequired || failureScenario !== undefined`
+       * in two places, but the environment variable that tells *Rust* was still keyed on
+       * `failureRequired` alone. Measured consequence: every `--scenario` run started the
+       * app in the ordinary success mode, so the frontend's failure reporter was disabled
+       * and Rust adjudicated an ordinary run — `stage=connecting`, six retries, and an
+       * error that looked like a product bug in the jump path rather than a harness bug.
+       * One flag, two consumers, and only one of them was updated.
+       */
+      ...(failureRequired || failureScenario !== undefined
+        ? { TERMINAL_SMOKE_FAILURE: '1' }
+        : {}),
       ...(rendererHeartbeat
         ? {
             TERMINAL_SMOKE_RENDERER_HEARTBEAT_ENDPOINT:
@@ -1165,10 +1444,45 @@ async function runTerminalSmokeAttempt({
     const result = parseTerminalSmokeResult(serialized, {
       reconnectRequired: reconnect,
       hostWakeRequired,
-      failureRequired,
+      failureRequired: failureRequired || failureScenario !== undefined,
     })
+    /*
+     * F09 — a scenario is only passed when the pane names the right machine.
+     *
+     * The harness already requires *a* structured reason; this is what makes the reason
+     * specific to the break that was set up. Without it, `TARGET_AUTH_REJECTED` would pass
+     * on a run that blamed the bastion.
+     */
+    if (failureScenario !== undefined) {
+      const problems = compareFailureObservation(failureScenario, result.failureReason ?? {})
+      if (problems.length > 0) {
+        throw new Error(
+          `failure scenario ${failureScenario} failed: ${problems.join('; ')}` +
+            // The terminal's own report, verbatim: the comparison above says which field
+            // disagreed, and this says what the product actually claimed — including the
+            // message, which is the only place the Rust error kind is visible once the
+            // classifier has turned it into a sentence.
+            `\n[failureReason] ${JSON.stringify(result.failureReason ?? null)}` +
+            daemonLogDetail(fixture),
+        )
+      }
+    }
     return result
   } catch (error) {
+    /*
+     * F09 — a scenario that fails gets the servers' own words attached.
+     *
+     * Without this, "connect jump host failed: Connection reset by peer" is the only
+     * evidence and it names neither side. sshd logs every accepted connection and every
+     * refusal; reading it is what separates "the product retried a credential the server
+     * refused" from "each attempt really was reset before authentication".
+     */
+    const failureScenarioDetail =
+      failureScenario === undefined ? '' : daemonLogDetail(fixture)
+    if (failureScenarioDetail !== '') {
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`${message}${failureScenarioDetail}`, { cause: error })
+    }
     if (hostWakeRequired) {
       let events = ''
       let heartbeats = ''
@@ -1312,10 +1626,14 @@ const isDirectRun =
 if (isDirectRun) {
   const argv = process.argv.slice(2)
   const auth = argv.includes('--auth') ? argv[argv.indexOf('--auth') + 1] : 'key'
+  const failureScenario = argv.includes('--scenario')
+    ? argv[argv.indexOf('--scenario') + 1]
+    : undefined
   runTerminalSmoke({
     reconnect: argv.includes('--reconnect'),
     release: argv.includes('--release'),
     failureRequired: argv.includes('--failure'),
+    ...(failureScenario === undefined ? {} : { failureScenario }),
     auth,
   })
     .then(result => {

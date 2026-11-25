@@ -534,3 +534,35 @@ if (process.argv[1] && process.argv[1].endsWith('seed-sftp-host.mjs')) {
   console.log(JSON.stringify({ port: fixture.port, database: fixture.databaseFile }))
   await fixture.stop()
 }
+
+/**
+ * Mint a private key that no fixture daemon authorises.
+ *
+ * ## What needs this and why it cannot just reuse `userKeyPath`
+ *
+ * The host-key preflight runs before the session, so any connection to a *closed* port
+ * dies there and the terminal error overlay never mounts. Reaching that overlay needs a
+ * server that answers, presents a host key (which the caller trusts), and then refuses
+ * the credential — a real session-level failure.
+ *
+ * Pairing the second sshd with a key it does not authorise produces exactly that shape
+ * without a third daemon: the transport and the host key are genuine, the credential is
+ * refused.
+ *
+ * Returns `null` rather than throwing when the key cannot be minted. A missing tool is a
+ * missing precondition; the caller records it and the affected case reports NOT_RUN for
+ * that reason instead of the suite failing on a timeout that says nothing.
+ */
+export async function mintRejectedKey(home) {
+  const keygen = await findExecutable(['ssh-keygen', 'ssh-keygen.exe'])
+  if (!keygen) return null
+  const keyPath = path.join(home, 'rejected_user_key')
+  await mkdir(path.dirname(keyPath), { recursive: true })
+  try {
+    await execFileAsync(keygen, ['-q', '-t', 'ed25519', '-N', '', '-f', keyPath])
+    await chmod(keyPath, 0o600)
+    return keyPath
+  } catch {
+    return null
+  }
+}

@@ -58,6 +58,23 @@ export function updateTerminalState(
     record.reconnectAttempt = next.attempt ?? null
     record.reconnectReason = next.reason ?? null
     record.reconnectNextRetryAt = next.nextRetryAt ?? null
+  } else if (next.status === 'error') {
+    /*
+     * F10 — an exhausted verdict keeps the count of what it cost.
+     *
+     * The wait is over (`nextRetryAt` and `reason` describe a pending retry, and there is
+     * none), but `attempt` is a *measurement* of the attempt that just ended, and the
+     * failure report needs it. It used to be cleared here, which made
+     * `failureReason.attempts` structurally unreachable: the snapshot only carries
+     * `attempt` while reconnecting, and every transition to `error` wiped it, so the
+     * smoke contract's `attempts: 5` could only ever be a hand-written fixture value.
+     *
+     * A caller that wants to state the count passes it; one that does not (a first-connect
+     * failure with no ladder behind it) passes nothing and the old value is dropped.
+     */
+    record.reconnectAttempt = next.attempt ?? null
+    record.reconnectReason = null
+    record.reconnectNextRetryAt = null
   } else if (next.status !== undefined) {
     record.reconnectAttempt = null
     record.reconnectReason = null

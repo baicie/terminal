@@ -17,6 +17,7 @@ import sftp from './sftp'
 import snippets from './snippets'
 import startup from './startup'
 import teams from './teams'
+import terminalHostKey from './terminalHostKey'
 import terminalStatus from './terminalStatus'
 import terminalDiagnostic from './terminalDiagnostic'
 import vaults from './vaults'
@@ -42,6 +43,7 @@ export default {
   ...snippets,
   ...startup,
   ...teams,
+  ...terminalHostKey,
   ...terminalStatus,
   ...terminalDiagnostic,
   ...vaults,

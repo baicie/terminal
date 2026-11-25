@@ -69,6 +69,13 @@ export interface TerminalSessionSnapshot {
   status: TerminalSessionStatus
   error: string | null
   attempt?: number
+  /**
+   * F10 — how many attempts the finished ladder made.
+   *
+   * Only present on a terminal `error`, and only when a ladder actually ran. Distinct
+   * from `attempt`, which means "the attempt now in progress".
+   */
+  attempts?: number
   reason?: string
   nextRetryAt?: number
   retryable?: boolean
@@ -175,6 +182,22 @@ export function getTerminalSnapshot(
   ) {
     snapshot.attempt = record.reconnectAttempt
     snapshot.reason = record.reconnectReason
+  }
+  /*
+   * F10 — an exhausted ladder reports how many attempts it made.
+   *
+   * `reason` stays absent here on purpose: it describes a retry that is *pending*, and
+   * this state has none. `attempts` is different — it is a count of what already
+   * happened, and the smoke failure report (and any future connection log) needs it.
+   * Separate field name from the in-flight `attempt` so a consumer cannot mistake a
+   * finished count for a running one.
+   */
+  if (
+    record.status === 'error' &&
+    record.reconnectAttempt !== null &&
+    record.reconnectAttempt > 0
+  ) {
+    snapshot.attempts = record.reconnectAttempt
   }
   if (
     record.status === 'reconnecting' &&

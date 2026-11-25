@@ -1,0 +1,59 @@
+name: SSH soak
+
+# F14/F17 — the 100-round resource soak, manually dispatched.
+#
+# ## Why this is not part of `ci.yml`
+#
+# `ci.yml` runs the 12-round lifecycle regression on every PR. That one is fast and
+# blocks on deterministic facts (the pool and registry return to zero). This one is a
+# *curve*: 100 real connect/handshake/exec/disconnect rounds against two `sshd` daemons,
+# on a dedicated runner that is not also building three Tauri targets. A curve measured
+# on a busy shared runner describes the runner.
+#
+# It never writes `docs/verification` and never produces a release verdict — the same
+# rule `cold-start-stress.yml` follows.
+on:
+  workflow_dispatch:
+    inputs:
+      rounds:
+        description: Connect/disconnect rounds
+        required: false
+        default: '100'
+
+permissions:
+  contents: read
+
+jobs:
+  soak:
+    name: SSH resource soak
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.3
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - name: Run the soak
+        env:
+          SSH_JUMP_E2E_ROUNDS: ${{ inputs.rounds }}
+          SSH_JUMP_E2E_TIMEOUT_MS: '1800000'
+          SSH_JUMP_E2E_REPORT: soak-report.json
+        run: node scripts/verify-install/ssh-jump-e2e.mjs
+      - name: Upload the soak report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssh-soak-report-${{ github.run_id }}
+          path: soak-report.json
+          if-no-files-found: warn
+          retention-days: 30

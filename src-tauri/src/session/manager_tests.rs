@@ -452,3 +452,157 @@ async fn a_panicking_removal_listener_does_not_abort_the_others() {
     );
     assert_eq!(registry_counts(&manager).await, (0, 0, 0));
 }
+
+/// F09 — `shutdown()` must not deadlock on the lock `close_all()` needs.
+///
+/// ## The defect this pins
+///
+/// `shutdown` took `self.lifecycle.lock()` and then called `close_all`, which takes the
+/// same `tokio::sync::Mutex`. That mutex is not reentrant, so the second `lock()` waited
+/// on a guard the same task was holding — forever.
+///
+/// Measured through the product smoke harness before the fix: the app logged
+/// `terminal smoke finalized ok=true stage=failure-observed`, then sat for the harness's
+/// full 210-second deadline without exiting. Every earlier smoke case also went through
+/// this path, but they finish by *connecting* and the assertion passes on the result file,
+/// so the hang only became visible once a case ended in an error state that still counts
+/// as a pass.
+///
+/// The timeout is what makes this a test rather than another hang: without it a
+/// regression here would stall the whole Rust suite instead of failing one case.
+#[tokio::test]
+async fn shutdown_completes_instead_of_deadlocking_on_its_own_lifecycle_lock() {
+    let manager = SessionManager::new();
+
+    tokio::time::timeout(Duration::from_secs(2), manager.shutdown())
+        .await
+        .expect("shutdown deadlocked: it holds the lifecycle mutex while close_all needs it");
+}
+
+/// The same invariant with work to do, so the case above cannot pass on an empty registry.
+#[tokio::test]
+async fn shutdown_completes_with_a_registered_session() {
+    let manager = SessionManager::new();
+    let (session, _probe) = fake_local_session("shutdown-with-a-session", true);
+    assert!(
+        manager.register_session(SessionState::Local(session)).await,
+        "registering a fake session must succeed"
+    );
+
+    tokio::time::timeout(Duration::from_secs(2), manager.shutdown())
+        .await
+        .expect("shutdown deadlocked with a session to close");
+
+    assert_eq!(
+        registry_counts(&manager).await,
+        (0, 0, 0),
+        "shutdown must leave every registry empty"
+    );
+}
+
+/// F16 — a session that fails does not take its neighbours with it, and one session's
+/// cleanup cannot delete another's registration.
+///
+/// ## The shape this pins
+///
+/// The manager holds local PTYs, SSH sessions and serial ports in one registry, keyed by
+/// session id, with shared resources (channels, output buffers, the connection pool) keyed
+/// the same way. That sharing is the whole design — and it is also how one session's
+/// teardown could reach into another if a key were ever derived from something less
+/// specific than the id.
+///
+/// The assertions are deliberately about the **other** sessions: what the failed one did
+/// to itself is covered elsewhere, and a test that only watched the failing session would
+/// pass on an implementation that removed everything.
+#[tokio::test]
+async fn a_failing_session_leaves_its_neighbours_registered_and_working() {
+    let manager = SessionManager::new();
+
+    let (healthy_a, _probe_a) = fake_local_session("f16-a", true);
+    let (healthy_b, _probe_b) = fake_local_session("f16-b", true);
+    let (doomed, _probe_doomed) = fake_local_session("f16-doomed", true);
+
+    for session in [&healthy_a, &healthy_b, &doomed] {
+        assert!(
+            manager
+                .register_session(SessionState::Local(session.clone()))
+                .await,
+            "every session must register"
+        );
+    }
+    assert_eq!(manager.len().await, 3);
+
+    // One session fails. In the product this is a reader error or a child exit; here the
+    // removal path is the one both go through.
+    manager
+        .remove_session("f16-doomed")
+        .await
+        .expect("removing a registered session must succeed");
+
+    assert_eq!(
+        manager.len().await,
+        2,
+        "exactly one session may disappear; a bulk removal here would be the defect"
+    );
+
+    /*
+     * The neighbours are not merely counted — they are still addressable by id and still
+     * report themselves alive. A registry that kept a dangling entry would satisfy the
+     * count above.
+     */
+    for id in ["f16-a", "f16-b"] {
+        let session = manager
+            .get_session(id)
+            .await
+            .unwrap_or_else(|| panic!("{id} must still be registered after a neighbour failed"));
+        assert!(session.is_alive(), "{id} must still be alive");
+    }
+
+    remove_test_sessions(&manager, &["f16-a".to_string(), "f16-b".to_string()]).await;
+    assert_eq!(registry_counts(&manager).await, (0, 0, 0));
+}
+
+/// The same rule with the *shared* registries: a session id's channel and metadata belong
+/// to that id alone.
+#[tokio::test]
+async fn removing_one_session_does_not_clear_another_sessions_channel() {
+    let manager = SessionManager::new();
+    let (first, _probe_first) = fake_local_session("f16-channel-a", true);
+    let (second, _probe_second) = fake_local_session("f16-channel-b", true);
+    manager.register_session(SessionState::Local(first)).await;
+    manager.register_session(SessionState::Local(second)).await;
+
+    assert!(manager
+        .channel_manager
+        .get_channel("f16-channel-a")
+        .await
+        .is_some());
+    assert!(manager
+        .channel_manager
+        .get_channel("f16-channel-b")
+        .await
+        .is_some());
+
+    manager
+        .remove_session("f16-channel-a")
+        .await
+        .expect("removal must succeed");
+
+    assert!(
+        manager
+            .channel_manager
+            .get_channel("f16-channel-b")
+            .await
+            .is_some(),
+        "the surviving session's channel must not be cleared with its neighbour's"
+    );
+    assert!(
+        manager
+            .channel_manager
+            .get_channel("f16-channel-a")
+            .await
+            .is_none(),
+        "the removed session's channel must be gone"
+    );
+    remove_test_sessions(&manager, &["f16-channel-b".to_string()]).await;
+}

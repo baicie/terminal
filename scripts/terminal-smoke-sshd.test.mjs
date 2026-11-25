@@ -5,6 +5,7 @@ import { PassThrough } from 'node:stream'
 import test from 'node:test'
 
 import {
+  daemonConfiguration,
   SSHD_READY_MARKER,
   SSHD_STOP_GRACE_MS,
   startTerminalSmokeSshd,
@@ -735,4 +736,52 @@ test('rejects a jump role without a numeric target port', async () => {
     /target port/,
   )
   assert.equal(calls.mkdir.length, 0)
+})
+
+/*
+ * F11 — a bastion that may forward to several addresses says so, and one that may not
+ * says exactly what it said before.
+ *
+ * The first version of `targetPorts` was added to the option list but never forwarded to
+ * `daemonConfiguration`, so the generated `sshd_config` was unchanged and the isolation
+ * matrix failed with `AdministrativelyProhibited` — the bastion correctly refusing an
+ * address it had never been told about. This asserts the generated text, which is the only
+ * place that wiring is visible.
+ */
+test('the bastion config lists every permitted forward target', () => {
+  const paths = {
+    directory: '/tmp/sshd',
+    authorizedKeys: '/tmp/sshd/authorized_keys',
+    caKey: '/tmp/sshd/ca_key',
+    caPublicKey: '/tmp/sshd/ca_key.pub',
+    config: '/tmp/sshd/sshd_config',
+    connection: '/tmp/sshd/connection.json',
+    home: '/tmp/sshd/home',
+    hostKey: '/tmp/sshd/host_key',
+    knownHosts: '/tmp/sshd/known_hosts',
+    pid: '/tmp/sshd/sshd.pid',
+    shellRc: '/tmp/sshd/shell-rc.sh',
+    userCertificate: '/tmp/sshd/user_key-cert.pub',
+    userKey: '/tmp/sshd/user_key',
+    wrapper: '/tmp/sshd/forced-command.sh',
+  }
+  const single = daemonConfiguration(paths, 22, 'alice', {
+    mode: 'key',
+    role: 'jump',
+    targetPort: 2222,
+  })
+  assert.match(single, /^PermitOpen 127\.0\.0\.1:2222$/m)
+  assert.equal(
+    single.match(/^PermitOpen/mg)?.length,
+    1,
+    'the single-port form must produce exactly one PermitOpen line',
+  )
+
+  const multiple = daemonConfiguration(paths, 22, 'alice', {
+    mode: 'key',
+    role: 'jump',
+    targetPort: 2222,
+    targetPorts: [2222, 2223],
+  })
+  assert.match(multiple, /^PermitOpen 127\.0\.0\.1:2222 127\.0\.0\.1:2223$/m)
 })

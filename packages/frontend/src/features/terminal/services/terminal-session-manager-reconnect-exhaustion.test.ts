@@ -247,3 +247,75 @@ describe('F06 — an exhausted ladder keeps the last failure context', () => {
     expect(states.at(-1)?.diagnosis).toBeUndefined()
   })
 })
+
+describe('F10 — the exhausted verdict reports how many attempts it cost', () => {
+  /*
+   * ## The gap this closes
+   *
+   * `failureReason.attempts` was structurally unreachable: the snapshot only carries
+   * `attempt` while `status === 'reconnecting'` (`terminal-session-manager-types.ts:171`),
+   * and every transition to `error` clears `record.reconnectAttempt`
+   * (`terminal-session-state.ts:61-65`). So the one thing a failure report most needs —
+   * how hard the ladder tried before giving up — was always `null`.
+   *
+   * `scripts/run-terminal-smoke.test.mjs:1418` asserts `attempts: 5` — but that is a
+   * round-trip test of the *artifact parser*: it checks the harness carries the field
+   * through unchanged, which it does and should. What was missing is a producer: no real
+   * run could ever hand it a number. These cases supply one, from the record the ladder
+   * actually ran on.
+   */
+  beforeEach(() => {
+    eventHandlers.clear()
+    vi.mocked(startTerminalShell).mockReset()
+    vi.mocked(startTerminalShell).mockResolvedValue('session-1')
+  })
+
+  it('reports the number of attempts the exhausted ladder actually made', async () => {
+    vi.mocked(startTerminalShell).mockRejectedValue({
+      type: 'connection_failed',
+      message: 'connection failed: network is unreachable',
+    })
+    const { manager, states } = createManager({ maxAttempts: 3 })
+
+    await vi.waitFor(() => expect(states.at(-1)?.status).toBe('error'))
+
+    expect(states.at(-1)?.attempts).toBe(3)
+    await manager.close(remoteRequest.tabId)
+  })
+
+  it('reports one attempt for a manual retry that never entered the ladder', async () => {
+    vi.mocked(startTerminalShell)
+      .mockResolvedValueOnce('session-1')
+      .mockRejectedValue({ type: 'connection_failed', message: 'timed out' })
+    const { manager, binding, states } = createManager({ maxAttempts: 3 })
+
+    await vi.waitFor(() => expect(states.at(-1)?.status).toBe('connected'))
+    eventHandlers.get('ssh-close')?.({ payload: 'session-1' })
+    await vi.waitFor(() => expect(states.at(-1)?.status).toBe('error'))
+    const attemptsAfterLadder = states.at(-1)?.attempts
+    expect(attemptsAfterLadder).toBe(3)
+
+    binding.reconnect()
+    await vi.waitFor(() =>
+      expect(states.at(-1)?.status).toBe('error'),
+    )
+    /*
+     * A manual retry runs exactly one attempt (`run()` sets `attempts = 1` for a
+     * non-automatic mode), so the number must drop rather than keep the ladder's.
+     */
+    expect(states.at(-1)?.attempts).toBe(1)
+    expect(startTerminalShell).toHaveBeenCalledTimes(3 + 1 + 1)
+    await manager.close(remoteRequest.tabId)
+  })
+
+  it('does not carry a stale attempt count into a successful connection', async () => {
+    vi.mocked(startTerminalShell)
+      .mockRejectedValueOnce({ type: 'connection_failed', message: 'timed out' })
+      .mockResolvedValue('session-2')
+    const { manager, states } = createManager({ maxAttempts: 3 })
+
+    await vi.waitFor(() => expect(states.at(-1)?.status).toBe('connected'))
+    expect(states.at(-1)?.attempts).toBeUndefined()
+    await manager.close(remoteRequest.tabId)
+  })
+})

@@ -618,6 +618,59 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  # F17 — the real two-hop suite runs on every PR.
+  #
+  # Until this job existed, `scripts/verify-install/ssh-jump-e2e.mjs` was referenced by
+  # no workflow. The eleven cases that prove bastion/target attribution against real
+  # `sshd` daemons therefore ran only when a developer remembered to type the command —
+  # and a regression in the attribution the whole SSH book exists to provide would have
+  # merged green.
+  #
+  # It is a **fast lifecycle regression**, not a soak: eleven cases, ~15 s of daemons,
+  # no RSS curve. What it blocks on is deterministic (which leg was blamed, whether the
+  # pool came back to zero), which is the only kind of thing this repository lets a CI
+  # job block on.
+  #
+  # Linux only, deliberately: the fixture needs a stock `sshd`, and `ubuntu-latest` has
+  # one. Adding macOS and Windows here would multiply the cost without adding an
+  # assertion — the daemons are the same OpenSSH either way.
+  real-ssh-jump:
+    name: Real SSH jump matrix
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      # The harness writes its fixture under `$HOME`; `sshd`'s `StrictModes` refuses a
+      # world-writable parent, and `/tmp` on a Linux runner is 1777. Measured: this was
+      # the difference between a green local run and a red CI one for the SFTP fixture.
+      - name: Run the real two-hop matrix
+        run: node scripts/verify-install/ssh-jump-e2e.mjs
+        env:
+          SSH_JUMP_E2E_TIMEOUT_MS: '600000'
+      - name: Upload the matrix report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-ssh-jump-report-${{ github.run_id }}
+          path: /tmp/ssh-jump-report.json
+          if-no-files-found: warn
+          retention-days: 7
+
   cargo-audit:
     # RustSec sweep over src-tauri/Cargo.lock, as a REAL GATE.
     #
@@ -986,6 +1039,7 @@ jobs:
       - team-server
       - source-size
       - rust
+      - real-ssh-jump
       - cargo-audit
       - docker
       - tauri

@@ -1459,3 +1459,129 @@ test('a normal run still rejects the failure stage, so the modes stay distinct',
     /Invalid terminal smoke result/,
   )
 })
+
+/*
+ * F09 — the scenario option changes what fixture is built and what result passes.
+ *
+ * These run the real `runTerminalSmoke` with stubbed daemons: the point is the wiring
+ * between the scenario name, the fixture that gets started, and the comparison against
+ * what the terminal reported. The daemons themselves are exercised by the real-matrix run.
+ */
+const failureResult = reason => ({
+  ok: true,
+  stage: 'failure-observed',
+  error: null,
+  loadBytes: 0,
+  roundsCompleted: 0,
+  uniqueSessionCount: 0,
+  resourcesRecovered: true,
+  durationMs: 900,
+  terminalCols: 80,
+  terminalRows: 24,
+  loadEndVisible: false,
+  afterLoadVisible: false,
+  resizedSizeVisible: false,
+  resizeTrace: [],
+  reconnectObserved: false,
+  hostWakeSynthesized: false,
+  staleOutputRejected: false,
+  firstConnectionMs: 0,
+  failureReason: reason,
+})
+
+test('a jump failure scenario starts two daemons and accepts the matching reason', async () => {
+  const { calls, dependencies } = createHarness({
+    result: failureResult({
+      message: 'authentication rejected',
+      hop: 'bastion',
+      stage: 'authentication',
+      diagnosis: 'bastion-auth-rejected',
+    }),
+  })
+  // The scenario rewrites authorized_keys with a generated key and generates pins.
+  dependencies.execFile = async () => ({ stdout: '', stderr: '' })
+  dependencies.readFile = async (...args) => {
+    calls.readFile.push(args)
+    const target = args[0]
+    if (String(target).endsWith('authorized_keys')) return 'ssh-ed25519 AAAA fixture'
+    if (String(target).endsWith('.pub')) return 'ssh-ed25519 AAAA generated pin'
+    if (String(target).endsWith('known_hosts')) return '[127.0.0.1]:2222 ssh-ed25519 AAAA served'
+    return JSON.stringify(
+      failureResult({
+        message: 'authentication rejected',
+        hop: 'bastion',
+        stage: 'authentication',
+        diagnosis: 'bastion-auth-rejected',
+      }),
+    )
+  }
+
+  const result = await runTerminalSmoke({
+    cwd: PROJECT_ROOT,
+    env: {},
+    targetDirectory: TARGET_DIRECTORY,
+    skipBuild: true,
+    failureScenario: 'BASTION_AUTH_REJECTED',
+    dependencies,
+  })
+
+  assert.equal(result.stage, 'failure-observed')
+  // A target and a bastion, in that order.
+  assert.equal(calls.startSshd.length, 2)
+  assert.equal(calls.startSshd[0].role, 'target')
+  assert.equal(calls.startSshd[1].role, 'jump')
+})
+
+test('a scenario whose terminal blames the wrong machine fails the run', async () => {
+  const { dependencies } = createHarness({
+    result: failureResult({
+      message: 'authentication rejected',
+      hop: 'target',
+      stage: 'authentication',
+      diagnosis: 'target-auth-rejected',
+    }),
+  })
+  dependencies.execFile = async () => ({ stdout: '', stderr: '' })
+  dependencies.readFile = async requestPath => {
+    const target = String(requestPath)
+    if (target.endsWith('authorized_keys')) return 'ssh-ed25519 AAAA fixture'
+    if (target.endsWith('.pub')) return 'ssh-ed25519 AAAA generated pin'
+    if (target.endsWith('known_hosts')) return '[127.0.0.1]:2222 ssh-ed25519 AAAA served'
+    return JSON.stringify(
+      failureResult({
+        message: 'authentication rejected',
+        hop: 'target',
+        stage: 'authentication',
+        diagnosis: 'target-auth-rejected',
+      }),
+    )
+  }
+
+  await assert.rejects(
+    runTerminalSmoke({
+      cwd: PROJECT_ROOT,
+      env: {},
+      targetDirectory: TARGET_DIRECTORY,
+      skipBuild: true,
+      failureScenario: 'BASTION_AUTH_REJECTED',
+      dependencies,
+    }),
+    /BASTION_AUTH_REJECTED.*expected hop "bastion"/s,
+  )
+})
+
+test('an unknown scenario is refused before any daemon starts', async () => {
+  const { calls, dependencies } = createHarness()
+  await assert.rejects(
+    runTerminalSmoke({
+      cwd: PROJECT_ROOT,
+      env: {},
+      targetDirectory: TARGET_DIRECTORY,
+      skipBuild: true,
+      failureScenario: 'NOT_A_SCENARIO',
+      dependencies,
+    }),
+    /unknown failure scenario/,
+  )
+  assert.equal(calls.startSshd.length, 0)
+})

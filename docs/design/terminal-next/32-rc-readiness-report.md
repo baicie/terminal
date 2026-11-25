@@ -175,3 +175,89 @@ EVIDENCE_FINGERPRINT_CURRENT = NO   （需重采，见 §六）
 
 逐提交 `git revert` 即可。本轮**没有**数据库 schema 变更、没有迁移、没有凭据格式
 变更。新增的 `localPath` 是可选字段，旧证据与旧数据不受影响。
+
+---
+
+# F01–F24 收口轮（2026-11-25）
+
+任务书：Terminal Next — Final Runtime Reliability & Daily Driver RC。
+本节是对上面那份报告的**增量更新**，不是另一份报告；上面各节仍然有效，冲突时以本节
+的实测数字为准。
+
+## 八、本轮找到并修掉的真实缺陷
+
+四个，全部由真实运行暴露，没有一个来自阅读代码。
+
+| # | 缺陷 | 后果 | 如何发现 |
+| --- | --- | --- | --- |
+| 1 | 自动重试阶梯耗尽后只写 `error: lastError` | 双跳连接用尽重试预算后只显示「authentication rejected」，用户不知是跳板还是目标的账号 | 先红测试；`terminal-session-manager-reconnect.ts` |
+| 2 | `enforce_authentication_deadline` 把所有内层错误转成 `AuthenticationTransportFailed` | **跳板拒绝被重试 6 次**，且前端永远收不到 `bastion-auth-rejected` | 真实双跳 smoke 实测 |
+| 3 | `SessionManager::shutdown` 持 `lifecycle` 锁跨调 `close_all()`，同一把不可重入的 tokio Mutex | 清理永不完成 → 进程在 `finalized` 之后挂满 210 秒 | 真实场景退出时超时 |
+| 4 | 退出路径靠 `app.exit()` 的请求「复活」 | 清理 0.4 ms 完成，进程仍不退出：`prevent_exit` 取消的请求不会被重放 | 加 trace 定位 |
+
+**缺陷 3 与 4 是同一个症状的两个层次**：先修掉自锁，仍然卡住，才发现退出请求本身丢了。
+两次都记在提交里，没有把第一次的错误结论当成结论。
+
+## 九、本轮补上的证据层级
+
+| 面 | 之前 | 现在 |
+| --- | --- | --- |
+| 真实双跳用例 | 8 条，**不在 CI** | **11 条，进 CI 且阻塞合并**（`real-ssh-jump` job） |
+| 多机身份隔离 | `NOT_RUN`（`PermitOpen` 只允许一个目标，问题不可达） | 四机矩阵通过：同跳板两目标、两跳板同目标、跨跳板密钥被拒 |
+| 连接链路时间预算 | 无断言 | 6 阶段共享一个预算；变异去掉钳位 → 红 |
+| 资源回收 | 单点 | 12 轮连接/断连后产品自身资源视图回到零 |
+| 真实 PTY 生命周期 | 分段 | 一轮完整：输出→输入→resize→EOF→回收，nonce 匹配 |
+| 混合会话隔离 | 无 | 邻居仍注册且可用；一条会话的清理不碰别人的 channel |
+| 失败诊断一致性 | 无 | 面板/分类器/连接日志三方逐字段一致（5 种情形 + vault） |
+| 终端失败写日志 | **从未写入** | 首连终态与阶梯耗尽各一次，日志不含任何凭据（canary） |
+| GUI 失败诊断 | **无任何用例** | 新增 `e2e-07`（见下） |
+
+## 十、判定
+
+三项分开给，不合并：
+
+```
+INTERNAL_QA_READY          = YES
+CORE_DAILY_DRIVER_READY    = NO   （七天真人日用未执行）
+SIGNED_PUBLIC_RELEASE_READY = NO  （签名/公证/updater 密钥 BLOCKED_EXTERNAL）
+```
+
+`INTERNAL_QA_READY=YES` 的依据是第九节那批门禁：内部能够证明的都证明了，证明不了的
+都列为 NOT_RUN 而不是猜成 PASS。它**不**表示产品可以发布，也不表示已经好用。
+
+`CORE_DAILY_DRIVER_READY` 保持 NO 的唯一原因是任务书本身规定的「七天真人日用」——
+那需要用户本人，任何脚本都不能代替。
+
+## 十一、仍未完成（如实列出）
+
+| 项 | 状态 | 需要什么 |
+| --- | --- | --- |
+| `e2e-07` GUI 失败诊断 | **PASS（macOS + Linux）** | 四轮才通过。前三轮的失败都是真结论：两轮是用例写错（没进 Hosts 路由；等「页面里有错误字样」，1.6 秒被主机列表本身满足），第三轮对上了产品——连接被拒被说成「无法验证 SSH 主机密钥」，且内部调用栈直出。`9f9e3bd` 上 macOS（阻塞）与 Linux 两条 case 全 ✓、`notRunCount: 0`。**这一行是矩阵里唯一达到 `NATIVE_GUI_VERIFIED` 的** |
+| F12 断连注入 | **PARTIAL** | 代理已就位、对照用例通过（健康连接经代理成功）；`resetAfterMs`/`blackhole` 的逐场景注入尚未编写驱动 |
+| F13 自定义策略真实执行 | **NOT_RUN** | 出货的 `terminalSessionManager` 不收参数，自定义退避到不了真实后端 |
+| F14 100 轮 soak | **NOT_RUN** | 需要手动 workflow 与稳定机器；12 轮的快速回归已在 CI |
+| F17 RSS/FD 曲线 | **NOT_RUN** | 同上；只把确定性事实设为阻塞 |
+| Windows 三平台故障矩阵 | **NOT_RUN** | 一次性 profile 或 VM |
+| 七天真人日用 | **NOT_RUN** | 用户本人 |
+
+## 十二、人工验收清单（按优先级）
+
+1. 打开应用，连一台不可达的主机 → 面板必须说出原因，不能是空白终端。
+2. 配一条双跳，把跳板密码改错 → 必须说「跳板」，不是「目标」，且**只试一次**。
+3. 同一场景把目标密码改错 → 必须说「目标」，且只试一次。
+4. 连上后拔网线 / 关 Wi-Fi，等 30 秒再恢复 → 会话自行恢复，或给出可读的原因。
+5. 断开一个会话，确认另一个仍在收发数据。
+6. 看 Logs 视图：失败的连接应有记录，且记录里没有任何密码或私钥。
+
+## 十三、外部条件清单
+
+- Apple Developer ID 与 notarization
+- Windows Authenticode
+- 生产 Updater 签名密钥
+- 一台 Windows 机器（或 VM）用于 NSIS 升级 E2E
+- 七天真实使用数据
+
+## 十四、结论
+
+主动功能研发到此收敛。剩下的事项都需要真实用户或外部条件，继续加功能只会增加未被
+验证的面积。**建议进入真实使用。**
