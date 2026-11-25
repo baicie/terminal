@@ -32,6 +32,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import { launchProcess, stopProcess } from './process-lifecycle.mjs'
 import { startTerminalSmokeSshd } from '../terminal-smoke-sshd.mjs'
 
@@ -179,11 +180,18 @@ async function main() {
   }
 }
 
-/** Every `test <name> ... ok` line, so a reader sees which cases ran. */
-function parseCaseNames(stdout) {
+/**
+ * Every `test <path> ... ok` line, so a reader sees which cases ran.
+ *
+ * The path is the module path libtest prints — `session::ssh::ssh_jump_e2e_tests::name`
+ * — not the bare name. The first version matched `^test ssh_jump_e2e_tests::` and so
+ * matched nothing: `report.cases` was `[]` on every run, including a PASS. A report that
+ * cannot list the cases it ran is not evidence that any case ran.
+ */
+export function parseCaseNames(stdout) {
   return stdout
     .split('\n')
-    .map(line => /^test (ssh_jump_e2e_tests::\S+) \.\.\. (ok|FAILED)/.exec(line.trim()))
+    .map(line => /^test (\S*ssh_jump_e2e_tests::\S+) \.\.\. (ok|FAILED)/.exec(line.trim()))
     .filter(Boolean)
     .map(match => ({ name: match[1], outcome: match[2] }))
 }
@@ -255,8 +263,21 @@ async function waitForTests(child, timeoutMs) {
 }
 
 
-main().catch(error => {
-  report.notes.push(`HARNESS_ERROR: ${error.message}`)
-  finish('FAIL')
-  process.exitCode = 1
-})
+/*
+ * Run only when this file is the entry point.
+ *
+ * Nothing else imported it until the case-name parser got a unit test, and an
+ * unconditional `main()` made that import start two sshd daemons and a cargo build —
+ * the test hung until the runner killed it. Same guard the other harnesses use.
+ */
+const isDirectRun =
+  process.argv[1] !== undefined &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+
+if (isDirectRun) {
+  main().catch(error => {
+    report.notes.push(`HARNESS_ERROR: ${error.message}`)
+    finish('FAIL')
+    process.exitCode = 1
+  })
+}
