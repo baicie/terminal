@@ -1,6 +1,6 @@
 import { formatIpcError } from '@/hooks/terminal-session-helpers'
 import { closeTerminalBackend } from './terminal-session-backend'
-import { resolveReconnectPolicy } from './terminal-session-reconnect-policy'
+import { reconnectDelayFor, resolveReconnectPolicy } from './terminal-session-reconnect-policy'
 import type {
   TerminalReconnectDependencies,
   TerminalReconnectOptions,
@@ -280,14 +280,7 @@ export class TerminalSessionReconnect {
   }
 
   private delayFor(attempt: number): number {
-    const exponential = Math.min(
-      this.policy.maxDelayMs,
-      this.policy.baseDelayMs * 2 ** (attempt - 1),
-    )
-    const jittered = this.policy.jitter(exponential, attempt)
-    return Number.isFinite(jittered) && jittered >= 0
-      ? Math.round(jittered)
-      : exponential
+    return reconnectDelayFor(this.policy, attempt)
   }
 
   private isActive(record: TerminalRecord, generation: number): boolean {

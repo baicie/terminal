@@ -155,6 +155,59 @@ describe('TerminalSessionManager reconnect state machine', () => {
     ).toEqual([1, 2])
   })
 
+  it('never waits longer than maxDelayMs, however the jitter is applied', async () => {
+    /*
+     * SSH18. `maxDelayMs` is the longest wait a user is promised between attempts. The
+     * shipping jitter is `delay * (0.8 + random * 0.4)`, so once the exponential reaches
+     * the cap the actual delay can be 20% above it:
+     *
+     *   attempt 5: 500 * 2^4 = 8000  → [6400, 9600]   fine
+     *   attempt 6: capped at 10000   → [8000, 12000]  exceeds the cap
+     *
+     * The default `maxAttempts` is 5, which is why this went unnoticed: reaching the bug
+     * needs a policy that retries longer, and `maxDelayMs` is exactly what such a policy
+     * relies on to stay bounded.
+     *
+     * The jitter here is the shipping formula's **worst case**, pinned so the case is
+     * deterministic. Asserting on `sleep` rather than on a private helper is deliberate:
+     * the wait the user experiences is what the number means.
+     */
+    vi.mocked(startTerminalShell)
+      .mockResolvedValueOnce('session-1')
+      .mockRejectedValue(new Error('network unavailable'))
+    const delays: number[] = []
+    const MAX_DELAY = 1_000
+    const manager = new TerminalSessionManager({
+      baseDelayMs: 100,
+      maxDelayMs: MAX_DELAY,
+      maxAttempts: 8,
+      sleep: async delayMs => {
+        delays.push(delayMs)
+      },
+      jitter: delayMs => Math.round(delayMs * 1.2),
+    })
+    const states: TerminalSessionSnapshot[] = []
+    manager.attach(remoteRequest, {
+      onOutput: () => {},
+      onState: state => states.push(state),
+    })
+    await vi.waitFor(() => expect(states.at(-1)?.sessionId).toBe('session-1'))
+
+    eventHandlers.get('ssh-close')?.({ payload: 'session-1' })
+
+    // Let the whole ladder run. It exhausts its attempts and stops.
+    await vi.waitFor(() =>
+      expect(states.at(-1)?.status).toBe('error'),
+    )
+    expect(delays.length).toBeGreaterThanOrEqual(5)
+    for (const [index, delay] of delays.entries()) {
+      expect(
+        delay,
+        `attempt ${index + 1} waited ${delay}ms, above the ${MAX_DELAY}ms cap`,
+      ).toBeLessThanOrEqual(MAX_DELAY)
+    }
+  })
+
   it('cancels a delayed automatic retry when its generation is retired', async () => {
     const wait = deferred<void>()
     const states: TerminalSessionSnapshot[] = []
