@@ -1073,7 +1073,14 @@ async fn four_machines_keep_their_own_identity() {
                             stdout.extend_from_slice(&data);
                         }
                     }
-                    Some(russh::ChannelMsg::ExitStatus { .. }) => break,
+                    /*
+                     * `ExitStatus` can arrive **before** the last `Data` message; breaking
+                     * on it lost the output entirely — measured as an empty string where
+                     * the fixture's ready marker was expected. The loop ends on `Eof` /
+                     * `Close` / channel end instead, which is what "the far end finished
+                     * talking" actually means.
+                     */
+                    Some(russh::ChannelMsg::ExitStatus { .. }) => continue,
                     Some(russh::ChannelMsg::Eof) | Some(russh::ChannelMsg::Close) => break,
                     None => break,
                     _ => {}

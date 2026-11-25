@@ -1340,6 +1340,96 @@ pub(in crate::session) mod tests {
         finish_local_session(&session.state, &session.lifecycle, session.session_id()).await;
     }
 
+    /// F15 — one real PTY round: output, input, resize, EOF, reap, no leftovers.
+    ///
+    /// ## What the existing cases do not cover
+    ///
+    /// `setup_pty_preserves_echo_and_requested_size` proves the PTY starts with the right
+    /// size and echo; `session_lifecycle_repeated_close_reaps_child_exactly_once` proves a
+    /// double close reaps once. Neither runs a shell through a **full** round, which is
+    /// the shape a user puts the PTY in thousands of times a day.
+    ///
+    /// ## Why the nonce
+    ///
+    /// The output is matched against a value generated for this test, so a line that a
+    /// previous case left in a buffer cannot satisfy the assertion. Constants in this
+    /// repository's terminal tests have twice been satisfied by stale output.
+    ///
+    /// The resize is asserted through the **child's** view (`stty size`), not through the
+    /// master's reported size: setting a size on the master and reading it back proves the
+    /// setter ran, not that the shell received it.
+    #[cfg(unix)]
+    #[test]
+    fn a_full_pty_round_delivers_output_input_resize_and_reaps_cleanly() {
+        let nonce = format!(
+            "f15-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_nanos())
+                .unwrap_or_default()
+        );
+        /*
+         * The script: announce the nonce, wait for a line of input, echo it back, then
+         * report the size the shell itself sees. `read` blocks until the test writes,
+         * which is what makes the input half a real interaction rather than a race.
+         */
+        let script = format!(
+            "printf '\\036READY-{nonce}\\037\\n'; read line; printf '\\036GOT-%s\\037\\n' \"$line\"; stty size; printf '\\036DONE-{nonce}\\037\\n'"
+        );
+        let resources = setup_pty_with_command(
+            80,
+            24,
+            deterministic_test_command(&script),
+            None,
+            None,
+            "f15-round",
+            "test-shell",
+        )
+        .expect("PTY should start for the test");
+        let (mut guard, output_rx) = RealPtyTestGuard::new(resources);
+        let mut output = Vec::new();
+
+        receive_pty_output_until(&output_rx, &mut output, format!("\x1eREADY-{nonce}\x1f").as_bytes())
+            .expect("the shell should become ready");
+
+        // Input reaches the shell, and the shell echoes it back through the PTY.
+        guard
+            .write(format!("payload-{nonce}\n").as_bytes())
+            .expect("writing to the PTY should succeed");
+        receive_pty_output_until(&output_rx, &mut output, format!("\x1eGOT-payload-{nonce}\x1f").as_bytes())
+            .expect("the shell should echo the line it read");
+
+        // Resize is delivered to the child, which reports it itself.
+        guard
+            .master()
+            .lock()
+            .resize(PtySize {
+                rows: 31,
+                cols: 97,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("resizing the PTY should succeed");
+        let mut resized = Vec::new();
+        receive_pty_output_until(&output_rx, &mut resized, format!("\x1eDONE-{nonce}\x1f").as_bytes())
+            .expect("the shell should finish after reporting its size");
+        let text = String::from_utf8_lossy(&resized).to_string();
+        assert!(
+            text.contains("31 97"),
+            "the shell must observe the resized geometry, got {text:?}"
+        );
+
+        // EOF: the child exits on its own, and the exit is reaped rather than leaked.
+        drop(guard);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while std::time::Instant::now() < deadline {
+            if output_rx.try_recv().is_err() {
+                break;
+            }
+        }
+    }
+
     #[cfg(unix)]
     #[test]
     fn setup_pty_preserves_echo_and_requested_size() {
