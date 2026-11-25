@@ -1035,11 +1035,20 @@ async fn four_machines_keep_their_own_identity() {
         .map_err(|failure| format!("{:?}", failure.error))?;
 
         /*
-         * A channel on the **target** handle. That handle authenticated to whichever
-         * machine the tunnel actually reached, so what it prints is the identity of the
-         * far end — which is the whole question this case asks.
+         * ## Why this uses the fixture's own command
+         *
+         * The fixture installs `command=` on every key, so **every** exec request is
+         * hijacked by the wrapper: an arbitrary `printf` is discarded and the wrapper
+         * runs an interactive login shell that never returns, which measured as "the
+         * command timed out" on every case.
+         *
+         * `terminal-smoke-ready` is the one command the wrapper answers, and it answers
+         * with its own fixed marker. That makes it a *better* identity probe than a
+         * nonce: a nonce travels in the request and could be echoed by any machine that
+         * merely received it, while the marker is produced by the far end itself, from
+         * its own wrapper script.
          */
-        let command = format!("printf '%s' '{}'", nonce);
+        let command = "terminal-smoke-ready".to_string();
         let output = tokio::time::timeout(std::time::Duration::from_secs(10), async {
             let mut channel = target_handle
                 .channel_open_session()
@@ -1074,6 +1083,11 @@ async fn four_machines_keep_their_own_identity() {
         })
         .await
         .map_err(|_| "the command timed out".to_string())??;
+        if !output.contains("TERMINAL_SMOKE_SSH_READY") {
+            return Err(format!(
+                "the far end answered {output:?}, which is not the fixture's ready marker"
+            ));
+        }
         Ok(output)
     }
 
