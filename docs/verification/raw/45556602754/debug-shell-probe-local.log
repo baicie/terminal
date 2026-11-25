@@ -1,0 +1,752 @@
+
+> @terminal/monorepo@0.0.1-dev.2 smoke:shell-probe:matrix /Users/runner/work/terminal/terminal
+> node scripts/run-terminal-shell-probe-matrix.mjs -- --shells bash,zsh cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt --reuse-binary
+
+Verified the reused binary carries smoke instrumentation (7 smoke/probe chunk(s)).
+Measured debug binary e87e2fe696df293cb5885efee386c477ad6022005bd51bb1d033abaf7357ad5a
+[local/bash/cat-eof] running...[2m2026-11-25T05:57:55.511043Z[0m [32m INFO[0m [2mterminal_lib[0m[2m:[0m tauri app starting up
+[2m2026-11-25T05:57:55.511433Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db recovery [3mstage[0m[2m=[0m"database-recovery" [3mstate[0m[2m=[0mHealthy [3mreason[0m[2m=[0mthe database does not exist yet [3mstages[0m[2m=[0m[]
+[2m2026-11-25T05:57:56.875317Z[0m [32m INFO[0m [2mterminal_lib::input_probe[0m[2m:[0m input_probe_config invoked
+[2m2026-11-25T05:57:56.876873Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mfrontend-boot [3mdetail[0m[2m=[0mmain.tsx evaluated
+[2m2026-11-25T05:57:56.927658Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mbootstrap-gates [3mdetail[0m[2m=[0mbootstrap mode=shell-probe gates: smoke=not-configured(31ms) remotePrompt=not-configured(31ms) inputProbe=not-configured(31ms) rawProbe=not-configured(31ms) shellProbe=loaded(31ms)
+[2m2026-11-25T05:57:57.043097Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-create-requested [3mdetail[0m[2m=[0mlocal
+[2m2026-11-25T05:57:57.054541Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-created [3mdetail[0m[2m=[0mlocal-2638b671-333a-4bef-a46c-8e551fccfa9c
+ ok (430 ms)
+[local/bash/readline-history] running...[2m2026-11-25T05:57:57.863368Z[0m [32m INFO[0m [2mterminal_lib[0m[2m:[0m tauri app starting up
+[2m2026-11-25T05:57:57.863828Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db recovery [3mstage[0m[2m=[0m"database-recovery" [3mstate[0m[2m=[0mHealthy [3mreason[0m[2m=[0mthe database does not exist yet [3mstages[0m[2m=[0m[]
+[2m2026-11-25T05:57:59.321129Z[0m [32m INFO[0m [2mterminal_lib::input_probe[0m[2m:[0m input_probe_config invoked
+[2m2026-11-25T05:57:59.321887Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mfrontend-boot [3mdetail[0m[2m=[0mmain.tsx evaluated
+[2m2026-11-25T05:57:59.364282Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mbootstrap-gates [3mdetail[0m[2m=[0mbootstrap mode=shell-probe gates: smoke=not-configured(24ms) remotePrompt=not-configured(23ms) inputProbe=not-configured(23ms) rawProbe=not-configured(23ms) shellProbe=loaded(23ms)
+[2m2026-11-25T05:57:59.479507Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-create-requested [3mdetail[0m[2m=[0mlocal
+[2m2026-11-25T05:57:59.489701Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-created [3mdetail[0m[2m=[0mlocal-7d4d829c-979a-461a-bd40-751114d3d408
+ ok (300 ms)
+[local/bash/readline-tab] running...[2m2026-11-25T05:58:00.220840Z[0m [32m INFO[0m [2mterminal_lib[0m[2m:[0m tauri app starting up
+[2m2026-11-25T05:58:00.221324Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db recovery [3mstage[0m[2m=[0m"database-recovery" [3mstate[0m[2m=[0mHealthy [3mreason[0m[2m=[0mthe database does not exist yet [3mstages[0m[2m=[0m[]
+[2m2026-11-25T05:58:01.790806Z[0m [32m INFO[0m [2mterminal_lib::input_probe[0m[2m:[0m input_probe_config invoked
+[2m2026-11-25T05:58:01.793185Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mfrontend-boot [3mdetail[0m[2m=[0mmain.tsx evaluated
+[2m2026-11-25T05:58:01.882180Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mbootstrap-gates [3mdetail[0m[2m=[0mbootstrap mode=shell-probe gates: smoke=not-configured(52ms) remotePrompt=not-configured(52ms) inputProbe=not-configured(52ms) rawProbe=not-configured(52ms) shellProbe=loaded(52ms)
+[2m2026-11-25T05:58:02.037715Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-create-requested [3mdetail[0m[2m=[0mlocal
+[2m2026-11-25T05:58:02.062123Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-created [3mdetail[0m[2m=[0mlocal-3353eec6-26cc-4d1c-8324-f889a697c0b0
+ ok (477 ms)
+[local/bash/vim-edit] running...[2m2026-11-25T05:58:03.155096Z[0m [32m INFO[0m [2mterminal_lib[0m[2m:[0m tauri app starting up
+[2m2026-11-25T05:58:03.156497Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db recovery [3mstage[0m[2m=[0m"database-recovery" [3mstate[0m[2m=[0mHealthy [3mreason[0m[2m=[0mthe database does not exist yet [3mstages[0m[2m=[0m[]
+[2m2026-11-25T05:58:04.619815Z[0m [32m INFO[0m [2mterminal_lib::input_probe[0m[2m:[0m input_probe_config invoked
+[2m2026-11-25T05:58:04.621310Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mfrontend-boot [3mdetail[0m[2m=[0mmain.tsx evaluated
+[2m2026-11-25T05:58:04.675487Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mbootstrap-gates [3mdetail[0m[2m=[0mbootstrap mode=shell-probe gates: smoke=not-configured(32ms) remotePrompt=not-configured(32ms) inputProbe=not-configured(32ms) rawProbe=not-configured(32ms) shellProbe=loaded(32ms)
+[2m2026-11-25T05:58:04.800983Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-create-requested [3mdetail[0m[2m=[0mlocal
+[2m2026-11-25T05:58:04.811621Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-created [3mdetail[0m[2m=[0mlocal-731f58fd-cb0e-41ff-b9ad-b2c415a3bdb9
+ ok (5202 ms)
+[local/bash/nano-edit] running...[2m2026-11-25T05:58:10.342390Z[0m [32m INFO[0m [2mterminal_lib[0m[2m:[0m tauri app starting up
+[2m2026-11-25T05:58:10.343058Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db recovery [3mstage[0m[2m=[0m"database-recovery" [3mstate[0m[2m=[0mHealthy [3mreason[0m[2m=[0mthe database does not exist yet [3mstages[0m[2m=[0m[]
+[2m2026-11-25T05:58:11.792310Z[0m [32m INFO[0m [2mterminal_lib::input_probe[0m[2m:[0m input_probe_config invoked
+[2m2026-11-25T05:58:11.793018Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mfrontend-boot [3mdetail[0m[2m=[0mmain.tsx evaluated
+[2m2026-11-25T05:58:11.854807Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mbootstrap-gates [3mdetail[0m[2m=[0mbootstrap mode=shell-probe gates: smoke=not-configured(36ms) remotePrompt=not-configured(37ms) inputProbe=not-configured(37ms) rawProbe=not-configured(37ms) shellProbe=loaded(37ms)
+[2m2026-11-25T05:58:11.956252Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-create-requested [3mdetail[0m[2m=[0mlocal
+[2m2026-11-25T05:58:11.984146Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-created [3mdetail[0m[2m=[0mlocal-d1b6690d-d838-49e6-ae25-53c669031ddb
+ ok (4677 ms)
+[local/bash/pty-resize] running...[2m2026-11-25T05:58:17.020736Z[0m [32m INFO[0m [2mterminal_lib[0m[2m:[0m tauri app starting up
+[2m2026-11-25T05:58:17.021276Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db recovery [3mstage[0m[2m=[0m"database-recovery" [3mstate[0m[2m=[0mHealthy [3mreason[0m[2m=[0mthe database does not exist yet [3mstages[0m[2m=[0m[]
+[2m2026-11-25T05:58:18.450411Z[0m [32m INFO[0m [2mterminal_lib::input_probe[0m[2m:[0m input_probe_config invoked
+[2m2026-11-25T05:58:18.451402Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mfrontend-boot [3mdetail[0m[2m=[0mmain.tsx evaluated
+[2m2026-11-25T05:58:18.497377Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mbootstrap-gates [3mdetail[0m[2m=[0mbootstrap mode=shell-probe gates: smoke=not-configured(30ms) remotePrompt=not-configured(30ms) inputProbe=not-configured(30ms) rawProbe=not-configured(30ms) shellProbe=loaded(30ms)
+[2m2026-11-25T05:58:18.638834Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-create-requested [3mdetail[0m[2m=[0mlocal
+[2m2026-11-25T05:58:18.650303Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-created [3mdetail[0m[2m=[0mlocal-b67993f8-bf8b-4ab2-9be9-ab780db70a36
+ ok (1412 ms)
+[local/bash/ctrl-c-interrupt] running...[2m2026-11-25T05:58:20.306400Z[0m [32m INFO[0m [2mterminal_lib[0m[2m:[0m tauri app starting up
+[2m2026-11-25T05:58:20.306824Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db recovery [3mstage[0m[2m=[0m"database-recovery" [3mstate[0m[2m=[0mHealthy [3mreason[0m[2m=[0mthe database does not exist yet [3mstages[0m[2m=[0m[]
+[2m2026-11-25T05:58:21.752077Z[0m [32m INFO[0m [2mterminal_lib::input_probe[0m[2m:[0m input_probe_config invoked
+[2m2026-11-25T05:58:21.752751Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mfrontend-boot [3mdetail[0m[2m=[0mmain.tsx evaluated
+[2m2026-11-25T05:58:21.823919Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mbootstrap-gates [3mdetail[0m[2m=[0mbootstrap mode=shell-probe gates: smoke=not-configured(34ms) remotePrompt=not-configured(34ms) inputProbe=not-configured(34ms) rawProbe=not-configured(34ms) shellProbe=loaded(34ms)
+[2m2026-11-25T05:58:21.947986Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-create-requested [3mdetail[0m[2m=[0mlocal
+[2m2026-11-25T05:58:21.960704Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-created [3mdetail[0m[2m=[0mlocal-640b94b2-e4f3-46eb-8dfa-1971dfba31e3
+ ok (1100 ms)
+[local/zsh/cat-eof] running...[2m2026-11-25T05:58:23.374549Z[0m [32m INFO[0m [2mterminal_lib[0m[2m:[0m tauri app starting up
+[2m2026-11-25T05:58:23.374942Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db recovery [3mstage[0m[2m=[0m"database-recovery" [3mstate[0m[2m=[0mHealthy [3mreason[0m[2m=[0mthe database does not exist yet [3mstages[0m[2m=[0m[]
+[2m2026-11-25T05:58:24.859674Z[0m [32m INFO[0m [2mterminal_lib::input_probe[0m[2m:[0m input_probe_config invoked
+[2m2026-11-25T05:58:24.861437Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mfrontend-boot [3mdetail[0m[2m=[0mmain.tsx evaluated
+[2m2026-11-25T05:58:24.917922Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mbootstrap-gates [3mdetail[0m[2m=[0mbootstrap mode=shell-probe gates: smoke=not-configured(36ms) remotePrompt=not-configured(36ms) inputProbe=not-configured(36ms) rawProbe=not-configured(36ms) shellProbe=loaded(36ms)
+[2m2026-11-25T05:58:25.042319Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-create-requested [3mdetail[0m[2m=[0mlocal
+[2m2026-11-25T05:58:25.051068Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-created [3mdetail[0m[2m=[0mlocal-45d1df84-59b2-45cf-a95d-9a2b42a8d0f4
+ ok (447 ms)
+[local/zsh/readline-history] running...[2m2026-11-25T05:58:25.731328Z[0m [32m INFO[0m [2mterminal_lib[0m[2m:[0m tauri app starting up
+[2m2026-11-25T05:58:25.731845Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db recovery [3mstage[0m[2m=[0m"database-recovery" [3mstate[0m[2m=[0mHealthy [3mreason[0m[2m=[0mthe database does not exist yet [3mstages[0m[2m=[0m[]
+[2m2026-11-25T05:58:27.197174Z[0m [32m INFO[0m [2mterminal_lib::input_probe[0m[2m:[0m input_probe_config invoked
+[2m2026-11-25T05:58:27.198973Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mfrontend-boot [3mdetail[0m[2m=[0mmain.tsx evaluated
+[2m2026-11-25T05:58:27.256696Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mbootstrap-gates [3mdetail[0m[2m=[0mbootstrap mode=shell-probe gates: smoke=not-configured(39ms) remotePrompt=not-configured(39ms) inputProbe=not-configured(39ms) rawProbe=not-configured(39ms) shellProbe=loaded(39ms)
+[2m2026-11-25T05:58:27.367294Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-create-requested [3mdetail[0m[2m=[0mlocal
+[2m2026-11-25T05:58:27.376668Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-created [3mdetail[0m[2m=[0mlocal-35808f7e-a84b-4ad2-8eeb-7bb252afd7cf
+ ok (302 ms)
+[local/zsh/readline-tab] running...[2m2026-11-25T05:58:27.991866Z[0m [32m INFO[0m [2mterminal_lib[0m[2m:[0m tauri app starting up
+[2m2026-11-25T05:58:27.992294Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db recovery [3mstage[0m[2m=[0m"database-recovery" [3mstate[0m[2m=[0mHealthy [3mreason[0m[2m=[0mthe database does not exist yet [3mstages[0m[2m=[0m[]
+[2m2026-11-25T05:58:29.404510Z[0m [32m INFO[0m [2mterminal_lib::input_probe[0m[2m:[0m input_probe_config invoked
+[2m2026-11-25T05:58:29.405523Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mfrontend-boot [3mdetail[0m[2m=[0mmain.tsx evaluated
+[2m2026-11-25T05:58:29.456857Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mbootstrap-gates [3mdetail[0m[2m=[0mbootstrap mode=shell-probe gates: smoke=not-configured(30ms) remotePrompt=not-configured(30ms) inputProbe=not-configured(30ms) rawProbe=not-configured(30ms) shellProbe=loaded(30ms)
+[2m2026-11-25T05:58:29.580461Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-create-requested [3mdetail[0m[2m=[0mlocal
+[2m2026-11-25T05:58:29.594893Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-created [3mdetail[0m[2m=[0mlocal-1551ee1e-11f0-4ebb-8259-19c947580f35
+ ok (451 ms)
+[local/zsh/vim-edit] running...[2m2026-11-25T05:58:30.233086Z[0m [32m INFO[0m [2mterminal_lib[0m[2m:[0m tauri app starting up
+[2m2026-11-25T05:58:30.233488Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db recovery [3mstage[0m[2m=[0m"database-recovery" [3mstate[0m[2m=[0mHealthy [3mreason[0m[2m=[0mthe database does not exist yet [3mstages[0m[2m=[0m[]
+[2m2026-11-25T05:58:31.623594Z[0m [32m INFO[0m [2mterminal_lib::input_probe[0m[2m:[0m input_probe_config invoked
+[2m2026-11-25T05:58:31.624133Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mfrontend-boot [3mdetail[0m[2m=[0mmain.tsx evaluated
+[2m2026-11-25T05:58:31.669946Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mbootstrap-gates [3mdetail[0m[2m=[0mbootstrap mode=shell-probe gates: smoke=not-configured(26ms) remotePrompt=not-configured(26ms) inputProbe=not-configured(26ms) rawProbe=not-configured(26ms) shellProbe=loaded(26ms)
+[2m2026-11-25T05:58:31.771507Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-create-requested [3mdetail[0m[2m=[0mlocal
+[2m2026-11-25T05:58:31.778765Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-created [3mdetail[0m[2m=[0mlocal-4391783b-60f8-44d5-b74f-113ba0b77a0a
+ ok (5162 ms)
+[local/zsh/nano-edit] running...[2m2026-11-25T05:58:37.226388Z[0m [32m INFO[0m [2mterminal_lib[0m[2m:[0m tauri app starting up
+[2m2026-11-25T05:58:37.226771Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db recovery [3mstage[0m[2m=[0m"database-recovery" [3mstate[0m[2m=[0mHealthy [3mreason[0m[2m=[0mthe database does not exist yet [3mstages[0m[2m=[0m[]
+[2m2026-11-25T05:58:38.519639Z[0m [32m INFO[0m [2mterminal_lib::input_probe[0m[2m:[0m input_probe_config invoked
+[2m2026-11-25T05:58:38.520170Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mfrontend-boot [3mdetail[0m[2m=[0mmain.tsx evaluated
+[2m2026-11-25T05:58:38.566617Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mbootstrap-gates [3mdetail[0m[2m=[0mbootstrap mode=shell-probe gates: smoke=not-configured(27ms) remotePrompt=not-configured(26ms) inputProbe=not-configured(27ms) rawProbe=not-configured(27ms) shellProbe=loaded(27ms)
+[2m2026-11-25T05:58:38.661808Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-create-requested [3mdetail[0m[2m=[0mlocal
+[2m2026-11-25T05:58:38.668273Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-created [3mdetail[0m[2m=[0mlocal-3739b1af-a128-4c94-8dd6-dd69214d3a7e
+ ok (4651 ms)
+[local/zsh/pty-resize] running...[2m2026-11-25T05:58:43.490216Z[0m [32m INFO[0m [2mterminal_lib[0m[2m:[0m tauri app starting up
+[2m2026-11-25T05:58:43.490583Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db recovery [3mstage[0m[2m=[0m"database-recovery" [3mstate[0m[2m=[0mHealthy [3mreason[0m[2m=[0mthe database does not exist yet [3mstages[0m[2m=[0m[]
+[2m2026-11-25T05:58:44.752724Z[0m [32m INFO[0m [2mterminal_lib::input_probe[0m[2m:[0m input_probe_config invoked
+[2m2026-11-25T05:58:44.753226Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mfrontend-boot [3mdetail[0m[2m=[0mmain.tsx evaluated
+[2m2026-11-25T05:58:44.801397Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mbootstrap-gates [3mdetail[0m[2m=[0mbootstrap mode=shell-probe gates: smoke=not-configured(23ms) remotePrompt=not-configured(23ms) inputProbe=not-configured(23ms) rawProbe=not-configured(23ms) shellProbe=loaded(23ms)
+[2m2026-11-25T05:58:44.900332Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-create-requested [3mdetail[0m[2m=[0mlocal
+[2m2026-11-25T05:58:44.908079Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-created [3mdetail[0m[2m=[0mlocal-4c95dad6-8eb0-47e1-95ed-28640a1d21fa
+ ok (1357 ms)
+[local/zsh/ctrl-c-interrupt] running...[2m2026-11-25T05:58:46.481408Z[0m [32m INFO[0m [2mterminal_lib[0m[2m:[0m tauri app starting up
+[2m2026-11-25T05:58:46.481763Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db recovery [3mstage[0m[2m=[0m"database-recovery" [3mstate[0m[2m=[0mHealthy [3mreason[0m[2m=[0mthe database does not exist yet [3mstages[0m[2m=[0m[]
+[2m2026-11-25T05:58:47.772548Z[0m [32m INFO[0m [2mterminal_lib::input_probe[0m[2m:[0m input_probe_config invoked
+[2m2026-11-25T05:58:47.773092Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mfrontend-boot [3mdetail[0m[2m=[0mmain.tsx evaluated
+[2m2026-11-25T05:58:47.829935Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mbootstrap-gates [3mdetail[0m[2m=[0mbootstrap mode=shell-probe gates: smoke=not-configured(24ms) remotePrompt=not-configured(24ms) inputProbe=not-configured(24ms) rawProbe=not-configured(24ms) shellProbe=loaded(25ms)
+[2m2026-11-25T05:58:47.950623Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-create-requested [3mdetail[0m[2m=[0mlocal
+[2m2026-11-25T05:58:47.958566Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-created [3mdetail[0m[2m=[0mlocal-a0503149-2504-479b-b731-546e8105a209
+ ok (1093 ms)
+[
+  {
+    "transport": "local",
+    "shell": "bash",
+    "caseName": "cat-eof",
+    "durationMs": 430,
+    "error": null,
+    "inputEvents": [
+      {
+        "kind": "text",
+        "bytes": 381,
+        "dataHex": "73747479206563686f3b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3732272027396333626163356439656437316133653062616561395f52454144595f5f273b2073747479202d6563686f3b2063617074757265643d2428636174293b2073747479206563686f3b206966205b202224636170747572656422203d20276361742d656f662d70726f626527205d3b207468656e207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3727202732396333626163356439656437316133653062616561395f504153535f5f273b20656c7365207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3727202732396333626163356439656437316133653062616561395f4641494c5f5f273b2066693b20737474792073616e650d"
+      },
+      {
+        "kind": "text",
+        "bytes": 14,
+        "dataHex": "6361742d656f662d70726f62650d"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "04"
+      }
+    ],
+    "ok": true,
+    "trace": [
+      "ready",
+      "pass"
+    ],
+    "binarySha256": "e87e2fe696df293cb5885efee386c477ad6022005bd51bb1d033abaf7357ad5a"
+  },
+  {
+    "transport": "local",
+    "shell": "bash",
+    "caseName": "readline-history",
+    "durationMs": 300,
+    "error": null,
+    "inputEvents": [
+      {
+        "kind": "text",
+        "bytes": 89,
+        "dataHex": "7072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3634272027333166633834376665633030666437363835653037385f52454144595f5f270d"
+      },
+      {
+        "kind": "text",
+        "bytes": 266,
+        "dataHex": "6966205b2022247b5348454c4c5f50524f42455f484953544f52595f5345454e3a2d307d22202d65712030205d3b207468656e205348454c4c5f50524f42455f484953544f52595f5345454e3d313b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3627202734333166633834376665633030666437363835653037385f535445505f5f273b20656c7365207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3627202734333166633834376665633030666437363835653037385f504153535f5f273b2066690d"
+      },
+      {
+        "kind": "text",
+        "bytes": 4,
+        "dataHex": "1b5b410d"
+      }
+    ],
+    "ok": true,
+    "trace": [
+      "ready",
+      "step",
+      "pass"
+    ],
+    "binarySha256": "e87e2fe696df293cb5885efee386c477ad6022005bd51bb1d033abaf7357ad5a"
+  },
+  {
+    "transport": "local",
+    "shell": "bash",
+    "caseName": "readline-tab",
+    "durationMs": 477,
+    "error": null,
+    "inputEvents": [
+      {
+        "kind": "text",
+        "bytes": 264,
+        "dataHex": "5348454c4c5f50524f42455f4449523d24286d6b74656d70202d64293b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6527202764383133346564363530643732633734336562306164315f504153535f5f27203e2022245348454c4c5f50524f42455f4449522f616c7068615f70726f6265223b2063642022245348454c4c5f50524f42455f444952223b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6564272027383133346564363530643732633734336562306164315f52454144595f5f270d"
+      },
+      {
+        "kind": "text",
+        "bytes": 88,
+        "dataHex": "7072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6527202764383133346564363530643732633734336562306164315f535445505f5f270d"
+      },
+      {
+        "kind": "text",
+        "bytes": 7,
+        "dataHex": "63617420616c70"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "09"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "0d"
+      }
+    ],
+    "ok": true,
+    "trace": [
+      "ready",
+      "step",
+      "pass"
+    ],
+    "binarySha256": "e87e2fe696df293cb5885efee386c477ad6022005bd51bb1d033abaf7357ad5a"
+  },
+  {
+    "transport": "local",
+    "shell": "bash",
+    "caseName": "vim-edit",
+    "durationMs": 5202,
+    "error": null,
+    "inputEvents": [
+      {
+        "kind": "text",
+        "bytes": 217,
+        "dataHex": "5348454c4c5f50524f42455f4449523d24286d6b74656d70202d64293b207072696e746620276f726967696e616c5f70726f62655f6c696e655c725c6e27203e2022245348454c4c5f50524f42455f4449522f7368656c6c5f70726f62655f76696d2e747874223b2063642022245348454c4c5f50524f42455f444952223b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3336272027336632326536393235306466393039343435353338635f52454144595f5f270d"
+      },
+      {
+        "kind": "text",
+        "bytes": 24,
+        "dataHex": "76696d207368656c6c5f70726f62655f76696d2e7478740d"
+      },
+      {
+        "kind": "text",
+        "bytes": 3,
+        "dataHex": "1b5b49"
+      },
+      {
+        "kind": "text",
+        "bytes": 6,
+        "dataHex": "1b5b323b3252"
+      },
+      {
+        "kind": "text",
+        "bytes": 6,
+        "dataHex": "1b5b333b3152"
+      },
+      {
+        "kind": "text",
+        "bytes": 11,
+        "dataHex": "1b5b3e303b3237363b3063"
+      },
+      {
+        "kind": "text",
+        "bytes": 25,
+        "dataHex": "1b5d31313b7267623a303030302f303030302f303030301b5c"
+      },
+      {
+        "kind": "text",
+        "bytes": 25,
+        "dataHex": "1b5d31303b7267623a666666662f666666662f666666661b5c"
+      },
+      {
+        "kind": "text",
+        "bytes": 9,
+        "dataHex": "1b5b3f31323b322479"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "69"
+      },
+      {
+        "kind": "text",
+        "bytes": 14,
+        "dataHex": "76696d5f70726f62655f65646974"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "1b"
+      },
+      {
+        "kind": "text",
+        "bytes": 4,
+        "dataHex": "3a77710d"
+      },
+      {
+        "kind": "text",
+        "bytes": 331,
+        "dataHex": "69662067726570202d71202776696d5f70726f62655f656469742720277368656c6c5f70726f62655f76696d2e747874273b207468656e207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3327202736336632326536393235306466393039343435353338635f535445505f5f273b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3327202736336632326536393235306466393039343435353338635f504153535f5f273b20656c7365207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3327202736336632326536393235306466393039343435353338635f4641494c5f5f273b2066690d"
+      }
+    ],
+    "ok": true,
+    "trace": [
+      "ready",
+      "step",
+      "pass"
+    ],
+    "binarySha256": "e87e2fe696df293cb5885efee386c477ad6022005bd51bb1d033abaf7357ad5a"
+  },
+  {
+    "transport": "local",
+    "shell": "bash",
+    "caseName": "nano-edit",
+    "durationMs": 4677,
+    "error": null,
+    "inputEvents": [
+      {
+        "kind": "text",
+        "bytes": 218,
+        "dataHex": "5348454c4c5f50524f42455f4449523d24286d6b74656d70202d64293b207072696e746620276f726967696e616c5f70726f62655f6c696e655c725c6e27203e2022245348454c4c5f50524f42455f4449522f7368656c6c5f70726f62655f6e616e6f2e747874223b2063642022245348454c4c5f50524f42455f444952223b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6231272027623439343462316162363436613265653838393161345f52454144595f5f270d"
+      },
+      {
+        "kind": "text",
+        "bytes": 26,
+        "dataHex": "6e616e6f207368656c6c5f70726f62655f6e616e6f2e7478740d"
+      },
+      {
+        "kind": "text",
+        "bytes": 15,
+        "dataHex": "6e616e6f5f70726f62655f65646974"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "0f"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "0d"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "18"
+      },
+      {
+        "kind": "text",
+        "bytes": 333,
+        "dataHex": "69662067726570202d7120276e616e6f5f70726f62655f656469742720277368656c6c5f70726f62655f6e616e6f2e747874273b207468656e207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6227202731623439343462316162363436613265653838393161345f535445505f5f273b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6227202731623439343462316162363436613265653838393161345f504153535f5f273b20656c7365207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6227202731623439343462316162363436613265653838393161345f4641494c5f5f273b2066690d"
+      }
+    ],
+    "ok": true,
+    "trace": [
+      "ready",
+      "step",
+      "pass"
+    ],
+    "binarySha256": "e87e2fe696df293cb5885efee386c477ad6022005bd51bb1d033abaf7357ad5a"
+  },
+  {
+    "transport": "local",
+    "shell": "bash",
+    "caseName": "pty-resize",
+    "durationMs": 1412,
+    "error": null,
+    "inputEvents": [
+      {
+        "kind": "text",
+        "bytes": 89,
+        "dataHex": "7072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6361272027336534373331366333373563613831663030613533305f52454144595f5f270d"
+      },
+      {
+        "kind": "text",
+        "bytes": 125,
+        "dataHex": "736574202d2d202428737474792073697a65293b207072696e746620275c725c6e257325733a25735f25735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6327202761336534373331366333373563613831663030613533305f53495a455f5f27202224312220222432220d"
+      },
+      {
+        "kind": "text",
+        "bytes": 125,
+        "dataHex": "736574202d2d202428737474792073697a65293b207072696e746620275c725c6e257325733a25735f25735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6327202761336534373331366333373563613831663030613533305f53495a455f5f27202224312220222432220d"
+      },
+      {
+        "kind": "text",
+        "bytes": 125,
+        "dataHex": "736574202d2d202428737474792073697a65293b207072696e746620275c725c6e257325733a25735f25735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6327202761336534373331366333373563613831663030613533305f53495a455f5f27202224312220222432220d"
+      },
+      {
+        "kind": "text",
+        "bytes": 445,
+        "dataHex": "736574202d2d202428737474792073697a65293b207072696e746620275c725c6e257325733a25735f25735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6327202761336534373331366333373563613831663030613533305f53495a455f5f27202224312220222432223b206966205b2022243122203d2027333127205d202626205b2022243222203d2027393727205d3b207468656e207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6327202761336534373331366333373563613831663030613533305f535445505f5f273b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6327202761336534373331366333373563613831663030613533305f504153535f5f273b20656c7365207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6327202761336534373331366333373563613831663030613533305f4641494c5f5f273b2066690d"
+      }
+    ],
+    "ok": true,
+    "trace": [
+      "ready",
+      "step",
+      "pass"
+    ],
+    "binarySha256": "e87e2fe696df293cb5885efee386c477ad6022005bd51bb1d033abaf7357ad5a"
+  },
+  {
+    "transport": "local",
+    "shell": "bash",
+    "caseName": "ctrl-c-interrupt",
+    "durationMs": 1100,
+    "error": null,
+    "inputEvents": [
+      {
+        "kind": "text",
+        "bytes": 112,
+        "dataHex": "73747479206563686f3b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6437272027663663383834646636623562376532393438383866625f52454144595f5f273b2073747479202d6563686f0d"
+      },
+      {
+        "kind": "text",
+        "bytes": 98,
+        "dataHex": "7072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6427202737663663383834646636623562376532393438383866625f535445505f5f273b20736c6565702032300d"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "03"
+      },
+      {
+        "kind": "text",
+        "bytes": 88,
+        "dataHex": "7072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6427202737663663383834646636623562376532393438383866625f504153535f5f270d"
+      }
+    ],
+    "ok": true,
+    "trace": [
+      "ready",
+      "step",
+      "pass"
+    ],
+    "binarySha256": "e87e2fe696df293cb5885efee386c477ad6022005bd51bb1d033abaf7357ad5a"
+  },
+  {
+    "transport": "local",
+    "shell": "zsh",
+    "caseName": "cat-eof",
+    "durationMs": 447,
+    "error": null,
+    "inputEvents": [
+      {
+        "kind": "text",
+        "bytes": 381,
+        "dataHex": "73747479206563686f3b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6136272027303930393262626663303166636433623631346563315f52454144595f5f273b2073747479202d6563686f3b2063617074757265643d2428636174293b2073747479206563686f3b206966205b202224636170747572656422203d20276361742d656f662d70726f626527205d3b207468656e207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6127202736303930393262626663303166636433623631346563315f504153535f5f273b20656c7365207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6127202736303930393262626663303166636433623631346563315f4641494c5f5f273b2066693b20737474792073616e650d"
+      },
+      {
+        "kind": "text",
+        "bytes": 14,
+        "dataHex": "6361742d656f662d70726f62650d"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "04"
+      }
+    ],
+    "ok": true,
+    "trace": [
+      "ready",
+      "pass"
+    ],
+    "binarySha256": "e87e2fe696df293cb5885efee386c477ad6022005bd51bb1d033abaf7357ad5a"
+  },
+  {
+    "transport": "local",
+    "shell": "zsh",
+    "caseName": "readline-history",
+    "durationMs": 302,
+    "error": null,
+    "inputEvents": [
+      {
+        "kind": "text",
+        "bytes": 89,
+        "dataHex": "7072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3632272027633963303566656563626462396235333537333733325f52454144595f5f270d"
+      },
+      {
+        "kind": "text",
+        "bytes": 266,
+        "dataHex": "6966205b2022247b5348454c4c5f50524f42455f484953544f52595f5345454e3a2d307d22202d65712030205d3b207468656e205348454c4c5f50524f42455f484953544f52595f5345454e3d313b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3627202732633963303566656563626462396235333537333733325f535445505f5f273b20656c7365207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3627202732633963303566656563626462396235333537333733325f504153535f5f273b2066690d"
+      },
+      {
+        "kind": "text",
+        "bytes": 4,
+        "dataHex": "1b5b410d"
+      }
+    ],
+    "ok": true,
+    "trace": [
+      "ready",
+      "step",
+      "pass"
+    ],
+    "binarySha256": "e87e2fe696df293cb5885efee386c477ad6022005bd51bb1d033abaf7357ad5a"
+  },
+  {
+    "transport": "local",
+    "shell": "zsh",
+    "caseName": "readline-tab",
+    "durationMs": 451,
+    "error": null,
+    "inputEvents": [
+      {
+        "kind": "text",
+        "bytes": 264,
+        "dataHex": "5348454c4c5f50524f42455f4449523d24286d6b74656d70202d64293b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3627202736646335303862653562626334383134653637346566365f504153535f5f27203e2022245348454c4c5f50524f42455f4449522f616c7068615f70726f6265223b2063642022245348454c4c5f50524f42455f444952223b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3636272027646335303862653562626334383134653637346566365f52454144595f5f270d"
+      },
+      {
+        "kind": "text",
+        "bytes": 88,
+        "dataHex": "7072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3627202736646335303862653562626334383134653637346566365f535445505f5f270d"
+      },
+      {
+        "kind": "text",
+        "bytes": 7,
+        "dataHex": "63617420616c70"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "09"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "0d"
+      }
+    ],
+    "ok": true,
+    "trace": [
+      "ready",
+      "step",
+      "pass"
+    ],
+    "binarySha256": "e87e2fe696df293cb5885efee386c477ad6022005bd51bb1d033abaf7357ad5a"
+  },
+  {
+    "transport": "local",
+    "shell": "zsh",
+    "caseName": "vim-edit",
+    "durationMs": 5162,
+    "error": null,
+    "inputEvents": [
+      {
+        "kind": "text",
+        "bytes": 217,
+        "dataHex": "5348454c4c5f50524f42455f4449523d24286d6b74656d70202d64293b207072696e746620276f726967696e616c5f70726f62655f6c696e655c725c6e27203e2022245348454c4c5f50524f42455f4449522f7368656c6c5f70726f62655f76696d2e747874223b2063642022245348454c4c5f50524f42455f444952223b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6562272027663434383234376463623131646638333732313263665f52454144595f5f270d"
+      },
+      {
+        "kind": "text",
+        "bytes": 24,
+        "dataHex": "76696d207368656c6c5f70726f62655f76696d2e7478740d"
+      },
+      {
+        "kind": "text",
+        "bytes": 3,
+        "dataHex": "1b5b49"
+      },
+      {
+        "kind": "text",
+        "bytes": 6,
+        "dataHex": "1b5b323b3252"
+      },
+      {
+        "kind": "text",
+        "bytes": 6,
+        "dataHex": "1b5b333b3152"
+      },
+      {
+        "kind": "text",
+        "bytes": 11,
+        "dataHex": "1b5b3e303b3237363b3063"
+      },
+      {
+        "kind": "text",
+        "bytes": 25,
+        "dataHex": "1b5d31313b7267623a303030302f303030302f303030301b5c"
+      },
+      {
+        "kind": "text",
+        "bytes": 25,
+        "dataHex": "1b5d31303b7267623a666666662f666666662f666666661b5c"
+      },
+      {
+        "kind": "text",
+        "bytes": 9,
+        "dataHex": "1b5b3f31323b322479"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "69"
+      },
+      {
+        "kind": "text",
+        "bytes": 14,
+        "dataHex": "76696d5f70726f62655f65646974"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "1b"
+      },
+      {
+        "kind": "text",
+        "bytes": 4,
+        "dataHex": "3a77710d"
+      },
+      {
+        "kind": "text",
+        "bytes": 331,
+        "dataHex": "69662067726570202d71202776696d5f70726f62655f656469742720277368656c6c5f70726f62655f76696d2e747874273b207468656e207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6527202762663434383234376463623131646638333732313263665f535445505f5f273b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6527202762663434383234376463623131646638333732313263665f504153535f5f273b20656c7365207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6527202762663434383234376463623131646638333732313263665f4641494c5f5f273b2066690d"
+      }
+    ],
+    "ok": true,
+    "trace": [
+      "ready",
+      "step",
+      "pass"
+    ],
+    "binarySha256": "e87e2fe696df293cb5885efee386c477ad6022005bd51bb1d033abaf7357ad5a"
+  },
+  {
+    "transport": "local",
+    "shell": "zsh",
+    "caseName": "nano-edit",
+    "durationMs": 4651,
+    "error": null,
+    "inputEvents": [
+      {
+        "kind": "text",
+        "bytes": 218,
+        "dataHex": "5348454c4c5f50524f42455f4449523d24286d6b74656d70202d64293b207072696e746620276f726967696e616c5f70726f62655f6c696e655c725c6e27203e2022245348454c4c5f50524f42455f4449522f7368656c6c5f70726f62655f6e616e6f2e747874223b2063642022245348454c4c5f50524f42455f444952223b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3039272027653864383637663232386233323638643966386332375f52454144595f5f270d"
+      },
+      {
+        "kind": "text",
+        "bytes": 26,
+        "dataHex": "6e616e6f207368656c6c5f70726f62655f6e616e6f2e7478740d"
+      },
+      {
+        "kind": "text",
+        "bytes": 15,
+        "dataHex": "6e616e6f5f70726f62655f65646974"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "0f"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "0d"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "18"
+      },
+      {
+        "kind": "text",
+        "bytes": 333,
+        "dataHex": "69662067726570202d7120276e616e6f5f70726f62655f656469742720277368656c6c5f70726f62655f6e616e6f2e747874273b207468656e207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3027202739653864383637663232386233323638643966386332375f535445505f5f273b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3027202739653864383637663232386233323638643966386332375f504153535f5f273b20656c7365207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3027202739653864383637663232386233323638643966386332375f4641494c5f5f273b2066690d"
+      }
+    ],
+    "ok": true,
+    "trace": [
+      "ready",
+      "step",
+      "pass"
+    ],
+    "binarySha256": "e87e2fe696df293cb5885efee386c477ad6022005bd51bb1d033abaf7357ad5a"
+  },
+  {
+    "transport": "local",
+    "shell": "zsh",
+    "caseName": "pty-resize",
+    "durationMs": 1357,
+    "error": null,
+    "inputEvents": [
+      {
+        "kind": "text",
+        "bytes": 89,
+        "dataHex": "7072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6133272027333433393262646535313338343136373839646130325f52454144595f5f270d"
+      },
+      {
+        "kind": "text",
+        "bytes": 125,
+        "dataHex": "736574202d2d202428737474792073697a65293b207072696e746620275c725c6e257325733a25735f25735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6127202733333433393262646535313338343136373839646130325f53495a455f5f27202224312220222432220d"
+      },
+      {
+        "kind": "text",
+        "bytes": 125,
+        "dataHex": "736574202d2d202428737474792073697a65293b207072696e746620275c725c6e257325733a25735f25735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6127202733333433393262646535313338343136373839646130325f53495a455f5f27202224312220222432220d"
+      },
+      {
+        "kind": "text",
+        "bytes": 125,
+        "dataHex": "736574202d2d202428737474792073697a65293b207072696e746620275c725c6e257325733a25735f25735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6127202733333433393262646535313338343136373839646130325f53495a455f5f27202224312220222432220d"
+      },
+      {
+        "kind": "text",
+        "bytes": 445,
+        "dataHex": "736574202d2d202428737474792073697a65293b207072696e746620275c725c6e257325733a25735f25735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6127202733333433393262646535313338343136373839646130325f53495a455f5f27202224312220222432223b206966205b2022243122203d2027333127205d202626205b2022243222203d2027393727205d3b207468656e207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6127202733333433393262646535313338343136373839646130325f535445505f5f273b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6127202733333433393262646535313338343136373839646130325f504153535f5f273b20656c7365207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6127202733333433393262646535313338343136373839646130325f4641494c5f5f273b2066690d"
+      }
+    ],
+    "ok": true,
+    "trace": [
+      "ready",
+      "step",
+      "pass"
+    ],
+    "binarySha256": "e87e2fe696df293cb5885efee386c477ad6022005bd51bb1d033abaf7357ad5a"
+  },
+  {
+    "transport": "local",
+    "shell": "zsh",
+    "caseName": "ctrl-c-interrupt",
+    "durationMs": 1093,
+    "error": null,
+    "inputEvents": [
+      {
+        "kind": "text",
+        "bytes": 112,
+        "dataHex": "73747479206563686f3b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3139272027613262643366636137333034353330343732643064315f52454144595f5f273b2073747479202d6563686f0d"
+      },
+      {
+        "kind": "text",
+        "bytes": 98,
+        "dataHex": "7072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3127202739613262643366636137333034353330343732643064315f535445505f5f273b20736c6565702032300d"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "03"
+      },
+      {
+        "kind": "text",
+        "bytes": 88,
+        "dataHex": "7072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3127202739613262643366636137333034353330343732643064315f504153535f5f270d"
+      }
+    ],
+    "ok": true,
+    "trace": [
+      "ready",
+      "step",
+      "pass"
+    ],
+    "binarySha256": "e87e2fe696df293cb5885efee386c477ad6022005bd51bb1d033abaf7357ad5a"
+  }
+]
