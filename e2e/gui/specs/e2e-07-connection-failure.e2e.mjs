@@ -168,32 +168,55 @@ describe('F22 — a failed connection explains itself in the pane', () => {
     })
 
     /*
-     * The overlay is the assertion surface. A blank terminal with a spinner is exactly
-     * the defect this case exists to catch, so "some text appeared" is not enough — the
-     * text has to be one of the product's own explanations.
+     * ## Wait for the overlay, not for "some text"
+     *
+     * The first version waited for `document.body.innerText` to match
+     * `/could not|unable|refused|timed out/i`. Measured on Linux CI: it was satisfied
+     * 1.6 s after the click — by the **host list still on screen**, whose own copy and
+     * the seeded card's address match that pattern. The overlay had not been mounted at
+     * all, and the case then failed on a selector it had never waited for.
+     *
+     * `terminal-surface.tsx` mounts `TerminalErrorOverlay` only when `readableError` is
+     * non-null, so that element's existence *is* the claim: the pane decided there is a
+     * failure worth showing. Waiting on the element makes the wait and the assertion the
+     * same fact instead of two guesses.
      */
-    await browser.waitUntil(
-      async () => {
-        const text = await browser.execute(() => document.body.innerText)
-        return /could not|unable|refused|timed out|失败|无法/i.test(text)
-      },
-      {
-        timeout: 60_000,
-        timeoutMsg:
-          'no failure explanation ever rendered; a blank pane after a refused connection is the defect this case exists to catch',
-      },
-    )
-
-    const overlay = await browser.execute(() => {
-      const node = document.querySelector('[data-testid="terminal-error-overlay"]')
-      return node ? node.innerText : null
-    })
-
-    if (overlay === null) {
-      throw new Error(
-        'the failure was rendered somewhere but not in the terminal error overlay; ' +
-          'the pane a user reads for a failed connection showed nothing',
+    let overlay = null
+    try {
+      await browser.waitUntil(
+        async () =>
+          browser.execute(
+            () => document.querySelector('[data-testid="terminal-error-overlay"]') !== null,
+          ),
+        {
+          timeout: 60_000,
+          interval: 250,
+          timeoutMsg:
+            'the terminal error overlay never mounted; a pane that shows nothing after a refused connection is the defect this case exists to catch',
+        },
       )
+      overlay = await browser.execute(() => {
+        const node = document.querySelector('[data-testid="terminal-error-overlay"]')
+        return node ? node.innerText : null
+      })
+    } catch (error) {
+      // Say what the page looked like, so the next failure is diagnosable from the log.
+      const seen = await browser.execute(() => ({
+        path: location.pathname,
+        overlay: document.querySelector('[data-testid="terminal-error-overlay"]')?.innerText ?? null,
+        body: (document.body.innerText ?? '').slice(0, 600),
+      }))
+      throw new Error(`${error.message}; page was ${JSON.stringify(seen)}`)
+    }
+
+    /*
+     * The element existing is the claim; this is the second half — it has to *say*
+     * something. An empty overlay would satisfy "the pane decided to show a failure" and
+     * still leave the user with nothing to read, which is the blank-pane defect wearing
+     * a different shape.
+     */
+    if (overlay.trim() === '') {
+      throw new Error('the error overlay mounted but rendered no text')
     }
   })
 })
