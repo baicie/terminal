@@ -48,12 +48,48 @@ async function closedPort() {
 describe('F22 — a failed connection explains itself in the pane', () => {
   let workDirectory
 
+  /*
+   * ## Why the verdict comes from Mocha, not from this spec
+   *
+   * `after()` runs whatever the outcome. A spec that decides PASS from its own captured
+   * values writes PASS for a run Mocha marked failed — measured on e2e-02, whose counter
+   * only moved inside its width loop, so every other failure left it at 0.
+   *
+   * So: collect the failures in `afterEach`, and let that decide.
+   */
+  const failures = []
+
+  afterEach(function () {
+    if (this.currentTest?.state !== 'failed') return
+    const err = this.currentTest.err
+    const text =
+      (typeof err === 'string' ? err : undefined) ??
+      err?.message ??
+      err?.stack?.split('\n')[0] ??
+      err?.toString?.() ??
+      null
+    failures.push({
+      title: this.currentTest.title,
+      error: text ?? `(no error text for "${this.currentTest.title}")`,
+    })
+  })
+
   before(async () => {
     workDirectory = mkdtempSync(path.join(os.homedir(), '.tmp-e2e07-'))
   })
 
-  after(() => {
-    if (workDirectory) rmSync(workDirectory, { recursive: true, force: true })
+  after(async () => {
+    try {
+      await writeEvidence(CASE, {
+        ...(failures.length > 0
+          ? { error: failures.map(failure => `${failure.title}: ${failure.error}`).join('\n') }
+          : {}),
+        verdict: failures.length > 0 ? 'FAIL' : 'PASS',
+        extra: { failures },
+      })
+    } finally {
+      if (workDirectory) rmSync(workDirectory, { recursive: true, force: true })
+    }
   })
 
   it('renders a reason instead of a blank terminal', async () => {
@@ -122,19 +158,6 @@ describe('F22 — a failed connection explains itself in the pane', () => {
     const overlay = await browser.execute(() => {
       const node = document.querySelector('[data-testid="terminal-error-overlay"]')
       return node ? node.innerText : null
-    })
-
-    await writeEvidence(CASE, {
-      /*
-       * `extra` carries what the pane actually said. `null` for `overlayText` is still a
-       * real failure, but a *different* one — the evidence has to show which, rather
-       * than present "no overlay" as "no failure".
-       */
-      extra: {
-        overlayText: overlay,
-        bodyText: (await browser.execute(() => document.body.innerText)).slice(0, 2_000),
-      },
-      verdict: overlay !== null ? 'PASS' : 'FAIL',
     })
 
     if (overlay === null) {
