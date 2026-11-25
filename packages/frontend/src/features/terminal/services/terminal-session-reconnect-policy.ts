@@ -60,11 +60,20 @@ export function reconnectDelayFor(
   policy: ReturnType<typeof resolveReconnectPolicy>,
   attempt: number,
 ): number {
+  /*
+   * SSH20 — the ladder has no position below one.
+   *
+   * `attempt` is 1-based, and the manager always starts there. This is exported, though,
+   * so it can be handed 0 or a negative: `base * 2^-1` is a *fraction* of the base delay,
+   * which rounds toward zero and turns "back off" into "retry immediately". Clamping the
+   * index keeps the first rung the shortest wait this policy allows.
+   */
+  const rung = Math.max(1, Math.trunc(attempt))
   const exponential = Math.min(
     policy.maxDelayMs,
-    policy.baseDelayMs * 2 ** (attempt - 1),
+    policy.baseDelayMs * 2 ** (rung - 1),
   )
-  const jittered = policy.jitter(exponential, attempt)
+  const jittered = policy.jitter(exponential, rung)
   const settled =
     Number.isFinite(jittered) && jittered >= 0 ? Math.round(jittered) : exponential
   /*
