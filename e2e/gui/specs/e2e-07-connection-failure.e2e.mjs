@@ -190,26 +190,45 @@ describe('F22 — a failed connection explains itself in the pane', () => {
   it('names the step that failed when the server does not answer', async () => {
     await connectThroughCard('E2E Unreachable')
 
+    /*
+     * ## Wait and read in ONE round trip
+     *
+     * The first version waited for the element and then read it in a second WebDriver
+     * command. The gate surface is transient during the retry ladder: `connection
+     * refused` is a *transient* probe error, so the probe sets `error`, retries at
+     * 250 ms / 1 s / 3 s, and each retry sets `checking` (no testid) before failing
+     * again. A poll that matched the first error window, followed by a read that landed
+     * after the 250 ms timer, produced `gate === null` and a failure naming the wrong
+     * cause — reproducible only on a fast machine.
+     *
+     * Reading inside the wait's predicate makes the wait and the assertion the same
+     * fact, which is what this case's own doc comment claims they are.
+     */
     let gate = null
     try {
       await browser.waitUntil(
-        async () =>
-          browser.execute(
-            () => document.querySelector('[data-testid="ssh-host-key-gate-error"]') !== null,
-          ),
+        async () => {
+          gate = await browser.execute(() => {
+            const node = document.querySelector('[data-testid="ssh-host-key-gate-error"]')
+            return node
+              ? {
+                  title:
+                    node.querySelector('[data-testid="ssh-host-key-gate-title"]')
+                      ?.textContent ?? '',
+                  text: node.innerText,
+                  failure: node.dataset.failure,
+                }
+              : null
+          })
+          return gate !== null && gate.text.trim() !== ''
+        },
         {
           timeout: 60_000,
           interval: 250,
           timeoutMsg:
-            'the preflight error surface never mounted; a pane that shows nothing after a refused connection is the defect this case exists to catch',
+            'the preflight error surface never mounted with text; a pane that shows nothing after a refused connection is the defect this case exists to catch',
         },
       )
-      gate = await browser.execute(() => {
-        const node = document.querySelector('[data-testid="ssh-host-key-gate-error"]')
-        return node
-          ? { title: node.querySelector('[data-testid="ssh-host-key-gate-title"]')?.textContent ?? '', text: node.innerText, failure: node.dataset.failure }
-          : null
-      })
     } catch (error) {
       throw new Error(`${error.message}; page was ${JSON.stringify(await pageState())}`)
     }
@@ -283,24 +302,42 @@ describe('F22 — a failed connection explains itself in the pane', () => {
     }
     await connectThroughCard(label)
 
+    /*
+     * ## The overlay has to be *this* host's
+     *
+     * `TerminalWorkbench` keeps every tab mounted and hides inactive ones with CSS, so a
+     * document-wide `querySelector('[data-testid="terminal-error-overlay"]')` is
+     * satisfied by the restored local terminal — or by any other tab whose session
+     * errored. The case would then pass while the rejecting tab was still `checking`.
+     *
+     * The overlay already renders the target (`targetLabel` → `user@host:port`), so
+     * requiring the seeded port inside its text makes the assertion about the host the
+     * spec actually clicked.
+     */
+    const expectedPort = process.env.GUI_E2E_SSH_PORT_2
     let overlay = null
     try {
       await browser.waitUntil(
         async () =>
-          browser.execute(
-            () => document.querySelector('[data-testid="terminal-error-overlay"]') !== null,
-          ),
+          browser.execute(port => {
+            const nodes = Array.from(
+              document.querySelectorAll('[data-testid="terminal-error-overlay"]'),
+            )
+            return nodes.some(node => (node.innerText ?? '').includes(`:${port}`))
+          }, expectedPort),
         {
           timeout: 60_000,
           interval: 250,
           timeoutMsg:
-            'the terminal error overlay never mounted; a pane that shows nothing after a refused connection is the defect this case exists to catch',
+            'no terminal error overlay for the seeded rejecting host mounted; a pane that shows nothing after a refused connection is the defect this case exists to catch',
         },
       )
-      overlay = await browser.execute(() => {
-        const node = document.querySelector('[data-testid="terminal-error-overlay"]')
+      overlay = await browser.execute(port => {
+        const node = Array.from(
+          document.querySelectorAll('[data-testid="terminal-error-overlay"]'),
+        ).find(candidate => (candidate.innerText ?? '').includes(`:${port}`))
         return node ? node.innerText : null
-      })
+      }, expectedPort)
     } catch (error) {
       throw new Error(`${error.message}; page was ${JSON.stringify(await pageState())}`)
     }

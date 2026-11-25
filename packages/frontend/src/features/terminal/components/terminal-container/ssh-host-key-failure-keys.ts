@@ -21,4 +21,5 @@ export const SSH_HOST_KEY_FAILURE_KEYS: Record<SshHostKeyGateFailure, string> = 
   'known-hosts': 'terminal.hostKeyKnownHostsFailed',
   deadline: 'terminal.hostKeyDeadline',
   input: 'terminal.hostKeyInputRejected',
+  configuration: 'terminal.hostKeyConfiguration',
 }

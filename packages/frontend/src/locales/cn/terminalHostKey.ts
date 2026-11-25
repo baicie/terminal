@@ -28,5 +28,5 @@ export default {
   'terminal.hostKeyJumpAuthenticationFailed': '跳板机拒绝了该凭据',
   'terminal.hostKeyKnownHostsFailed': '无法读取或写入 known_hosts',
   'terminal.hostKeyDeadline': '在检查主机密钥之前，连接时限已用尽',
-  'terminal.hostKeyInputRejected': '主机或密钥取值在连接前即被拒绝',
+  'terminal.hostKeyInputRejected': '主机或密钥取值在连接前即被拒绝',  'terminal.hostKeyConfiguration': '主机配置不完整，或指向的跳板机已不存在',
 }

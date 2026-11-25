@@ -29,5 +29,5 @@ export default {
   'terminal.hostKeyJumpAuthenticationFailed': 'The jump host refused the credential',
   'terminal.hostKeyKnownHostsFailed': 'known_hosts could not be read or updated',
   'terminal.hostKeyDeadline': 'The connection deadline passed before the host key could be checked',
-  'terminal.hostKeyInputRejected': 'The host or key values were rejected before connecting',
+  'terminal.hostKeyInputRejected': 'The host or key values were rejected before connecting',  'terminal.hostKeyConfiguration': 'The host row is incomplete or points at a jump host that no longer exists',
 }
