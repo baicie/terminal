@@ -5,7 +5,8 @@ import type {
   TerminalReconnectDependencies,
   TerminalReconnectOptions,
 } from './terminal-session-reconnect-types'
-import { updateTerminalState } from './terminal-session-state'
+import { updateTerminalState, terminalFailureState } from './terminal-session-state'
+import type { TerminalFailure } from './terminal-session-manager-errors'
 import { TerminalSessionRecoveryTimer } from './terminal-session-recovery-timer'
 import { TerminalSessionWakeRecovery } from './terminal-session-wake-recovery'
 import type { TerminalRecord } from './terminal-session-manager-types'
@@ -137,7 +138,20 @@ export class TerminalSessionReconnect {
     const generation = ++record.generation
     const sessionId = this.prepare(record, mode)
     const attempts = mode === 'automatic' ? this.policy.maxAttempts : 1
-    let lastError = reason
+    /*
+     * F06 — the ladder remembers the last *failure*, not just its sentence.
+     *
+     * Keeping only a string dropped the hop/stage/diagnosis the classifier had attached,
+     * so an exhausted jump connection published "authentication rejected" without saying
+     * which of the two logins was refused. The whole failure is replaced on every attempt,
+     * never merged: a later failure that carries no hop must clear an older one instead of
+     * inheriting a claim about a machine this attempt never touched.
+     */
+    let lastFailure: TerminalFailure = {
+      error: reason,
+      retryable: true,
+      recovery: 'automatic',
+    }
 
     let attempt = 0
     while (attempt < attempts) {
@@ -149,7 +163,7 @@ export class TerminalSessionReconnect {
         sessionId: null,
         error: null,
         attempt,
-        reason: lastError,
+        reason: lastFailure.error,
         nextRetryAt:
           mode === 'automatic' ? this.policy.now() + delay : undefined,
         retryable: true,
@@ -189,12 +203,28 @@ export class TerminalSessionReconnect {
         // in-flight SSH handshake. Restart the same loop with a fresh budget;
         // launching another reconnect here would be rejected by the Promise
         // guard and leave the pane stuck in `reconnecting`.
-        lastError = result.error
+        //
+        // F06 — the whole failure travels with the restart. It used to be the message
+        // alone, which is how a wake during a bastion failure could end up publishing a
+        // context-free verdict.
+        lastFailure = result.failure
         attempt = 0
         this.prepareIo(record, mode)
         continue
       }
-      lastError = result.error
+      lastFailure = {
+        error: result.error,
+        retryable: result.retryable,
+        recovery: result.recovery,
+        ...(result.credentialKind !== undefined
+          ? { credentialKind: result.credentialKind }
+          : {}),
+        ...(result.hop !== undefined ? { hop: result.hop } : {}),
+        ...(result.stage !== undefined ? { stage: result.stage } : {}),
+        ...(result.diagnosis !== undefined
+          ? { diagnosis: result.diagnosis }
+          : {}),
+      }
       if (result.recovery !== 'automatic') {
         // The retry loop is itself the automatic ladder. A failure that needs
         // the vault fixed, or a person to change something, must leave the loop
@@ -204,30 +234,24 @@ export class TerminalSessionReconnect {
         updateTerminalState(record, {
           status: 'error',
           sessionId: null,
-          error: result.error,
-          retryable: result.retryable,
-          recovery: result.recovery,
-          ...(result.credentialKind !== undefined
-            ? { credentialKind: result.credentialKind }
-            : {}),
-          // SSH10 — same as the start path: a reconnect that ends at a bastion refusal
-          // must say so, not just "authentication rejected".
-          ...(result.hop !== undefined ? { hop: result.hop } : {}),
-          ...(result.stage !== undefined ? { stage: result.stage } : {}),
-          ...(result.diagnosis !== undefined
-            ? { diagnosis: result.diagnosis }
-            : {}),
+          ...terminalFailureState(lastFailure),
         })
         return
       }
     }
     if (!this.isActive(record, generation)) return
+    /*
+     * F06 — the ladder is exhausted, so this verdict describes its *last* attempt.
+     *
+     * Every field comes from that attempt's failure, not from whichever attempt happened
+     * to carry a hop. `recovery` stays `'automatic'`: the budget for this ladder is spent,
+     * but `scheduleRecovery` may open another one, and the pane's "waiting to retry" is
+     * still true.
+     */
     updateTerminalState(record, {
       status: 'error',
       sessionId: null,
-      error: lastError,
-      retryable: true,
-      recovery: 'automatic',
+      ...terminalFailureState(lastFailure),
     })
     this.scheduleRecovery(record)
   }

@@ -1,6 +1,7 @@
 import type { TerminalSessionOutputBuffer } from './terminal-session-output-buffer'
 import type { TerminalRecord } from './terminal-session-manager-types'
 import type {
+  TerminalFailure,
   TerminalFailureDiagnosis,
   TerminalFailureHop,
   TerminalFailureRecovery,
@@ -10,7 +11,16 @@ import type {
 export type TerminalReconnectStartResult =
   | 'connected'
   | 'cancelled'
-  | { status: 'retry'; error: string }
+  /**
+   * A host wake suspended this attempt mid-handshake; run the ladder again with a fresh
+   * budget.
+   *
+   * F06 — it carries the whole failure, not only its sentence. The restart discards the
+   * attempt counter, and discarding the context with it would make a wake-during-bastion-
+   * failure publish a context-free verdict if the restarted ladder never got another
+   * structured answer.
+   */
+  | { status: 'retry'; failure: TerminalFailure }
   | {
       status: 'failed'
       error: string

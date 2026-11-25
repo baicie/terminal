@@ -147,7 +147,7 @@ export async function startTerminalSession(
       dependencies.reconnects.consumeWakeArming(record)
     ) {
       if (record.reconnectMode) {
-        return { status: 'retry', error: failure.error }
+        return { status: 'retry', failure }
       }
       dependencies.reconnects.automatic(record, failure.error)
       return 'cancelled'
