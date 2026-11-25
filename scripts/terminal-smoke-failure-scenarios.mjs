@@ -114,14 +114,25 @@ export const FAILURE_EXPECTATIONS = {
     kind: 'connection_failed',
     retryable: true,
     /*
-     * Rust reports `hop: bastion` here — the connection that *holds* the channel — but the
-     * frontend's `diagnoseFailure` deliberately does not repeat it: the bastion may have
-     * refused forwarding, or the target address may be unreachable from it, and the SSH
-     * API cannot tell those apart. Naming a machine would be the guess that rule exists to
-     * avoid, so `tunnel-failed` is the whole statement. This expectation records the
-     * *product-visible* hop, which is why it is absent rather than `bastion`.
+     * `hop` **is** `bastion`, and the first version of this table said `undefined` — the
+     * table was wrong, not the product.
+     *
+     * Two different fields are in play and I conflated them:
+     *
+     *   * the record's `hop`, which Rust sets to `Bastion` because that is the connection
+     *     holding the `direct-tcpip` channel (`ssh.rs:2110`), and which the frontend
+     *     carries through unchanged;
+     *   * the *diagnosis*, which `diagnoseFailure` decides from the stage alone —
+     *     `if (stage === 'tunnel_open') return 'tunnel-failed'` (`terminal-failure-
+     *     diagnostic.ts:97`) — precisely so the pane does not blame a machine it cannot
+     *     identify.
+     *
+     * Measured on a real run: the terminal reported `hop: "bastion"`, and the
+     * comparison rejected it, so a correct product failed a wrong expectation. The hop is
+     * honest here (the bastion is the peer that refused), and the *user-facing* message
+     * is still the hop-free `tunnel-failed`.
      */
-    hop: undefined,
+    hop: 'bastion',
     stage: 'tunnel_open',
     diagnosis: 'tunnel-failed',
     targetMustReceiveConnection: false,

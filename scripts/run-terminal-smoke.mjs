@@ -1074,12 +1074,6 @@ async function startFailureScenarioFixture({
        */
       await jump.stop()
     }
-    if (scenario === 'BASTION_AUTH_REJECTED') {
-      await replaceAuthorizedKeysWithForeignKey(jump, runDirectory, 'jump', dependencies)
-    }
-    if (scenario === 'TARGET_AUTH_REJECTED') {
-      await replaceAuthorizedKeysWithForeignKey(target, runDirectory, 'target', dependencies)
-    }
 
     const servedHostKey = hostKeyLine(await dependencies.readFile(jump.knownHostsPath, 'utf8'))
 
@@ -1094,14 +1088,41 @@ async function startFailureScenarioFixture({
         scenario === 'TARGET_HOST_KEY_REJECTED'
           ? await generatedPublicKey(runDirectory, 'target-pin', dependencies)
           : target.expectedHostKey,
-      privateKey: target.privateKey,
+      /*
+       * ## How a credential refusal is produced, and how it is not
+       *
+       * The first implementation replaced the daemon's `authorized_keys` with a foreign
+       * key after the fixture was up. Measured: every connection to that daemon then died
+       * with `Connection reset by peer` during the handshake — six retries, then the
+       * smoke gave up. Isolated by disabling only the replacement, with the same jump
+       * topology and the same failure flag: the run connected end to end. So the topology
+       * was always fine and the file mutation was the whole problem.
+       *
+       * The repository already had a proven way to produce both refusals, in
+       * `src-tauri/src/session/ssh/ssh_jump_e2e_tests.rs`: hand the client a **real** key
+       * that the server it is talking to does not know. Nothing on disk changes, the
+       * refusal is the server's own, and the case is already known to attribute correctly.
+       * These scenarios copy that instead of inventing a second mechanism.
+       */
+      privateKey:
+        scenario === 'TARGET_AUTH_REJECTED'
+          ? // The target does not know the bastion's key. The bastion still recognises
+            // the jump credential, so the tunnel opens and the refusal comes from behind
+            // it — which is what makes this a *target* refusal.
+            jump.privateKey
+          : target.privateKey,
       password: null,
       certificate: null,
       jump: {
         host: jump.host,
         port: jump.port,
         username: jump.username,
-        privateKey: jump.privateKey,
+        privateKey:
+          scenario === 'BASTION_AUTH_REJECTED'
+            ? // The bastion recognises only its own key; the target's is a real key it
+              // has never seen.
+              target.privateKey
+            : jump.privateKey,
         expectedHostKey:
           scenario === 'BASTION_HOST_KEY_REJECTED'
             ? await generatedPublicKey(runDirectory, 'bastion-pin', dependencies)
@@ -1119,6 +1140,9 @@ async function startFailureScenarioFixture({
         configPath: target.configPath,
         scenario,
         expectations,
+        targetLog: () =>
+          typeof target.daemonLog === 'function' ? target.daemonLog() : '',
+        jumpLog: () => (typeof jump.daemonLog === 'function' ? jump.daemonLog() : ''),
         stop: async () => {
           try {
             await target.stop()
@@ -1153,14 +1177,24 @@ async function startFailureScenarioFixture({
  * made private. The replacement key is generated here so the refusal is a real key
  * mismatch rather than a missing file.
  */
-async function replaceAuthorizedKeysWithForeignKey(fixture, runDirectory, label, dependencies) {
-  const keyPath = path.join(runDirectory, `foreign-${label}-key`)
-  await dependencies.execFile(SSH_KEYGEN, ['-q', '-t', 'ed25519', '-N', '', '-f', keyPath])
-  const foreign = await dependencies.readFile(`${keyPath}.pub`, 'utf8')
-  await dependencies.writeFile(fixture.authorizedKeysPath, foreign, {
-    encoding: 'utf8',
-    mode: 0o600,
-  })
+/**
+ * The tail of each daemon's log, as a suffix for an error message.
+ *
+ * Bounded on purpose: sshd's VERBOSE log is long, and the lines that matter are the last
+ * few — the connection attempts the product just made.
+ */
+function daemonLogDetail(fixture) {
+  const parts = []
+  for (const [label, log] of [
+    ['target', fixture?.targetLog],
+    ['jump', fixture?.jumpLog],
+  ]) {
+    if (typeof log !== 'function') continue
+    const text = String(log() ?? '').trim()
+    if (text === '') continue
+    parts.push(`\n[${label} sshd, last 25 lines]\n${text.split('\n').slice(-25).join('\n')}`)
+  }
+  return parts.length === 0 ? '' : parts.join('')
 }
 
 /** The `[host]:port KEY` text `known_hosts` holds, reduced to the key. */
@@ -1316,7 +1350,20 @@ async function runTerminalSmokeAttempt({
       ...(hostWakeRequired
         ? { TERMINAL_SMOKE_HOST_WAKE_PATH: hostWakeControlPath }
         : {}),
-      ...(failureRequired ? { TERMINAL_SMOKE_FAILURE: '1' } : {}),
+      /*
+       * F09 — the scenario implies the failure mode, and this is where it has to be said.
+       *
+       * The option was already widened to `failureRequired || failureScenario !== undefined`
+       * in two places, but the environment variable that tells *Rust* was still keyed on
+       * `failureRequired` alone. Measured consequence: every `--scenario` run started the
+       * app in the ordinary success mode, so the frontend's failure reporter was disabled
+       * and Rust adjudicated an ordinary run — `stage=connecting`, six retries, and an
+       * error that looked like a product bug in the jump path rather than a harness bug.
+       * One flag, two consumers, and only one of them was updated.
+       */
+      ...(failureRequired || failureScenario !== undefined
+        ? { TERMINAL_SMOKE_FAILURE: '1' }
+        : {}),
       ...(rendererHeartbeat
         ? {
             TERMINAL_SMOKE_RENDERER_HEARTBEAT_ENDPOINT:
@@ -1409,11 +1456,28 @@ async function runTerminalSmokeAttempt({
     if (failureScenario !== undefined) {
       const problems = compareFailureObservation(failureScenario, result.failureReason ?? {})
       if (problems.length > 0) {
-        throw new Error(`failure scenario ${failureScenario} failed: ${problems.join('; ')}`)
+        throw new Error(
+          `failure scenario ${failureScenario} failed: ${problems.join('; ')}` +
+            daemonLogDetail(fixture),
+        )
       }
     }
     return result
   } catch (error) {
+    /*
+     * F09 — a scenario that fails gets the servers' own words attached.
+     *
+     * Without this, "connect jump host failed: Connection reset by peer" is the only
+     * evidence and it names neither side. sshd logs every accepted connection and every
+     * refusal; reading it is what separates "the product retried a credential the server
+     * refused" from "each attempt really was reset before authentication".
+     */
+    const failureScenarioDetail =
+      failureScenario === undefined ? '' : daemonLogDetail(fixture)
+    if (failureScenarioDetail !== '') {
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`${message}${failureScenarioDetail}`, { cause: error })
+    }
     if (hostWakeRequired) {
       let events = ''
       let heartbeats = ''

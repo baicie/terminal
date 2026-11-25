@@ -42,10 +42,18 @@ test('separates terminal refusals from transient faults', () => {
   }
 })
 
-test('a direct scenario claims no hop, the tunnel case deliberately claims none either', () => {
+test('a direct scenario claims no hop; the tunnel case claims the bastion but no machine in its diagnosis', () => {
   assert.equal(FAILURE_EXPECTATIONS.DIRECT_UNREACHABLE.hop, undefined)
   assert.equal(FAILURE_EXPECTATIONS.DIRECT_UNREACHABLE.diagnosis, undefined)
-  assert.equal(FAILURE_EXPECTATIONS.TUNNEL_OPEN_FAILED.hop, undefined)
+  /*
+   * Corrected after a real run. `hop` is the connection holding the channel, so the bastion
+   * is the honest answer; `diagnosis` is the user-facing sentence, and it deliberately
+   * names no machine because the API cannot tell a refused forward from an unreachable
+   * target. The two fields answer different questions and must not be conflated — the
+   * first version of this test asserted `hop: undefined` and failed a correct product.
+   */
+  assert.equal(FAILURE_EXPECTATIONS.TUNNEL_OPEN_FAILED.hop, 'bastion')
+  assert.equal(FAILURE_EXPECTATIONS.TUNNEL_OPEN_FAILED.diagnosis, 'tunnel-failed')
   assert.equal(FAILURE_EXPECTATIONS.TUNNEL_OPEN_FAILED.stage, 'tunnel_open')
   for (const scenario of [
     'BASTION_AUTH_REJECTED',
