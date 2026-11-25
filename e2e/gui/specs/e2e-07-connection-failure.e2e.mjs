@@ -107,16 +107,49 @@ describe('F22 — a failed connection explains itself in the pane', () => {
      * connection could succeed. The assertion does not depend on *which* error comes
      * back; it depends on the pane saying something rather than staying blank.
      */
-    const rows = await browser.execute(() =>
-      [...document.querySelectorAll('button')].map(button => button.textContent ?? ''),
-    )
-    const seeded = rows.find(text => text.includes('E2E Unreachable'))
-    if (!seeded) {
-      throw new Error(
-        `the seeded host row is not in the list; the host names present were ${JSON.stringify(
-          rows.filter(Boolean).slice(0, 10),
-        )}`,
+    /*
+     * ## Two preconditions the first version assumed
+     *
+     * Measured on Linux CI, twice:
+     *
+     *   1. the app boots into a restored **local terminal**, not the Hosts page — the
+     *      only buttons present were `["Local","Vaults","Ctrl+K"]`. The seeded host was
+     *      never on screen because the Hosts route had not been opened.
+     *   2. Hosts is a lazy route that then reads SQLite asynchronously, so the cards
+     *      appear well after the route does. `e2e-03` learned this the same way: a
+     *      fixed 800 ms wait passed on a run where the card existed and was never
+     *      clicked.
+     *
+     * So: open the route, then wait for the **card**, not for a duration.
+     */
+    await browser.$('[data-testid="rail-hosts"]').click()
+    const found = await browser
+      .waitUntil(
+        async () =>
+          browser.execute(() => {
+            const texts = Array.from(document.querySelectorAll('button')).map(
+              button => button.textContent ?? '',
+            )
+            return texts.some(text => text.includes('E2E Unreachable'))
+          }),
+        {
+          timeout: 20_000,
+          interval: 250,
+          timeoutMsg: 'the seeded unreachable host card never appeared on the Hosts page',
+        },
       )
+      .catch(() => false)
+    if (!found) {
+      // Name the state instead of leaving "the card never appeared" to be interpreted.
+      const seen = await browser.execute(() => ({
+        path: location.pathname,
+        buttons: Array.from(document.querySelectorAll('button'))
+          .map(button => (button.textContent ?? '').trim().slice(0, 40))
+          .filter(Boolean)
+          .slice(0, 12),
+        body: (document.body.textContent ?? '').slice(0, 300),
+      }))
+      throw new Error(`the seeded host card never appeared: ${JSON.stringify(seen)}`)
     }
 
     /*
