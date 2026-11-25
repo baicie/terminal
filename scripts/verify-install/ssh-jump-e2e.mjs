@@ -44,6 +44,8 @@ const report = {
   level: 'rust-command-level',
   bastion: null,
   target: null,
+  bastionB: null,
+  targetB: null,
   verdict: 'NOT_RUN',
   cases: [],
   notes: [],
@@ -97,6 +99,37 @@ async function main() {
     })
     daemons.push(bastion)
     report.bastion = { port: bastion.port }
+
+    /*
+     * F11 — a second bastion/target pair, for the identity-isolation matrix.
+     *
+     * Four daemons rather than two, because the question the matrix asks is whether a
+     * credential can end up on the wrong machine, and that is unanswerable with one of
+     * each. Target B is reachable through **both** bastions; bastion B reaches target A.
+     * The test connects along every one of those paths and checks which key worked.
+     *
+     * Started unconditionally: a case that silently skipped for want of a fixture is what
+     * this repository keeps recording as a false green. If a daemon cannot start, that is
+     * a harness failure and the run says so.
+     */
+    const targetB = await startTerminalSmokeSshd({
+      runDirectory: path.join(runDirectory, 'target-b'),
+      mode: 'key',
+      role: 'target',
+      shell: 'sh',
+    })
+    daemons.push(targetB)
+    report.targetB = { port: targetB.port }
+
+    const bastionB = await startTerminalSmokeSshd({
+      runDirectory: path.join(runDirectory, 'bastion-b'),
+      mode: 'key',
+      role: 'jump',
+      shell: 'sh',
+      targetPort: targetB.port,
+    })
+    daemons.push(bastionB)
+    report.bastionB = { port: bastionB.port }
     console.log(
       `[ssh12] bastion 127.0.0.1:${bastion.port} -> target 127.0.0.1:${target.port}`,
     )
@@ -127,6 +160,16 @@ async function main() {
           // one-line form, which is what `PublicKey::from_openssh` on the Rust side reads.
           SSH_JUMP_E2E_TARGET_HOST_KEY: target.expectedHostKey
             ? target.expectedHostKey.toString()
+            : '',
+          SSH_JUMP_E2E_B_PORT: String(bastionB.port),
+          SSH_JUMP_E2E_B_TARGET_PORT: String(targetB.port),
+          SSH_JUMP_E2E_B_BASTION_KEY: bastionB.privateKey,
+          SSH_JUMP_E2E_B_TARGET_KEY: targetB.privateKey,
+          SSH_JUMP_E2E_B_TARGET_HOST_KEY: targetB.expectedHostKey
+            ? targetB.expectedHostKey.toString()
+            : '',
+          SSH_JUMP_E2E_B_BASTION_HOST_KEY: bastionB.expectedHostKey
+            ? bastionB.expectedHostKey.toString()
             : '',
           SSH_JUMP_E2E_BASTION_HOST_KEY: bastion.expectedHostKey
             ? bastion.expectedHostKey.toString()
