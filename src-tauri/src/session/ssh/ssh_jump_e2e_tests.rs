@@ -300,6 +300,27 @@ async fn a_bastion_refusal_is_attributed_to_the_bastion() {
         failure.error
     );
     assert_eq!(failure.stage, Some(ConnectionStage::Authentication));
+    /*
+     * F09 — the *kind*, not only where it happened.
+     *
+     * This assertion is the one that catches the defect the deadline wrapper had: it
+     * returned `AuthenticationTransportFailed` for a refused credential, so the ladder
+     * retried a key the server had already rejected (six times, measured through the
+     * product smoke) and the pane never received `bastion-auth-rejected`.
+     *
+     * Only asserting hop/stage let that happen — this suite was green for both the broken
+     * and the fixed wrapper until this line existed. `hop` says which machine; `kind` says
+     * whether trying again can possibly help, and it is the field the retry decision reads.
+     */
+    assert!(
+        matches!(
+            failure.error,
+            SessionError::AuthenticationRejected(_)
+        ),
+        "a refused credential must stay terminal, not become a retryable transport \
+         fault: {:?}",
+        failure.error
+    );
 }
 
 /// SSH13 — a bastion whose host key is not the pinned one is refused before any

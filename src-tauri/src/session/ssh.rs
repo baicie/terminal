@@ -1784,7 +1784,7 @@ impl SshSession {
             crate::startup_trace::stage("ssh-tcp-handshake-done", &stage_target);
 
             let authentication = if use_agent {
-                enforce_authentication_deadline(
+                enforce_credential_deadline(
                     stage_deadline(deadline, SSH_AUTH_TIMEOUT),
                     "authenticate SSH agent",
                     authenticate_with_agent(&mut direct, username),
@@ -2151,7 +2151,7 @@ impl SshSession {
         };
 
         let authentication = if target.use_agent {
-            enforce_authentication_deadline(
+            enforce_credential_deadline(
                 stage_deadline(deadline, SSH_AUTH_TIMEOUT),
                 "authenticate target SSH agent",
                 authenticate_with_agent(&mut target_handle, target.username),
@@ -2165,7 +2165,7 @@ impl SshSession {
                 })
             })
         } else {
-            enforce_authentication_deadline(
+            enforce_credential_deadline(
                 stage_deadline(deadline, SSH_AUTH_TIMEOUT),
                 "authenticate target SSH user",
                 Self::authenticate(
@@ -2649,7 +2649,7 @@ pub(crate) async fn connect_authenticated_jump_host_with_shutdown(
     let authentication_deadline = connection_deadline
         .map(|deadline| stage_deadline(deadline, SSH_AUTH_TIMEOUT))
         .unwrap_or_else(|| tokio::time::Instant::now() + SSH_AUTH_TIMEOUT);
-    let authentication = enforce_authentication_deadline(
+    let authentication = enforce_credential_deadline(
         authentication_deadline,
         "authenticate jump host",
         authenticate_jump_host(&mut handle, jump_host),
@@ -2880,6 +2880,45 @@ where
         .await
         .map_err(|_| connection_timeout_error(operation))?
         .map_err(|error| connection_failure_error(operation, error))
+}
+
+/// The deadline wrapper for authentication futures that can report a **refusal**.
+///
+/// ## The defect this exists to prevent
+///
+/// `enforce_authentication_deadline` takes `E: Display` and always returns
+/// `AuthenticationTransportFailed`. That is right for the timeout arm — running out of
+/// time is a transport fact — and wrong for the inner arm whenever the inner error is a
+/// refusal: a credential the server rejected is terminal, and its kind is both the retry
+/// decision and the user-facing diagnosis.
+///
+/// Measured before this existed, on a real two-hop run against a refused bastion key: six
+/// connection attempts against a credential the server had already said no to, and
+/// `diagnosis: null` where `bastion-auth-rejected` was expected. The wrapper's own comment
+/// claimed "this only adds *where*", but by then the kind was already gone.
+///
+/// This is a sibling function rather than a trait impl because `SessionError` implements
+/// `Display`, so a specialised impl plus the blanket `impl<E: Display>` one is a
+/// coherence error (`E0119`). The type system carries the distinction instead: a future
+/// whose error is a `SessionError` is one that may name a refusal, and its kind survives.
+async fn enforce_credential_deadline<T>(
+    deadline: tokio::time::Instant,
+    operation: &'static str,
+    future: impl Future<Output = Result<T, SessionError>>,
+) -> Result<T, SessionError> {
+    match tokio::time::timeout_at(deadline, future).await {
+        // Same reasoning as the generic wrapper: a deadline says nothing about the
+        // credential.
+        Err(_) => Err(SessionError::AuthenticationTransportFailed(format!(
+            "{operation} timed out before its deadline"
+        ))),
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(rejected @ (SessionError::AuthenticationRejected(_)
+        | SessionError::HostKeyRejected(_)))) => Err(rejected),
+        Ok(Err(other)) => Err(SessionError::AuthenticationTransportFailed(format!(
+            "{operation} failed: {other}"
+        ))),
+    }
 }
 
 async fn enforce_authentication_deadline<T, E>(
@@ -3827,6 +3866,97 @@ mod tests {
             .await
             .expect("server should observe EOF before the client returns")
             .expect("stalled SSH server task should join");
+    }
+
+    /// F09 — a refused credential must not be relabelled by the deadline wrapper.
+    ///
+    /// Measured on a real two-hop run before this existed: the bastion answered
+    /// `Failed publickey`, `authenticate_jump_host` correctly produced
+    /// `SessionError::AuthenticationRejected`, and the wrapper turned it into
+    /// `AuthenticationTransportFailed("... failed: authentication rejected ...")`.
+    ///
+    /// Both consumers of that kind were wrong as a result: the reconnect ladder retried a
+    /// credential the server had already refused (six times, in that run), and the pane
+    /// never received `bastion-auth-rejected` — the diagnosis SSH11 exists to produce.
+    #[tokio::test]
+    async fn a_refusal_survives_the_credential_deadline() {
+        let result = enforce_credential_deadline(
+            tokio::time::Instant::now() + std::time::Duration::from_secs(5),
+            "authenticate jump host",
+            async {
+                Err::<(), SessionError>(SessionError::AuthenticationRejected(
+                    "the jump host rejected authentication".to_string(),
+                ))
+            },
+        )
+        .await;
+
+        match result {
+            Err(SessionError::AuthenticationRejected(message)) => {
+                assert!(message.contains("rejected"), "{message}");
+            }
+            Err(other) => panic!(
+                "a refusal must keep its kind, or the ladder retries a credential the \
+                 server already said no to: {other:?}"
+            ),
+            Ok(()) => panic!("the inner future failed, so this must be an error"),
+        }
+    }
+
+    /// The host-key refusal is the other kind that must survive: it is equally terminal
+    /// and equally the subject of a diagnosis (`bastion-host-key-rejected`).
+    #[tokio::test]
+    async fn a_host_key_refusal_survives_the_credential_deadline() {
+        assert!(matches!(
+            enforce_credential_deadline(
+                tokio::time::Instant::now() + std::time::Duration::from_secs(5),
+                "authenticate jump host",
+                async { Err::<(), SessionError>(SessionError::HostKeyRejected("mismatch".into())) },
+            )
+            .await,
+            Err(SessionError::HostKeyRejected(_))
+        ));
+    }
+
+    /// Everything else keeps becoming a transport failure: the wrapper cannot vouch for a
+    /// kind it did not produce.
+    #[tokio::test]
+    async fn other_failures_still_become_transport_failures() {
+        for error in [
+            SessionError::ConnectionFailed("reset by peer".to_string()),
+            SessionError::AuthenticationTransportFailed("agent gone".to_string()),
+            SessionError::AuthenticationFailed("no method".to_string()),
+            SessionError::ChannelError("channel closed".to_string()),
+        ] {
+            match enforce_credential_deadline(
+                tokio::time::Instant::now() + std::time::Duration::from_secs(5),
+                "authenticate jump host",
+                std::future::ready(Err::<(), SessionError>(error.clone())),
+            )
+            .await
+            {
+                Err(SessionError::AuthenticationTransportFailed(message)) => {
+                    assert!(message.contains("authenticate jump host"), "{message}");
+                    assert!(message.contains(&error.to_string()), "{message}");
+                }
+                other => panic!("{error:?} must become a transport failure, got {other:?}"),
+            }
+        }
+    }
+
+    /// A deadline is still a transport fact, and the kind is irrelevant to it.
+    #[tokio::test]
+    async fn a_credential_deadline_timeout_is_a_transport_failure() {
+        assert!(matches!(
+            enforce_credential_deadline(
+                tokio::time::Instant::now() + std::time::Duration::from_millis(5),
+                "authenticate jump host",
+                std::future::pending::<Result<(), SessionError>>(),
+            )
+            .await,
+            Err(SessionError::AuthenticationTransportFailed(message))
+                if message.contains("timed out")
+        ));
     }
 
     #[tokio::test]

@@ -8,6 +8,7 @@ import type {
   TerminalReconnectStartResult,
 } from './terminal-session-manager-reconnect'
 import { startTerminalShell } from './terminal-launcher'
+import { recordTerminalConnectionFailure } from './terminal-connection-failure-log'
 import { updateTerminalState } from './terminal-session-state'
 import type { TerminalRecord } from './terminal-session-manager-types'
 import { remainingTerminalConnectionMs } from './terminal-connection-deadline'
@@ -168,6 +169,17 @@ export async function startTerminalSession(
         sessionId: null,
         ...failure,
       })
+      /*
+       * F18 — this is where a terminal connection ends for good, so it is where the log
+       * row belongs.
+       *
+       * `recordConnectionFailure` had exactly one caller (`SessionService`), and the
+       * terminal does not go through it — so a connection started from the terminal wrote
+       * nothing at all when it failed, and the Logs view held only the successes. The
+       * write is fire-and-forget and never rethrows: a log is an observation, and a full
+       * disk must not turn a connection failure into a different failure.
+       */
+      recordTerminalConnectionFailure(record.request, failure)
     }
     return { status: 'failed', ...failure }
   } finally {
@@ -224,3 +236,4 @@ function createConnectionAttemptId(): string {
   connectionAttemptSequence += 1
   return `terminal-attempt-${Date.now()}-${connectionAttemptSequence}`
 }
+
