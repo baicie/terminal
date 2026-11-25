@@ -45,6 +45,95 @@ describe('defaultReconnectSleep', () => {
 
     expect(vi.getTimerCount()).toBe(0)
   })
+
+  /*
+   * F04 — a signal that was already aborted never fires its event again.
+   *
+   * `addEventListener('abort')` on an aborted signal does nothing: the event happened in
+   * the past. Without an explicit check the sleep below would wait out the full delay and
+   * *resolve*, which the ladder reads as "the backoff finished" — it would then open a
+   * connection the user had already cancelled.
+   */
+  it('rejects immediately when the signal was already aborted', async () => {
+    vi.useFakeTimers()
+    const controller = new AbortController()
+    controller.abort()
+
+    const sleep = defaultReconnectSleep(5_000, controller.signal)
+
+    await expect(sleep).rejects.toMatchObject({ name: 'AbortError' })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('does not register an abort listener for an already-aborted signal', async () => {
+    vi.useFakeTimers()
+    const controller = new AbortController()
+    controller.abort()
+    const addListener = vi.spyOn(AbortSignal.prototype, 'addEventListener')
+
+    await expect(defaultReconnectSleep(5_000, controller.signal)).rejects.toThrow()
+
+    expect(addListener).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('resolves once and ignores an abort that arrives afterwards', async () => {
+    vi.useFakeTimers()
+    const controller = new AbortController()
+    const sleep = defaultReconnectSleep(1_000, controller.signal)
+
+    await vi.advanceTimersByTimeAsync(1_000)
+    await expect(sleep).resolves.toBeUndefined()
+
+    controller.abort()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('settles once when abort and the timer race in the same tick', async () => {
+    vi.useFakeTimers()
+    const controller = new AbortController()
+    let settlements = 0
+    const sleep = defaultReconnectSleep(1_000, controller.signal).then(
+      () => {
+        settlements += 1
+      },
+      () => {
+        settlements += 1
+      },
+    )
+
+    // Abort scheduled, then the timer's own deadline reached without letting the abort
+    // task run first: both handlers are pending in the same macrotask batch.
+    controller.abort()
+    await vi.advanceTimersByTimeAsync(1_000)
+    await sleep
+
+    expect(settlements).toBe(1)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('survives repeated cancellation without leaving timers behind', async () => {
+    vi.useFakeTimers()
+    const controller = new AbortController()
+
+    for (let round = 0; round < 50; round += 1) {
+      const sleep = defaultReconnectSleep(5_000, controller.signal)
+      const assertion = expect(sleep).rejects.toMatchObject({ name: 'AbortError' })
+      controller.abort()
+      await assertion
+    }
+
+    expect(vi.getTimerCount()).toBe(0)
+
+    // Every later call sees the already-aborted signal and must not even arm a timer.
+    for (let round = 0; round < 10; round += 1) {
+      await expect(
+        defaultReconnectSleep(5_000, controller.signal),
+      ).rejects.toMatchObject({ name: 'AbortError' })
+    }
+    expect(vi.getTimerCount()).toBe(0)
+  })
 })
 
 describe('reconnectDelayFor', () => {
@@ -205,6 +294,120 @@ describe('SSH20 — the retry policy matrix', () => {
         reconnectDelayFor(policy, attempt),
         `attempt ${attempt} must not produce a sub-base delay`,
       ).toBeGreaterThanOrEqual(policy.baseDelayMs)
+    }
+  })
+})
+
+describe('F05 — the delay function states an input contract', () => {
+  /*
+   * ## Why NaN matters more than it looks
+   *
+   * SSH20 clamped `attempt < 1` to the first rung, which handles 0 and negatives. It did
+   * not handle `NaN`: `Math.trunc(NaN)` is `NaN`, `Math.max(1, NaN)` is `NaN`, and
+   * `Math.min(maxDelayMs, NaN)` is `NaN`. The function then returns `NaN` — measured, not
+   * assumed. A `NaN` delay reaches `setTimeout` as 0, which is a tight retry loop against
+   * a host that is already failing.
+   *
+   * The contract below is the one every caller can rely on: finite, non-negative,
+   * integer, never above the cap. `Infinity` as a *rung* is legitimate input — it means
+   * "far beyond the ladder" and must simply land on the cap.
+   */
+  const policyWith = (overrides: Parameters<typeof resolveReconnectPolicy>[0] = {}) =>
+    resolveReconnectPolicy({ jitter: (delay: number) => delay, ...overrides })
+
+  const assertContract = (value: number, label: string, policy: ReturnType<typeof policyWith>) => {
+    expect(Number.isFinite(value), `${label} must be finite, got ${value}`).toBe(true)
+    expect(value, `${label} must be a non-negative integer`).toBeGreaterThanOrEqual(0)
+    expect(Number.isInteger(value), `${label} must be an integer, got ${value}`).toBe(true)
+    expect(value, `${label} must not exceed maxDelayMs`).toBeLessThanOrEqual(
+      policy.maxDelayMs,
+    )
+  }
+
+  it('never returns NaN, whatever position it is handed', () => {
+    const policy = policyWith()
+    for (const attempt of [
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      0,
+      -1,
+      -1e9,
+      2.7,
+      -2.7,
+      Number.MAX_SAFE_INTEGER,
+      Number.MAX_SAFE_INTEGER + 1000,
+      1e308,
+    ]) {
+      assertContract(reconnectDelayFor(policy, attempt), `attempt ${attempt}`, policy)
+    }
+  })
+
+  it('treats a non-finite or fractional position as the first rung', () => {
+    /*
+     * A position the caller cannot mean is not a position: the shortest wait this policy
+     * allows is the only defensible answer. Fractions are truncated toward zero, so 2.7
+     * is rung 2 — that is the documented rounding, and the assert below states it rather
+     * than leaving it to the reader.
+     */
+    const policy = policyWith({ baseDelayMs: 500, maxDelayMs: 10_000 })
+    for (const attempt of [Number.NaN, Number.NEGATIVE_INFINITY, 0, -3, 0.5]) {
+      expect(reconnectDelayFor(policy, attempt), `attempt ${attempt}`).toBe(500)
+    }
+    expect(reconnectDelayFor(policy, 2.7)).toBe(1_000)
+    expect(reconnectDelayFor(policy, 3.9)).toBe(2_000)
+  })
+
+  it('caps an arbitrarily large finite position instead of overflowing', () => {
+    /*
+     * `base * 2 ** 1e308` is `Infinity`; `Math.min(cap, Infinity)` is the cap. The value
+     * handed to `jitter` must therefore already be capped, or a jitter that multiplies
+     * would receive `Infinity` and return `Infinity` — which the existing NaN guard would
+     * catch, but for the wrong reason.
+     */
+    const seen: number[] = []
+    const policy = policyWith({
+      baseDelayMs: 500,
+      maxDelayMs: 10_000,
+      jitter: (delay: number) => {
+        seen.push(delay)
+        return delay
+      },
+    })
+    expect(reconnectDelayFor(policy, 1e308)).toBe(10_000)
+    expect(reconnectDelayFor(policy, Number.MAX_SAFE_INTEGER)).toBe(10_000)
+    expect(seen.every(delay => Number.isFinite(delay) && delay <= 10_000)).toBe(true)
+  })
+
+  it('hands jitter the rung it actually used', () => {
+    /*
+     * The `rung` argument is what a policy uses to vary jitter per attempt. If the value
+     * passed were the raw `attempt`, a jitter keyed on it could never see a normalised
+     * value — and `Infinity` would arrive where an integer was promised.
+     *
+     * `+Infinity` maps to the first rung that already reaches the cap (500·2⁵ = 16000
+     * against a 10000 cap, so rung 6), not to rung 1: "past the end of the ladder" is a
+     * long wait, and handing jitter `Infinity` would break any policy that multiplies by
+     * it.
+     */
+    const rungs: number[] = []
+    const policy = policyWith({
+      jitter: (delay: number, attempt: number) => {
+        rungs.push(attempt)
+        return delay
+      },
+    })
+    for (const attempt of [Number.NaN, 0, 1, 2, 7, Number.POSITIVE_INFINITY]) {
+      reconnectDelayFor(policy, attempt)
+    }
+    expect(rungs).toEqual([1, 1, 1, 2, 7, 6])
+    expect(new Set(rungs).has(Number.POSITIVE_INFINITY)).toBe(false)
+  })
+
+  it('every ladder value stays inside the contract for the whole shipping policy', () => {
+    const policy = resolveReconnectPolicy()
+    for (let attempt = 1; attempt <= 40; attempt += 1) {
+      assertContract(reconnectDelayFor(policy, attempt), `attempt ${attempt}`, policy)
     }
   })
 })

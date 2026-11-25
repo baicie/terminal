@@ -3,6 +3,35 @@ import {
   type TerminalRecord,
   type TerminalSessionSnapshot,
 } from './terminal-session-manager-types'
+import type { TerminalFailure } from './terminal-session-manager-errors'
+
+/**
+ * F06 — the record fields a classified failure sets, in one place.
+ *
+ * Three paths publish a classified failure (the first connection, the non-automatic end
+ * of a retry, and an exhausted ladder) and they must agree on which fields travel with
+ * it. The exhausted ladder was the one that did not: it wrote `error` alone, so a jump
+ * connection that used up its budget lost the hop the classifier had already resolved.
+ *
+ * Optional fields are spread only when present — that is what lets `updateTerminalState`
+ * clear an older hop instead of inheriting a claim about a machine this attempt never
+ * reached.
+ */
+export function terminalFailureState(
+  failure: TerminalFailure,
+): Partial<TerminalSessionSnapshot> {
+  return {
+    error: failure.error,
+    retryable: failure.retryable,
+    recovery: failure.recovery,
+    ...(failure.credentialKind !== undefined
+      ? { credentialKind: failure.credentialKind }
+      : {}),
+    ...(failure.hop !== undefined ? { hop: failure.hop } : {}),
+    ...(failure.stage !== undefined ? { stage: failure.stage } : {}),
+    ...(failure.diagnosis !== undefined ? { diagnosis: failure.diagnosis } : {}),
+  }
+}
 
 /**
  * A state the session has left behind: it is not waiting on a user decision any
