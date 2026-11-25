@@ -59,6 +59,20 @@ const GAPS = [
   },
 ]
 
+/**
+ * A dotted identifier with no spaces is a key that i18next could not resolve.
+ *
+ * Deliberately narrow: real headlines contain spaces and punctuation, and a false
+ * positive here would fail a correct pane. `terminal.hostKeyUnreachable` matches;
+ * `The server did not answer` and `服务器没有响应` do not.
+ */
+function looksUntranslated(text) {
+  const trimmed = text.trim()
+  if (trimmed.length === 0) return true
+  if (/\s/.test(trimmed)) return false
+  return /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+$/.test(trimmed)
+}
+
 describe('F22 — a failed connection explains itself in the pane', () => {
 
   /*
@@ -218,6 +232,25 @@ describe('F22 — a failed connection explains itself in the pane', () => {
     if (gate.title.trim() === 'Could not verify the SSH host key') {
       throw new Error(
         `a refused connect must not be reported as a host-key problem; surface said ${JSON.stringify(gate.text)}`,
+      )
+    }
+    /*
+     * ## And it has to be a sentence, not a key
+     *
+     * Measured on `ef8e3c4`: the six headlines this round added were missing from the
+     * locale modules (dropped by a botched rollback), so i18next rendered the key
+     * itself — `terminal.hostKeyUnreachable` — and **this case still passed**. Both
+     * assertions above held: the structured `failure` was right, and the string was
+     * not the old host-key sentence.
+     *
+     * A key that reaches a user is the same class of defect as the wrong sentence:
+     * it tells them nothing. `looksUntranslated` below is written for this case — it
+     * did not exist before — and asserting it here is what would have caught the
+     * missing copy on the GUI run rather than in `Frontend quality` afterwards.
+     */
+    if (looksUntranslated(gate.title)) {
+      throw new Error(
+        `the headline rendered as a translation key, not a sentence: ${JSON.stringify(gate.title)}`,
       )
     }
   })

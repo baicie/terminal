@@ -80,16 +80,67 @@ const UNREACHABLE_PHRASES = [
   'transport closed',
 ]
 
-/** The operation names Rust puts in front of a transport failure, verbatim. */
-const HANDSHAKE_PHRASES = [
-  'did not present a host key',
-  'host-key probe failed',
-  'handshake',
-  'kex',
-  'key exchange',
-]
+/**
+ * The one handshake symptom worth naming.
+ *
+ * The first version also listed the probe's own operation names here (`host-key probe
+ * failed`, `handshake`, `kex`). Those never decided anything: every message carrying
+ * them also carried a transport phrase, and the transport branch is tested first — so
+ * the list was a second, unreachable opinion about the same messages. What survives is
+ * the phrase Rust emits for a server that completed a connection and presented no key,
+ * which nothing else catches.
+ */
+const NO_HOST_KEY_PHRASE = 'did not present a host key'
 
 const KNOWN_HOSTS_PHRASES = ['known_hosts', 'known hosts']
+
+/**
+ * A credential the jump host evaluated and refused.
+ *
+ * ## Why this has to be prose, and what that costs
+ *
+ * `SessionError::AuthenticationRejected` is the terminal "the server said no" variant.
+ * `ssh_host_key.rs::map_session_error` keeps three variants and flattens **everything
+ * else** into `ConnectionFailed` — including `AuthenticationRejected`. So every real
+ * jump-credential refusal arrives here as `type: 'connection_failed'` carrying
+ *
+ *     connection failed: authentication rejected: the jump host rejected authentication
+ *
+ * and the `authentication_failed` branch below — which was written for this case —
+ * can only fire for the variant Rust produces when *no credential was supplied at all*.
+ * Measured against the Rust producers: `ssh.rs:2763`, `ssh.rs:3957`.
+ *
+ * The honest fix is on the wire (map `AuthenticationRejected` to its own
+ * `SshHostKeyError` variant); until then this list is the only thing that can tell a
+ * refused credential from a dead socket, and a phrase list is exactly the fragility
+ * this module was written to avoid. Recorded rather than hidden.
+ */
+const JUMP_AUTHENTICATION_PHRASES = [
+  'authentication rejected',
+  'jump host rejected authentication',
+  'jump host password required',
+  'no authentication method provided',
+  'credentials rejected',
+  'permission denied',
+  'all methods rejected',
+]
+
+/**
+ * The server answered and its identity was refused.
+ *
+ * A bastion whose recorded key no longer matches is *not* an unreachable machine: the
+ * connection completed and was deliberately blocked. Telling the user "the server did
+ * not answer" for this is the same misdirection as the wrong host-key sentence this
+ * module replaces, only pointed at a different machine.
+ *
+ * These arrive as `connection_failed` too (`SessionError::HostKeyRejected` is another
+ * of the variants `map_session_error` flattens): `types.rs:124`, `state.rs:426`.
+ */
+const HOST_KEY_REFUSAL_PHRASES = [
+  'host key rejected',
+  'does not match the preflight key',
+  'host key verification failed',
+]
 
 /**
  * Classify a rejected probe.
@@ -109,35 +160,66 @@ export function classifySshHostKeyGateFailure(
   const kind = record?.type ?? record?.kind
   const text = message.toLowerCase()
 
+  /*
+   * ## Order, and why it is this order
+   *
+   * Structure first, then the phrases that describe a *decision* the server made, then
+   * transport symptoms, then the two remaining structural buckets.
+   *
+   * A decision must be read before a symptom because the two co-occur: a jump host that
+   * rejected a credential is reported through a wrapper that also mentions the
+   * connection. A transport phrase test alone would answer "unreachable" for a machine
+   * that answered — which is the defect this module exists to remove, one machine over.
+   */
   if (kind === 'invalid_input' || kind === 'key_parse_failed') return 'input'
-  if (kind === 'authentication_failed') return 'jump-authentication'
   if (kind === 'known_hosts_failed' || kind === 'host_key_changed') {
     return 'known-hosts'
   }
-
   if (message === 'SSH startup deadline expired before the terminal became ready') {
     return 'deadline'
   }
+  if (text.includes(NO_HOST_KEY_PHRASE)) {
+    return 'handshake'
+  }
+
   if (KNOWN_HOSTS_PHRASES.some(phrase => text.includes(phrase))) {
     return 'known-hosts'
   }
+  if (HOST_KEY_REFUSAL_PHRASES.some(phrase => text.includes(phrase))) {
+    return 'known-hosts'
+  }
+  if (
+    kind === 'authentication_failed' ||
+    JUMP_AUTHENTICATION_PHRASES.some(phrase => text.includes(phrase))
+  ) {
+    return 'jump-authentication'
+  }
+
   /*
-   * Order matters: a refused connect is reported *through* the probe's handshake
-   * operation name, so testing for "handshake" first would label every closed port a
-   * handshake failure. Transport phrases win.
+   * Transport symptoms come after the decisions above, and before the handshake
+   * operation names: a refused connect is reported *through* the probe's handshake
+   * operation, so testing for "handshake" first would label every closed port a
+   * handshake failure.
    */
   if (UNREACHABLE_PHRASES.some(phrase => text.includes(phrase))) {
     return 'unreachable'
   }
-  if (HANDSHAKE_PHRASES.some(phrase => text.includes(phrase))) {
-    return 'handshake'
-  }
+
   /*
+   * ## The default is `handshake`, not `unreachable`
+   *
    * `connection_failed` is the variant Rust uses for everything it could not name more
-   * precisely. Unnamed, it is still a transport failure, and calling it "could not
-   * verify the host key" is the misdirection this module exists to remove.
+   * precisely, so it says nothing about whether the machine answered. Both defaults
+   * are therefore guesses, and they are not equally wrong:
+   *
+   *   - `unreachable` claims the network got no answer. A non-SSH service behind a
+   *     tunnel, a KEX failure, or a flattened variant all become "the server did not
+   *     answer" — a claim about a machine that demonstrably did.
+   *   - `handshake` claims only that we did not get a usable host key, which is true
+   *     of every failure that reaches this line.
+   *
+   * The honest default is the weaker claim.
    */
-  if (kind === 'connection_failed') return 'unreachable'
   return 'handshake'
 }
 
@@ -149,12 +231,19 @@ export function classifySshHostKeyGateFailure(
  * the single point where the gate turns a rejection into text, so every surface that
  * shows this error benefits and none has to know the prefixes.
  */
+/*
+ * ## Only prefixes that actually lead a user-facing rejection
+ *
+ * `host-key probe target handshake failed:` and `open host-key probe tunnel failed:`
+ * were listed here and never occur at the start of one: Rust passes both as the
+ * `operation` label to `disconnect_and_wait_with_shutdown`, which logs them and does
+ * not put them in the error. Removing them keeps this list honest — a prefix nobody
+ * can produce reads like coverage that does not exist.
+ */
 const INTERNAL_PREFIXES = [
   'connection failed: ',
   'ssh host-key connection failed: ',
   'connect host-key probe failed: ',
-  'host-key probe target handshake failed: ',
-  'open host-key probe tunnel failed: ',
 ]
 
 /** The message with this repository's own operation names removed, and nothing else. */

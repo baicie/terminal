@@ -59,6 +59,56 @@ describe('classifying a failed SSH host-key preflight', () => {
     )
   })
 
+  /*
+   * ## The three shapes that made the first version wrong
+   *
+   * All three reach the gate as `type: 'connection_failed'`, because
+   * `ssh_host_key.rs::map_session_error` keeps three variants and flattens the rest.
+   * The first version read `connection_failed` with no transport phrase as
+   * `unreachable`, so each of these told the user a machine that answered never did.
+   *
+   * The strings are the Rust producers verbatim — `ssh.rs:2763`, `ssh.rs:3957`,
+   * `types.rs:124` + `state.rs:426`, `ssh_host_key.rs:404`.
+   */
+  it.each([
+    [
+      'a jump host that refused the credential',
+      'connection failed: authentication rejected: the jump host rejected authentication',
+      'jump-authentication',
+    ],
+    [
+      'a jump host that was given no credential',
+      'authentication failed: Jump host password required',
+      'jump-authentication',
+    ],
+    [
+      'a bastion whose recorded key no longer matches',
+      'connection failed: host key rejected: host key verification failed for example.test:22: server key does not match the preflight key',
+      'known-hosts',
+    ],
+    [
+      'a target behind a tunnel that is not an SSH server',
+      'connection failed: could not inspect 10.0.0.5:80 through the jump host: inspect host key through jump host failed: invalid SSH version string',
+      'handshake',
+    ],
+  ])('names %s', (_label, text, expected) => {
+    expect(classifySshHostKeyGateFailure(tagged('connection_failed', text), text)).toBe(
+      expected,
+    )
+  })
+
+  /*
+   * The default is the weaker claim. `connection_failed` says nothing about whether the
+   * machine answered, so an unrecognised message must not assert that it did not: the
+   * old default called every unnamed failure "the server did not answer".
+   */
+  it('defaults an unnamed connection failure to handshake, not unreachable', () => {
+    const text = 'connection failed: something this classifier has never seen'
+    expect(classifySshHostKeyGateFailure(tagged('connection_failed', text), text)).toBe(
+      'handshake',
+    )
+  })
+
   it('separates "answered but no usable host key" from "never answered"', () => {
     const text = 'connection failed: server 10.0.0.5:22 did not present a host key'
     expect(classifySshHostKeyGateFailure(tagged('connection_failed', text), text)).toBe(
@@ -98,6 +148,20 @@ describe('classifying a failed SSH host-key preflight', () => {
   it('prefers the structured kind over words in the message', () => {
     const rejection = tagged('invalid_input', 'host timed out while being parsed')
     expect(classifySshHostKeyGateFailure(rejection, rejection.message)).toBe('input')
+  })
+
+  /*
+   * The structural kinds that carry their own meaning must still win over a transport
+   * word in the same message: a `known_hosts_failed` that happens to say "timed out"
+   * is a known_hosts problem, and an `authentication_failed` that says "connection
+   * reset" is a credential refusal.
+   */
+  it.each([
+    ['known_hosts_failed', 'writing known_hosts timed out'],
+    ['authentication_failed', 'credentials rejected after connection reset'],
+  ])('keeps %s structural even when the text names a transport symptom', (kind, text) => {
+    const got = classifySshHostKeyGateFailure(tagged(kind, text), text)
+    expect(got).not.toBe('unreachable')
   })
 
   it('every classified step has a headline string', () => {
