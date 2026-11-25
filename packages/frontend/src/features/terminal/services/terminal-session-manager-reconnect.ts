@@ -241,6 +241,7 @@ export class TerminalSessionReconnect {
           status: 'error',
           sessionId: null,
           ...terminalFailureState(lastFailure),
+          attempt,
         })
         return
       }
@@ -258,6 +259,8 @@ export class TerminalSessionReconnect {
       status: 'error',
       sessionId: null,
       ...terminalFailureState(lastFailure),
+      // F10 — "the attempt that ended", republished by the snapshot as `attempts`.
+      attempt,
     })
     this.scheduleRecovery(record)
   }

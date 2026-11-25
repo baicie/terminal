@@ -8,7 +8,7 @@
 //
 // ## Why the fields come from the caller, not from this file
 //
-// `diagnosis`, `hop`, `stage` and `attempt` are the same values the terminal pane renders
+// `diagnosis`, `hop`, `stage` and `attempts` are the same values the terminal pane renders
 // from (`useTerminal` → `TerminalSessionSnapshot` → the error overlay). Passing them
 // through is what makes the reported reason evidence that the diagnosis survived
 // Rust → IPC → classifier → record, rather than a sentence this file made up.
@@ -29,7 +29,15 @@ export interface TerminalSmokeFailureSignals {
   diagnosis?: string
   hop?: string
   stage?: string
-  attempt?: number
+  /**
+   * F10 — how many attempts the finished ladder made.
+   *
+   * The snapshot's `attempts`, not its `attempt`: the latter means "the attempt now in
+   * progress" and is only present while reconnecting. Before F10 this field was fed from
+   * the in-flight value, which the transition to `error` had already cleared, so every
+   * real report had `attempts: null` while the contract test asserted `5`.
+   */
+  attempts?: number
 }
 
 export function useTerminalSmokeFailureReport(args: {
@@ -49,7 +57,7 @@ export function useTerminalSmokeFailureReport(args: {
   const onCompleteRef = useRef(args.onComplete)
   onCompleteRef.current = args.onComplete
 
-  const { error, diagnosis, hop, stage, attempt } = signals
+  const { error, diagnosis, hop, stage, attempts } = signals
 
   useEffect(() => {
     if (!enabled) return
@@ -73,7 +81,7 @@ export function useTerminalSmokeFailureReport(args: {
         ...(diagnosis === undefined ? {} : { diagnosis }),
         ...(hop === undefined ? {} : { hop }),
         ...(stage === undefined ? {} : { stage }),
-        ...(attempt === undefined ? {} : { attempts: attempt }),
+        ...(attempts === undefined ? {} : { attempts }),
       },
     })
   }, [
@@ -84,7 +92,7 @@ export function useTerminalSmokeFailureReport(args: {
     diagnosis,
     hop,
     stage,
-    attempt,
+    attempts,
     cols,
     rows,
     startedAt,
