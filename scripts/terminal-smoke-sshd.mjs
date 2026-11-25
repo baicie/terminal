@@ -333,7 +333,7 @@ async function writeSecure(filePath, contents, mode, dependencies) {
   await dependencies.chmod(filePath, mode)
 }
 
-function daemonConfiguration(paths, port, username, options) {
+export function daemonConfiguration(paths, port, username, options) {
   const lines = [
     `Port ${port}`,
     `ListenAddress ${LOOPBACK}`,
@@ -683,6 +683,7 @@ export async function startTerminalSmokeSshd({
         mode,
         role,
         targetPort,
+        targetPorts,
         enableSftp,
         sftpServerPath,
       })
