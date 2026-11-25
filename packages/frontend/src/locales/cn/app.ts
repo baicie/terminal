@@ -101,25 +101,6 @@ export default {
   'statusBar.session.local': '本地',
   'statusBar.session.remote': 'SSH',
   'statusBar.session.serial': '串口',
-  'terminal.hostKeyChangedTitle': 'SSH 主机密钥已变更',
-  'terminal.hostKeyTrustTitle': '是否信任此 SSH 主机？',
-  'terminal.hostKeyChangedDescription':
-    '服务器身份与已保存的主机密钥不再匹配，连接已被阻止。',
-  'terminal.hostKeyTrustDescription':
-    '连接前请通过服务器管理员或其他可信渠道核对该指纹。',
-  'terminal.hostKeyJumpDescription': '这是用于访问目标主机的跳板机身份。',
-  'terminal.hostKeyTargetDescription':
-    '这是通过已验证跳板机访问到的目标主机身份。',
-  'terminal.hostKeyHost': '主机',
-  'terminal.hostKeyAlgorithm': '算法',
-  'terminal.hostKeyFingerprint': '指纹',
-  'terminal.hostKeyChangedWarning':
-    '在通过本次连接以外的可信渠道核实已保存密钥前，请勿继续。',
-  'terminal.hostKeyTrustOnce': '仅信任本次',
-  'terminal.hostKeyTrustAndSave': '信任并保存',
-  'terminal.hostKeyCheckingAria': '正在检查 SSH 主机密钥',
-  'terminal.hostKeyChecking': '正在检查 SSH 主机密钥...',
-  'terminal.hostKeyVerifyFailed': '无法验证 SSH 主机密钥',
   'terminal.decreaseFontSize': '减小字号',
   'terminal.increaseFontSize': '增大字号',
   'terminal.clearScreen': '清屏',
@@ -267,7 +248,6 @@ export default {
     'Unix 系统上未找到 SSH_AUTH_SOCK 套接字。请启动 ssh-agent 或设置 SSH_AUTH_SOCK。',
   'terminal.connectionFailed': '连接失败。请检查主机地址和网络。',
   'terminal.authFailed': '认证失败。请检查用户名和凭据。',
-  'terminal.hostKeyFailed': '主机密钥验证失败。请检查 known_hosts。',
   'terminal.sessionTimeout': '会话超时。连接可能已关闭。',
   'toolbar.resizeSidebar': '调整侧边栏宽度',
 }

@@ -2,6 +2,9 @@ import { formatIpcError } from '@/hooks/terminal-session-helpers'
 import type { Host } from '@/types'
 import type { SshHostKeyProbeResult } from '@/features/terminal/services/ssh-host-key'
 import type { TabType } from '../types'
+import type { SshHostKeyGateFailure } from './ssh-host-key-gate-failure'
+
+export type { SshHostKeyGateFailure } from './ssh-host-key-gate-failure'
 
 export type SshHostKeyRole = 'host' | 'jump' | 'target'
 
@@ -24,6 +27,14 @@ export type GateState =
       status: 'error'
       role: SshHostKeyRole
       error: string
+      /**
+       * Which step failed, so the overlay can name it.
+       *
+       * Absent on the two states a probe never produced (no host row, unresolvable
+       * jump host): those are explained by their own `error` string and carry no
+       * transport stage to name.
+       */
+      failure?: SshHostKeyGateFailure
     } & HostKeyPins)
 
 export interface UseSshHostKeyGateOptions {

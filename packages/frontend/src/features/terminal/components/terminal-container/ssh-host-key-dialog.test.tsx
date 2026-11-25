@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import '@/locales'
 import { SshHostKeyDialog } from './ssh-host-key-dialog'
+import { SshHostKeyGateOverlay } from './ssh-host-key-gate-overlay'
 
 const prompt = {
   status: 'unknown' as const,
@@ -109,5 +110,77 @@ describe('SshHostKeyDialog', () => {
       (screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement)
         .disabled,
     ).toBe(true)
+  })
+})
+
+/**
+ * F22 — the gate overlay has to name the step that failed.
+ *
+ * Measured on a macOS GUI run against a host pointed at a closed port: the pane said
+ * "Could not verify the SSH host key" over a message that began
+ * `connection failed: connect host-key probe failed:`. Nothing about that is a host-key
+ * problem — the machine never opened a socket — and the sentence sends the user to
+ * `known_hosts`, which is the one file certainly not at fault.
+ *
+ * The overlay is the *first* surface a failed connection reaches, because the preflight
+ * runs before the session does. That is why the case asserts here rather than only on
+ * the terminal error overlay.
+ */
+describe('SshHostKeyGateOverlay', () => {
+  it('names an unreachable server instead of blaming the host key', () => {
+    render(
+      <SshHostKeyGateOverlay
+        status="error"
+        error="Connection refused (os error 61)"
+        failure="unreachable"
+        onRetry={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByTestId('ssh-host-key-gate-title').textContent).toBe(
+      'The server did not answer',
+    )
+    // The precise wording that was wrong: it must not appear for a refused connect.
+    expect(screen.queryByText('Could not verify the SSH host key')).toBeNull()
+    // The cause stays visible verbatim; the headline explains, it does not replace.
+    expect(screen.getByText('Connection refused (os error 61)')).toBeTruthy()
+    expect(
+      screen.getByTestId('ssh-host-key-gate-error').dataset.failure,
+    ).toBe('unreachable')
+  })
+
+  it('keeps the host-key sentence when no step could be named', () => {
+    /*
+     * Two states never ran a probe: no host row, and an unresolvable jump host. They
+     * carry no `failure`, and inventing one would relabel a configuration error as a
+     * network one.
+     */
+    render(
+      <SshHostKeyGateOverlay
+        status="error"
+        error="Host info required for remote connection"
+        onRetry={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByTestId('ssh-host-key-gate-title').textContent).toBe(
+      'Could not verify the SSH host key',
+    )
+    expect(
+      screen.getByTestId('ssh-host-key-gate-error').dataset.failure,
+    ).toBe('unspecified')
+  })
+
+  it('shows the checking state without a failure headline', () => {
+    render(
+      <SshHostKeyGateOverlay
+        status="checking"
+        error={null}
+        onRetry={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByTestId('ssh-host-key-gate-error')).toBeNull()
+    expect(screen.getByRole('status')).toBeTruthy()
   })
 })

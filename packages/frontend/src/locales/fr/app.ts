@@ -104,26 +104,6 @@ export default {
   'statusBar.session.local': 'Local',
   'statusBar.session.remote': 'SSH',
   'statusBar.session.serial': 'Série',
-  'terminal.hostKeyChangedTitle': "La clé d'hôte SSH a changé",
-  'terminal.hostKeyTrustTitle': 'Faire confiance à cet hôte SSH ?',
-  'terminal.hostKeyChangedDescription':
-    "L'identité du serveur ne correspond plus à la clé enregistrée. La connexion a été bloquée.",
-  'terminal.hostKeyTrustDescription':
-    "Vérifiez cette empreinte auprès de l'administrateur du serveur avant de vous connecter.",
-  'terminal.hostKeyJumpDescription':
-    "Cette identité appartient à l'hôte de rebond utilisé pour atteindre la cible.",
-  'terminal.hostKeyTargetDescription':
-    "Cette identité appartient à la cible atteinte via l'hôte de rebond vérifié.",
-  'terminal.hostKeyHost': 'Hôte',
-  'terminal.hostKeyAlgorithm': 'Algorithme',
-  'terminal.hostKeyFingerprint': 'Empreinte',
-  'terminal.hostKeyChangedWarning':
-    "Ne continuez pas avant d'avoir vérifié la clé enregistrée par un canal indépendant de cette connexion.",
-  'terminal.hostKeyTrustOnce': 'Faire confiance une fois',
-  'terminal.hostKeyTrustAndSave': 'Faire confiance et enregistrer',
-  'terminal.hostKeyCheckingAria': "Vérification de la clé d'hôte SSH",
-  'terminal.hostKeyChecking': "Vérification de la clé d'hôte SSH...",
-  'terminal.hostKeyVerifyFailed': "Impossible de vérifier la clé d'hôte SSH",
   'terminal.decreaseFontSize': 'Réduire la taille de police',
   'terminal.increaseFontSize': 'Augmenter la taille de police',
   'terminal.clearScreen': "Effacer l'écran",
@@ -291,8 +271,6 @@ export default {
     "Connexion échouée. Vérifiez l'adresse de l'hôte et le réseau.",
   'terminal.authFailed':
     "Échec de l'authentification. Vérifiez le nom d'utilisateur et les identifiants.",
-  'terminal.hostKeyFailed':
-    'Échec de la vérification de la clé hôte. Vérifiez known_hosts.',
   'terminal.sessionTimeout':
     "Délai d'expiration de la session. La connexion peut avoir été fermée.",
   'toolbar.resizeSidebar': 'Redimensionner la barre latérale',

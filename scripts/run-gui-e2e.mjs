@@ -319,7 +319,9 @@ const specFiles = flags.has('--one-run')
 // and on Windows the startup gate refused to mount the UI at all, because the database
 // it looked for did not exist in the profile it was actually using.
 if (fixture !== null && specFiles.length > 0) {
-  const { seedSftpHost, trustHostKey } = await import('../e2e/gui/fixtures/seed-sftp-host.mjs')
+  const { seedSftpHost, trustHostKey, mintRejectedKey } = await import(
+    '../e2e/gui/fixtures/seed-sftp-host.mjs'
+  )
   fixture.seededProfiles = []
   for (const spec of specFiles) {
     const specHome = `${home}-${path.basename(spec, '.e2e.mjs')}`
@@ -399,6 +401,40 @@ if (fixture !== null && specFiles.length > 0) {
       label: 'E2E Unreachable',
       hostId: 'e2e-unreachable-host',
     })
+    /*
+     * F22 second case: a server that answers, then refuses the credential.
+     *
+     * The closed port above is caught by the host-key *preflight*, so the session never
+     * starts and the terminal error overlay — the surface `e2e-07` first asserted on —
+     * is structurally unreachable from it. The post-preflight path needs a real server
+     * with a real host key whose credential is wrong.
+     *
+     * The second sshd is exactly that, used against its will: its own host key is
+     * trusted into this profile below, and this row carries a **different** private key
+     * than the one the daemon authorises. So the preflight succeeds and the session is
+     * refused — which is the terminal overlay's job to explain.
+     *
+     * Seeded for every profile for the same reason the unreachable row is: a spec that
+     * only ran against the parent profile would find nothing on the row it clicked.
+     * Only `e2e-07` uses it; the other specs match cards by label.
+     */
+    let rejectingLabel = null
+    if (fixture.secondary) {
+      const rejectingKey = await mintRejectedKey(specHome)
+      if (rejectingKey !== null) {
+        await seedSftpHost({
+          home: specHome,
+          configDir,
+          privateKeyPath: rejectingKey,
+          port: fixture.secondary.port,
+          username: fixture.secondary.username,
+          label: 'E2E Rejecting',
+          hostId: 'e2e-rejecting-host',
+        })
+        rejectingLabel = 'E2E Rejecting'
+      }
+    }
+    fixture.rejectingLabel = fixture.rejectingLabel ?? rejectingLabel
   }
   log(`seeded ${fixture.seededProfiles.length} per-spec profile(s)`)
 }
@@ -426,6 +462,12 @@ const run = runSpecs(specFiles, {
   GUI_E2E_REMOTE_ROOT_2: fixture?.secondary ? fixture.secondary.remoteRoot : '',
   /** Port of the second server, for the two-host cases. Empty when unavailable. */
   GUI_E2E_SSH_PORT_2: fixture?.secondary ? String(fixture.secondary.port) : '',
+  /**
+   * The card `e2e-07` clicks for its post-preflight case. Empty when the key could not
+   * be minted, which the spec reports as NOT_RUN with the reason rather than skipping
+   * silently.
+   */
+  GUI_E2E_REJECTING_LABEL: fixture?.rejectingLabel ?? '',
 })
 
 if (fixture !== null) {

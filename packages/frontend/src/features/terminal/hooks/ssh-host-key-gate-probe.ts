@@ -8,6 +8,10 @@ import { formatIpcError } from '@/hooks/terminal-session-helpers'
 import type { Host } from '@/types'
 import type { TabType } from '../types'
 import {
+  classifySshHostKeyGateFailure,
+  humaniseSshHostKeyGateError,
+} from './ssh-host-key-gate-failure'
+import {
   isRetryableSshHostKeyProbeError,
   SSH_HOST_KEY_PROBE_RETRY_DELAYS_MS,
   SSH_HOST_KEY_STARTUP_DEADLINE_ERROR,
@@ -91,6 +95,7 @@ export function runSshHostKeyGateProbe(
       status: 'error',
       role,
       error: SSH_HOST_KEY_STARTUP_DEADLINE_ERROR,
+      failure: 'deadline',
       ...pins,
     })
     return
@@ -125,6 +130,7 @@ export function runSshHostKeyGateProbe(
           status: 'error',
           role,
           error: SSH_HOST_KEY_STARTUP_DEADLINE_ERROR,
+          failure: 'deadline',
           ...pins,
         })
         return
@@ -170,6 +176,7 @@ export function runSshHostKeyGateProbe(
             status: 'error',
             role,
             error: SSH_HOST_KEY_STARTUP_DEADLINE_ERROR,
+            failure: 'deadline',
             ...pins,
           })
           return
@@ -188,7 +195,8 @@ export function runSshHostKeyGateProbe(
         setState({
           status: 'error',
           role,
-          error: formatIpcError(error),
+          error: humaniseSshHostKeyGateError(formatIpcError(error)),
+          failure: classifySshHostKeyGateFailure(error, formatIpcError(error)),
           ...pins,
         })
         return
@@ -197,7 +205,8 @@ export function runSshHostKeyGateProbe(
       setState({
         status: 'error',
         role,
-        error: formatIpcError(error),
+        error: humaniseSshHostKeyGateError(formatIpcError(error)),
+        failure: classifySshHostKeyGateFailure(error, formatIpcError(error)),
         ...pins,
       })
     })
