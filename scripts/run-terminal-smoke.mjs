@@ -1458,6 +1458,11 @@ async function runTerminalSmokeAttempt({
       if (problems.length > 0) {
         throw new Error(
           `failure scenario ${failureScenario} failed: ${problems.join('; ')}` +
+            // The terminal's own report, verbatim: the comparison above says which field
+            // disagreed, and this says what the product actually claimed — including the
+            // message, which is the only place the Rust error kind is visible once the
+            // classifier has turned it into a sentence.
+            `\n[failureReason] ${JSON.stringify(result.failureReason ?? null)}` +
             daemonLogDetail(fixture),
         )
       }
