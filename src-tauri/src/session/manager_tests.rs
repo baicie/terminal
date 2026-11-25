@@ -499,3 +499,118 @@ async fn shutdown_completes_with_a_registered_session() {
         "shutdown must leave every registry empty"
     );
 }
+
+/// F16 — a session that fails does not take its neighbours with it, and one session's
+/// cleanup cannot delete another's registration.
+///
+/// ## The shape this pins
+///
+/// The manager holds local PTYs, SSH sessions and serial ports in one registry, keyed by
+/// session id, with shared resources (channels, output buffers, the connection pool) keyed
+/// the same way. That sharing is the whole design — and it is also how one session's
+/// teardown could reach into another if a key were ever derived from something less
+/// specific than the id.
+///
+/// The assertions are deliberately about the **other** sessions: what the failed one did
+/// to itself is covered elsewhere, and a test that only watched the failing session would
+/// pass on an implementation that removed everything.
+#[tokio::test]
+async fn a_failing_session_leaves_its_neighbours_registered_and_working() {
+    let manager = SessionManager::new();
+
+    let (healthy_a, _probe_a) = fake_local_session("f16-a", true);
+    let (healthy_b, _probe_b) = fake_local_session("f16-b", true);
+    let (doomed, _probe_doomed) = fake_local_session("f16-doomed", true);
+
+    for session in [&healthy_a, &healthy_b, &doomed] {
+        assert!(
+            manager
+                .register_session(SessionState::Local(session.clone()))
+                .await,
+            "every session must register"
+        );
+    }
+    assert_eq!(manager.len().await, 3);
+
+    // One session fails. In the product this is a reader error or a child exit; here the
+    // removal path is the one both go through.
+    manager
+        .remove_session("f16-doomed")
+        .await
+        .expect("removing a registered session must succeed");
+
+    assert_eq!(
+        manager.len().await,
+        2,
+        "exactly one session may disappear; a bulk removal here would be the defect"
+    );
+
+    /*
+     * The neighbours are not merely counted — they are still addressable by id and still
+     * report themselves alive. A registry that kept a dangling entry would satisfy the
+     * count above.
+     */
+    for id in ["f16-a", "f16-b"] {
+        let session = manager
+            .get_session(id)
+            .await
+            .unwrap_or_else(|| panic!("{id} must still be registered after a neighbour failed"));
+        assert!(session.is_alive(), "{id} must still be alive");
+    }
+
+    remove_test_sessions(
+        &manager,
+        &["f16-a".to_string(), "f16-b".to_string()],
+    )
+    .await;
+    assert_eq!(registry_counts(&manager).await, (0, 0, 0));
+}
+
+/// The same rule with the *shared* registries: a session id's channel and metadata belong
+/// to that id alone.
+#[tokio::test]
+async fn removing_one_session_does_not_clear_another_sessions_channel() {
+    let manager = SessionManager::new();
+    let (first, _probe_first) = fake_local_session("f16-channel-a", true);
+    let (second, _probe_second) = fake_local_session("f16-channel-b", true);
+    manager
+        .register_session(SessionState::Local(first))
+        .await;
+    manager
+        .register_session(SessionState::Local(second))
+        .await;
+
+    assert!(manager
+        .channel_manager
+        .get_channel("f16-channel-a")
+        .await
+        .is_some());
+    assert!(manager
+        .channel_manager
+        .get_channel("f16-channel-b")
+        .await
+        .is_some());
+
+    manager
+        .remove_session("f16-channel-a")
+        .await
+        .expect("removal must succeed");
+
+    assert!(
+        manager
+            .channel_manager
+            .get_channel("f16-channel-b")
+            .await
+            .is_some(),
+        "the surviving session's channel must not be cleared with its neighbour's"
+    );
+    assert!(
+        manager
+            .channel_manager
+            .get_channel("f16-channel-a")
+            .await
+            .is_none(),
+        "the removed session's channel must be gone"
+    );
+    remove_test_sessions(&manager, &["f16-channel-b".to_string()]).await;
+}
