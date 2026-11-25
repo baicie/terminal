@@ -116,3 +116,18 @@ connect jump host failed: Connection reset by peer (os error 54)
 但「每个场景在真实后端上产生预期 diagnosis」一条都还没有被真实运行证明。
 不得因为表写好了就记 PASS。
 
+## 本轮之后的更新（F09–F22）
+
+上表是 F03 建立时的基线。以下是本轮实际推进的部分，其余各行保持原状——不改写历史。
+
+| 行 | 之前 | 现在 | 依据 |
+| --- | --- | --- | --- |
+| SSH11 诊断 | `UNIT_VERIFIED` | `UNIT_VERIFIED` + **真实双跳归因** | `enforce_credential_deadline` 修好前，跳板拒绝会被重试 6 次且 `diagnosis` 为 null |
+| SSH12–14 | `REAL_RUST_VERIFIED`，不在 CI | **进 CI 且阻塞合并** | `real-ssh-jump` job |
+| SSH16 多目标隔离 | `NOT_RUN` | **REAL_RUST_VERIFIED** | `four_machines_keep_their_own_identity` |
+| SSH19 永久失败 | 只有直连 | 双跳场景表已编排；`TUNNEL_OPEN_FAILED` 真机通过 | `terminal-smoke-failure-scenarios.mjs` |
+| SSH20 阶梯 | 纯函数 | 纯函数 + 真实耗尽计数（`attempts` 有生产者了） | F10 |
+| 全部 | 无 GUI 失败用例 | `e2e-07` 已编写 | 真机 `NOT_RUN`，CI 首次执行 |
+
+**`NATIVE_GUI_VERIFIED` 仍然没有任何一行达到**：`e2e-07` 需要真实 WebView，本会话
+跑不了。在 CI 的 macOS GUI job 跑过之前，这一列保持空白。
