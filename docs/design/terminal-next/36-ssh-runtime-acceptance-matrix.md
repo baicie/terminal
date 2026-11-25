@@ -136,7 +136,7 @@ connect jump host failed: Connection reset by peer (os error 54)
 | 1 | `89718bd` | 从未进入 Hosts 路由，按钮只有 `["Local","Vaults","Ctrl+K"]` | 否，用例没写对 |
 | 2 | `5c41a18` | 等到「页面里有错误字样」1.6 秒即满足，满足它的是主机列表本身 | 否，断言太宽 |
 | 3 | `90967c1`/`8c9c316` | 等 `terminal-error-overlay` 超时，页面里却有说明 | **是**，见下 |
-| 4 | `8daf0bb` | 待测 | — |
+| 4 | `8daf0bb` / `9f9e3bd` | **两条 case 全部通过** | 见下 |
 
 第三轮是这一列第一次对上产品。页面上的实际文本：
 
@@ -154,6 +154,23 @@ connection failed: connect host-key probe failed: Connection refused (os error 6
 断言两层真实顺序（预检失败 → 浮层；预检通过、会话被拒 → 终端浮层，用第二台 sshd
 配一把它不认的私钥构造）。
 
-**`NATIVE_GUI_VERIFIED` 仍不能填。** 在 `8daf0bb` 的 macOS GUI job 出结果之前，
-这一列保持空白 —— 前三轮的教训正是「写了用例」和「用例在真机上证明了一件事」之间
-隔着三处错误。
+### 第四轮：通过，`NATIVE_GUI_VERIFIED` 首次成立
+
+`9f9e3bd` 的 Native GUI E2E：
+
+| 平台 | e2e-07 | 用例 |
+| --- | --- | --- |
+| macOS（阻塞） | **PASS**，`notRunCount: 0` | 两条都 ✓ |
+| Linux（informational） | **PASS**，`notRunCount: 0` | 两条都 ✓ |
+
+```
+✓ names the step that failed when the server does not answer
+✓ renders a reason in the terminal pane when the session is refused
+```
+
+第二条不是空转：它要求 `GUI_E2E_REJECTING_LABEL` 存在，否则记 NOT_RUN 并声明 gap。
+`notRunCount: 0` 说明它真的点了 `E2E Rejecting` 那张卡并等到终端浮层挂载。
+
+**`NATIVE_GUI_VERIFIED` 现在有证据了**，依据是这两条 case 在真实 WebView 上跑过，
+不是「写了用例」。它覆盖的是「失败原因显示在面板里」这一个最小闭环，**不是** SSH
+全部行——矩阵其余各行仍是原状态。
