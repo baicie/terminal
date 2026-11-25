@@ -71,6 +71,7 @@ export function runSshHostKeyGateProbe(
       status: 'error',
       role: 'host',
       error: 'Host info required for remote connection',
+      failure: 'configuration',
     })
     return
   }
@@ -79,6 +80,7 @@ export function runSshHostKeyGateProbe(
       status: 'error',
       role: 'jump',
       error: 'Configured jump host could not be resolved',
+      failure: 'configuration',
     })
     return
   }

@@ -23,7 +23,7 @@
 // as a failing spec rather than a silent empty list.
 
 import { execFile, spawn } from 'node:child_process'
-import { chmod, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { connect, createServer } from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
@@ -559,7 +559,24 @@ export async function mintRejectedKey(home) {
   const keyPath = path.join(home, 'rejected_user_key')
   await mkdir(path.dirname(keyPath), { recursive: true })
   try {
-    await execFileAsync(keygen, ['-q', '-t', 'ed25519', '-N', '', '-f', keyPath])
+    /*
+     * ## `-f` on an existing path is an interactive prompt, not an error
+     *
+     * Measured: `ssh-keygen -q -t ed25519 -N '' -f <existing>` prints
+     * `already exists. Overwrite (y/n)?` and waits on stdin. `execFile` gives the child
+     * a stdin pipe nothing ever writes or closes, so the promise never settles — the
+     * harness hangs before a single spec starts, with no timeout to turn it into the
+     * declared NOT_RUN. `rm -f` first makes the flag mean what this function assumes.
+     *
+     * The path is normally fresh (the runner derives it from pid + time), so this is a
+     * latent hazard rather than an observed failure; the timeout is the second belt.
+     */
+    await rm(keyPath, { force: true })
+    await rm(`${keyPath}.pub`, { force: true })
+    await execFileAsync(keygen, ['-q', '-t', 'ed25519', '-N', '', '-f', keyPath], {
+      timeout: 15_000,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
     await chmod(keyPath, 0o600)
     return keyPath
   } catch {

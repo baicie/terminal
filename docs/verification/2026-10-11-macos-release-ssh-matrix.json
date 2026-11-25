@@ -1,8 +1,8 @@
 {
-  "recordedAt": "2026-11-25T16:34:51.811Z",
+  "recordedAt": "2026-11-25T18:19:14.000Z",
   "recordedDate": "2026-11-25",
   "kind": "tauri-release-ssh-and-shell-matrix",
-  "why": "Release artifact e645e56076075479033518c519fdf49266007e25834f1c0bd16e14ec6eba10dc was built and measured by GitHub Actions run 45650550577 attempt 1 at commit 75e87654eab1d8d957d7903031c6a6b335a1b313; this records the 8-case authentication matrix the gate requires, on that artifact.",
+  "why": "Release artifact 80361d4708b8f9a4d642ff6b101bf4da989ee4bb5b1feb745c9b239fb6c4b6b6 was built and measured by GitHub Actions run 45671757983 attempt 1 at commit bdd3b5104896831a710fc9deaa5ecb54a84fb54f; this records the 8-case authentication matrix the gate requires, on that artifact.",
   "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --no-bundle && pnpm smoke:ssh-matrix --reuse-binary --release key,key-reconnect,agent,agent-reconnect,cert,cert-reconnect,jump,jump-reconnect",
   "environment": {
     "os": "macOS 26.7.2",
@@ -11,13 +11,13 @@
   },
   "revision": {
     "head": "",
-    "commit": "75e8765",
+    "commit": "bdd3b51",
     "dirtyWorktree": false
   },
   "build": {
     "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --no-bundle",
     "binary": "src-tauri/target/release/terminal",
-    "sha256": "e645e56076075479033518c519fdf49266007e25834f1c0bd16e14ec6eba10dc",
+    "sha256": "80361d4708b8f9a4d642ff6b101bf4da989ee4bb5b1feb745c9b239fb6c4b6b6",
     "devServerRequired": false,
     "smokeInstrumented": true
   },
@@ -26,72 +26,72 @@
     "passed": 8,
     "failed": 0,
     "firstConnectionMsRange": [
-      3407,
-      4293
+      1510,
+      1771
     ],
     "cases": [
       {
         "name": "key",
         "ok": true,
-        "binarySha256": "e645e56076075479033518c519fdf49266007e25834f1c0bd16e14ec6eba10dc",
-        "firstConnectionMs": 4040,
-        "durationMs": 13486,
+        "binarySha256": "80361d4708b8f9a4d642ff6b101bf4da989ee4bb5b1feb745c9b239fb6c4b6b6",
+        "firstConnectionMs": 1676,
+        "durationMs": 5389,
         "uniqueSessionCount": 10
       },
       {
         "name": "key-reconnect",
         "ok": true,
-        "binarySha256": "e645e56076075479033518c519fdf49266007e25834f1c0bd16e14ec6eba10dc",
-        "firstConnectionMs": 4293,
-        "durationMs": 15107,
+        "binarySha256": "80361d4708b8f9a4d642ff6b101bf4da989ee4bb5b1feb745c9b239fb6c4b6b6",
+        "firstConnectionMs": 1713,
+        "durationMs": 6012,
         "uniqueSessionCount": 11
       },
       {
         "name": "agent",
         "ok": true,
-        "binarySha256": "e645e56076075479033518c519fdf49266007e25834f1c0bd16e14ec6eba10dc",
-        "firstConnectionMs": 3738,
-        "durationMs": 12018,
+        "binarySha256": "80361d4708b8f9a4d642ff6b101bf4da989ee4bb5b1feb745c9b239fb6c4b6b6",
+        "firstConnectionMs": 1710,
+        "durationMs": 5372,
         "uniqueSessionCount": 10
       },
       {
         "name": "agent-reconnect",
         "ok": true,
-        "binarySha256": "e645e56076075479033518c519fdf49266007e25834f1c0bd16e14ec6eba10dc",
-        "firstConnectionMs": 3792,
-        "durationMs": 12695,
+        "binarySha256": "80361d4708b8f9a4d642ff6b101bf4da989ee4bb5b1feb745c9b239fb6c4b6b6",
+        "firstConnectionMs": 1717,
+        "durationMs": 6337,
         "uniqueSessionCount": 11
       },
       {
         "name": "cert",
         "ok": true,
-        "binarySha256": "e645e56076075479033518c519fdf49266007e25834f1c0bd16e14ec6eba10dc",
-        "firstConnectionMs": 3558,
-        "durationMs": 12436,
+        "binarySha256": "80361d4708b8f9a4d642ff6b101bf4da989ee4bb5b1feb745c9b239fb6c4b6b6",
+        "firstConnectionMs": 1510,
+        "durationMs": 5136,
         "uniqueSessionCount": 10
       },
       {
         "name": "cert-reconnect",
         "ok": true,
-        "binarySha256": "e645e56076075479033518c519fdf49266007e25834f1c0bd16e14ec6eba10dc",
-        "firstConnectionMs": 4168,
-        "durationMs": 14654,
+        "binarySha256": "80361d4708b8f9a4d642ff6b101bf4da989ee4bb5b1feb745c9b239fb6c4b6b6",
+        "firstConnectionMs": 1615,
+        "durationMs": 5693,
         "uniqueSessionCount": 11
       },
       {
         "name": "jump",
         "ok": true,
-        "binarySha256": "e645e56076075479033518c519fdf49266007e25834f1c0bd16e14ec6eba10dc",
-        "firstConnectionMs": 3407,
-        "durationMs": 13708,
+        "binarySha256": "80361d4708b8f9a4d642ff6b101bf4da989ee4bb5b1feb745c9b239fb6c4b6b6",
+        "firstConnectionMs": 1750,
+        "durationMs": 6685,
         "uniqueSessionCount": 10
       },
       {
         "name": "jump-reconnect",
         "ok": true,
-        "binarySha256": "e645e56076075479033518c519fdf49266007e25834f1c0bd16e14ec6eba10dc",
-        "firstConnectionMs": 3866,
-        "durationMs": 14801,
+        "binarySha256": "80361d4708b8f9a4d642ff6b101bf4da989ee4bb5b1feb745c9b239fb6c4b6b6",
+        "firstConnectionMs": 1771,
+        "durationMs": 7947,
         "uniqueSessionCount": 11
       }
     ]
@@ -104,12 +104,12 @@
   ],
   "provenance": {
     "source": "github-actions",
-    "runId": "45650550577",
+    "runId": "45671757983",
     "runAttempt": "1",
     "workflow": "Real-machine terminal matrix",
     "job": "macos-ssh-matrix",
-    "commit": "75e87654eab1d8d957d7903031c6a6b335a1b313",
-    "fingerprint": "00d7a5121e0ad2e1c2cb62d780e64607745c1c72a806d3fdfab425909f06a611",
+    "commit": "bdd3b5104896831a710fc9deaa5ecb54a84fb54f",
+    "fingerprint": "cefdaf4a043c7101a48a4e20df1431d6057499d7b3fdc148c7bcffdbebb22b29",
     "runner": {
       "os": "macOS",
       "arch": "ARM64"

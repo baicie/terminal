@@ -173,6 +173,7 @@ describe('classifying a failed SSH host-key preflight', () => {
       'known-hosts',
       'deadline',
       'input',
+      'configuration',
     ] as const
     for (const step of steps) {
       expect(SSH_HOST_KEY_FAILURE_KEYS[step]).toMatch(/^terminal\./)

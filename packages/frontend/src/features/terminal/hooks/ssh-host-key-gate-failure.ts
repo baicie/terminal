@@ -43,6 +43,16 @@ export type SshHostKeyGateFailure =
   | 'deadline'
   /** A local input problem: bad host name, unparsable key material. */
   | 'input'
+  /**
+   * The connection could not be attempted at all: the row is incomplete, or it points
+   * at a jump host that no longer exists.
+   *
+   * Reachable without any network: deleting a bastion leaves every host that referenced
+   * it with a dangling `jumpHostId`, because the column has no foreign key and nothing
+   * clears it. Those hosts then rendered "Could not verify the SSH host key" — the one
+   * sentence this round exists to stop showing for a problem it does not describe.
+   */
+  | 'configuration'
 
 /**
  * Phrases that mean "the connection never got an answer".

@@ -1800,7 +1800,23 @@ impl SshSession {
                     })
                 })
             } else {
-                enforce_authentication_deadline(
+                /*
+                 * ## The direct path needs the credential-preserving wrapper too
+                 *
+                 * This was the last call site still using the generic wrapper, which
+                 * maps every inner error — refusals included — to
+                 * `AuthenticationTransportFailed`. The consequence was the one F09
+                 * removed from the jump path, still live here: a wrong password on a
+                 * **direct** connection retried five times with backoff and then
+                 * re-offered the refused credential every 30 s, because the frontend
+                 * classifier reads `authentication_transport_failed` as retryable.
+                 *
+                 * Found by an independent review of `e2e-07`, whose second case seeds
+                 * exactly this shape and took ~15 s of ladder before its overlay
+                 * mounted — long enough to pass a 60 s wait without ever proving a
+                 * credential was refused.
+                 */
+                enforce_credential_deadline(
                     stage_deadline(deadline, SSH_AUTH_TIMEOUT),
                     "authenticate SSH user",
                     Self::authenticate(&mut direct, username, password, private_key, certificate),
@@ -2922,6 +2938,20 @@ async fn enforce_credential_deadline<T>(
     }
 }
 
+/*
+ * ## Kept, but test-only
+ *
+ * Every production call site now uses `enforce_credential_deadline`: this generic
+ * wrapper maps *every* inner error — refusals included — to
+ * `AuthenticationTransportFailed`, which is what made a wrong password on a direct
+ * connection retry five times and then re-offer the refused credential every 30 s.
+ *
+ * It is not deleted because two tests still describe its deadline contract (the timeout
+ * arm is correct and shared in spirit with its replacement), and because deleting it
+ * would remove the only written record of what the generic wrapper did. `cfg(test)`
+ * says plainly that nothing in the product calls it.
+ */
+#[cfg(test)]
 async fn enforce_authentication_deadline<T, E>(
     deadline: tokio::time::Instant,
     operation: &'static str,
@@ -3970,6 +4000,45 @@ mod tests {
             ),
             Ok(()) => panic!("the inner future failed, so this must be an error"),
         }
+    }
+
+    /// The direct path must use the credential-preserving wrapper, not the generic one.
+    ///
+    /// ## Why this is a source-level assertion
+    ///
+    /// The wrapper itself was already tested and correct — what was wrong was *which
+    /// wrapper the direct connection called*. Measured before the fix: a wrong password
+    /// on a direct connection came back as `AuthenticationTransportFailed`, the frontend
+    /// classified it `retryable: true / recovery: 'automatic'`, and the pane ran the
+    /// full five-attempt ladder plus a 30 s recovery timer that re-offered a credential
+    /// the server had already refused. That is the exact behaviour F09 removed from the
+    /// jump path; this one had never been fixed.
+    ///
+    /// A unit test cannot reach it: `enforce_credential_deadline` was right the whole
+    /// time. So the assertion is on the call site — the one line whose absence of
+    /// `enforce_credential_deadline` was the defect.
+    #[test]
+    fn the_direct_authentication_path_preserves_credential_refusals() {
+        let source = include_str!("ssh.rs");
+        let direct = source
+            .split("Self::authenticate(&mut direct")
+            .next()
+            .expect("the direct authentication call must exist");
+        let tail = &direct[direct.len().saturating_sub(400)..];
+        assert!(
+            tail.contains("enforce_credential_deadline("),
+            "the direct path must wrap authentication in enforce_credential_deadline; \
+             the generic wrapper turns a refusal into a retryable transport failure. \
+             Nearest wrapper before the call: {:?}",
+            tail.lines()
+                .rev()
+                .find(|line| line.contains("enforce_"))
+                .unwrap_or("<none>")
+        );
+        assert!(
+            !tail.contains("enforce_authentication_deadline("),
+            "the generic wrapper must not be used on the direct authentication path"
+        );
     }
 
     /// The host-key refusal is the other kind that must survive: it is equally terminal

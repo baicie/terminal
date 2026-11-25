@@ -30,5 +30,5 @@ export default {
   'terminal.hostKeyJumpAuthenticationFailed': "L'hôte de rebond a refusé les identifiants",
   'terminal.hostKeyKnownHostsFailed': 'Impossible de lire ou de mettre à jour known_hosts',
   'terminal.hostKeyDeadline': "Le délai de connexion a expiré avant la vérification de la clé d'hôte",
-  'terminal.hostKeyInputRejected': "L'hôte ou la clé a été refusé avant la connexion",
+  'terminal.hostKeyInputRejected': "L'hôte ou la clé a été refusé avant la connexion",  'terminal.hostKeyConfiguration': "La configuration de l'hôte est incomplète ou pointe vers un hôte de rebond supprimé",
 }

@@ -434,8 +434,25 @@ if (fixture !== null && specFiles.length > 0) {
         rejectingLabel = 'E2E Rejecting'
       }
     }
-    fixture.rejectingLabel = fixture.rejectingLabel ?? rejectingLabel
+    /*
+     * ## The env var carries the label only if EVERY profile got the row
+     *
+     * `GUI_E2E_REJECTING_LABEL` is one value for the whole run, but the row is written
+     * per profile. Taking the first profile's success (`?? rejectingLabel`) decouples
+     * the two decisions: one profile whose key mint failed — ENOSPC, EACCES on that one
+     * home — leaves the spec clicking a card its own profile does not hold, and it then
+     * fails with "the seeded host card never appeared" instead of recording NOT_RUN
+     * against the declared gap. That is the confusion the gap exists to avoid.
+     *
+     * All-or-nothing makes the env var mean "the row is everywhere", which is the only
+     * claim a single global value can honestly carry.
+     */
+    fixture.rejectingLabels ??= []
+    fixture.rejectingLabels.push(rejectingLabel)
   }
+  fixture.rejectingLabel = fixture.rejectingLabels?.every(label => label !== null)
+    ? 'E2E Rejecting'
+    : null
   log(`seeded ${fixture.seededProfiles.length} per-spec profile(s)`)
 }
 
