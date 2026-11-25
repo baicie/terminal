@@ -23,4 +23,10 @@ export default {
   'terminal.hostKeyChecking': '正在检查 SSH 主机密钥...',
   'terminal.hostKeyVerifyFailed': '无法验证 SSH 主机密钥',
   'terminal.hostKeyFailed': '主机密钥验证失败。请检查 known_hosts。',
+  'terminal.hostKeyUnreachable': '服务器没有响应',
+  'terminal.hostKeyHandshakeFailed': '服务器有响应，但没有返回可用的 SSH 主机密钥',
+  'terminal.hostKeyJumpAuthenticationFailed': '跳板机拒绝了该凭据',
+  'terminal.hostKeyKnownHostsFailed': '无法读取或写入 known_hosts',
+  'terminal.hostKeyDeadline': '在检查主机密钥之前，连接时限已用尽',
+  'terminal.hostKeyInputRejected': '主机或密钥取值在连接前即被拒绝',
 }

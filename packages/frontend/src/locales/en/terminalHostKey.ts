@@ -24,4 +24,10 @@ export default {
   'terminal.hostKeyChecking': 'Checking SSH host key...',
   'terminal.hostKeyVerifyFailed': 'Could not verify the SSH host key',
   'terminal.hostKeyFailed': 'Host key verification failed. Check known_hosts.',
+  'terminal.hostKeyUnreachable': 'The server did not answer',
+  'terminal.hostKeyHandshakeFailed': 'The server answered, but not with a usable SSH host key',
+  'terminal.hostKeyJumpAuthenticationFailed': 'The jump host refused the credential',
+  'terminal.hostKeyKnownHostsFailed': 'known_hosts could not be read or updated',
+  'terminal.hostKeyDeadline': 'The connection deadline passed before the host key could be checked',
+  'terminal.hostKeyInputRejected': 'The host or key values were rejected before connecting',
 }
