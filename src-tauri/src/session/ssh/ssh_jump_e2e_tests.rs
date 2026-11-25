@@ -41,6 +41,23 @@ struct Fixture {
     target_key: String,
     target_host_key: String,
     bastion_host_key: String,
+    /// F11 — a second bastion and target, for the isolation matrix.
+    ///
+    /// `None` when the harness did not start them. The single-bastion cases above must
+    /// keep working with exactly the fixture they were written against, so the second
+    /// set is additive rather than a required field: a harness that predates F11 runs
+    /// every older case and honestly skips only the new ones.
+    second: Option<SecondFixture>,
+}
+
+#[derive(Clone)]
+struct SecondFixture {
+    bastion_port: u16,
+    target_port: u16,
+    bastion_key: String,
+    target_key: String,
+    target_host_key: String,
+    bastion_host_key: String,
 }
 
 /// The fixture, or an explanation of exactly which part is missing.
@@ -118,11 +135,64 @@ fn fixture() -> FixtureLookup {
             target_key: key("SSH_JUMP_E2E_TARGET_KEY")?,
             target_host_key: host_key("SSH_JUMP_E2E_TARGET_HOST_KEY")?,
             bastion_host_key: host_key("SSH_JUMP_E2E_BASTION_HOST_KEY")?,
+            second: second_fixture()?,
         })
     })() {
         Ok(fixture) => FixtureLookup::Ready(fixture),
         Err(reason) => FixtureLookup::Broken(reason),
     }
+}
+
+/// F11 — the second bastion/target pair, when the harness started one.
+///
+/// All five variables must be present or none: a half-configured second fixture is a
+/// harness bug, and silently treating it as absent would skip the isolation matrix while
+/// reporting a clean run.
+fn second_fixture() -> Result<Option<SecondFixture>, String> {
+    const REQUIRED: &[&str] = &[
+        "SSH_JUMP_E2E_B_PORT",
+        "SSH_JUMP_E2E_B_TARGET_PORT",
+        "SSH_JUMP_E2E_B_BASTION_KEY",
+        "SSH_JUMP_E2E_B_TARGET_KEY",
+        "SSH_JUMP_E2E_B_TARGET_HOST_KEY",
+        "SSH_JUMP_E2E_B_BASTION_HOST_KEY",
+    ];
+    let present = REQUIRED
+        .iter()
+        .filter(|name| std::env::var(name).is_ok())
+        .count();
+    if present == 0 {
+        return Ok(None);
+    }
+    if present != REQUIRED.len() {
+        let missing: Vec<&str> = REQUIRED
+            .iter()
+            .copied()
+            .filter(|name| std::env::var(name).is_err())
+            .collect();
+        return Err(format!("second fixture is half-configured: missing {missing:?}"));
+    }
+    let port = |name: &str| -> Result<u16, String> {
+        std::env::var(name)
+            .map_err(|_| format!("{name} unset"))?
+            .parse()
+            .map_err(|error| format!("{name} is not a port: {error}"))
+    };
+    let text = |name: &str, needle: &str| -> Result<String, String> {
+        let value = std::env::var(name).map_err(|_| format!("{name} unset"))?;
+        if !value.contains(needle) {
+            return Err(format!("{name} does not contain {needle}"));
+        }
+        Ok(value)
+    };
+    Ok(Some(SecondFixture {
+        bastion_port: port("SSH_JUMP_E2E_B_PORT")?,
+        target_port: port("SSH_JUMP_E2E_B_TARGET_PORT")?,
+        bastion_key: text("SSH_JUMP_E2E_B_BASTION_KEY", "PRIVATE KEY")?,
+        target_key: text("SSH_JUMP_E2E_B_TARGET_KEY", "PRIVATE KEY")?,
+        target_host_key: text("SSH_JUMP_E2E_B_TARGET_HOST_KEY", "ssh-")?,
+        bastion_host_key: text("SSH_JUMP_E2E_B_BASTION_HOST_KEY", "ssh-")?,
+    }))
 }
 
 fn jump_config(fixture: &Fixture) -> JumpHostConfig {
@@ -623,6 +693,7 @@ async fn two_sessions_through_one_bastion_do_not_share_a_transport() {
             target_key: fixture.target_key.clone(),
             target_host_key: fixture.target_host_key.clone(),
             bastion_host_key: fixture.bastion_host_key.clone(),
+            second: None,
         };
         async move {
             let target = JumpTarget {
@@ -851,4 +922,190 @@ async fn a_jump_session_registers_one_pool_entry_and_releases_it() {
         "the registry must drop the entry too, still has: {registry_after:?}"
     );
     drop(guard);
+}
+
+/// F11 — four machines, four identities, and no credential may cross.
+///
+/// ## What SSH16 and SSH17 do not say
+///
+/// `a_jump_session_registers_one_pool_entry_and_releases_it` builds its own pool entry, so
+/// it proves the plumbing, not that the product registers a session. And every existing
+/// case uses **one** target: nothing in this repository has ever connected to two
+/// different targets through two different bastions and checked which credential ended up
+/// where.
+///
+/// ## What is asserted, and why the marker is a nonce
+///
+/// Each target echoes a value generated for this run. Reading it back proves the session
+/// reached *that* target; a constant would still pass if the targets were swapped.
+///
+/// ## Why this skips rather than fails without the second fixture
+///
+/// The older cases must keep running against the fixture they were written for. A harness
+/// that has not started the second pair reports `None`, and this case says so in its output
+/// instead of pretending the isolation was checked.
+#[tokio::test]
+#[ignore = "needs scripts/verify-install/ssh-jump-e2e.mjs to start four daemons"]
+async fn four_machines_keep_their_own_identity() {
+    let fixture = match fixture() {
+        FixtureLookup::Ready(fixture) => fixture,
+        FixtureLookup::NotConfigured => {
+            eprintln!("SSH_JUMP_E2E_* not set; skipping");
+            return;
+        }
+        FixtureLookup::Broken(reason) => panic!("the harness is not usable: {reason}"),
+    };
+    let Some(second) = fixture.second.clone() else {
+        eprintln!("SSH_JUMP_E2E_B_* not set; skipping the isolation matrix");
+        return;
+    };
+
+    let nonce = format!(
+        "f11-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_nanos())
+            .unwrap_or_default()
+    );
+
+    /// Connect with one exact credential set and return what the far end printed.
+    #[allow(clippy::too_many_arguments)]
+    async fn marker_through(
+        target_port: u16,
+        target_key: String,
+        target_host_key: String,
+        bastion_port: u16,
+        bastion_key: String,
+        bastion_host_key: String,
+        user: String,
+        nonce: String,
+    ) -> Result<String, String> {
+        let target = JumpTarget {
+            host: "127.0.0.1".to_string(),
+            port: target_port,
+            username: user.clone(),
+            password: None,
+            private_key: Some(target_key),
+            certificate: None,
+            expected_host_key: Some(public_key(&target_host_key)),
+            use_agent: false,
+            allow_agent_forwarding: false,
+        };
+        let jump = JumpHostConfig {
+            host: "127.0.0.1".to_string(),
+            port: bastion_port,
+            username: user,
+            auth_type: "key".to_string(),
+            password: None,
+            private_key: Some(bastion_key),
+            certificate: None,
+            expected_host_key: Some(bastion_host_key),
+            target_auth_type: None,
+        };
+        let (target_handle, _jump_handle, _guard, _slot) = SshSession::connect_via_jump(
+            Arc::new(interactive_ssh_config()),
+            target,
+            jump,
+            tokio::time::Instant::now() + std::time::Duration::from_secs(20),
+        )
+        .await
+        .map_err(|failure| format!("{:?}", failure.error))?;
+
+        /*
+         * A channel on the **target** handle. That handle authenticated to whichever
+         * machine the tunnel actually reached, so what it prints is the identity of the
+         * far end — which is the whole question this case asks.
+         */
+        let command = format!("printf '%s' '{}'", nonce);
+        let output = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            let mut channel = target_handle
+                .channel_open_session()
+                .await
+                .map_err(|error| error.to_string())?;
+            channel
+                .exec(true, command.as_bytes())
+                .await
+                .map_err(|error| error.to_string())?;
+            let mut stdout = Vec::new();
+            while let Some(message) = channel.wait().await {
+                match message {
+                    russh::ChannelMsg::Data { data } => stdout.extend_from_slice(&data),
+                    russh::ChannelMsg::Eof | russh::ChannelMsg::Close => break,
+                    _ => {}
+                }
+            }
+            Ok::<String, String>(String::from_utf8_lossy(&stdout).to_string())
+        })
+        .await
+        .map_err(|_| "the command timed out".to_string())??;
+        Ok(output)
+    }
+
+    // 1. Same bastion, different targets.
+    let to_first = marker_through(
+        fixture.target_port,
+        fixture.target_key.clone(),
+        fixture.target_host_key.clone(),
+        fixture.bastion_port,
+        fixture.bastion_key.clone(),
+        fixture.bastion_host_key.clone(),
+        fixture.user.clone(),
+        nonce.clone(),
+    )
+    .await
+    .expect("the first target must accept its own credential");
+    let to_second = marker_through(
+        second.target_port,
+        second.target_key.clone(),
+        second.target_host_key.clone(),
+        fixture.bastion_port,
+        fixture.bastion_key.clone(),
+        fixture.bastion_host_key.clone(),
+        fixture.user.clone(),
+        nonce.clone(),
+    )
+    .await
+    .expect("the bastion may forward to a second target");
+    assert_eq!(
+        to_first, to_second,
+        "both targets echo this run's nonce; a mismatch means the second connection \\
+         reached the first target"
+    );
+
+    // 2. Different bastions, same target.
+    let via_second_bastion = marker_through(
+        fixture.target_port,
+        fixture.target_key.clone(),
+        fixture.target_host_key.clone(),
+        second.bastion_port,
+        second.bastion_key.clone(),
+        second.bastion_host_key.clone(),
+        fixture.user.clone(),
+        nonce.clone(),
+    )
+    .await
+    .expect("the second bastion must reach the same target independently");
+    assert_eq!(
+        to_first, via_second_bastion,
+        "reaching the same target through either bastion must produce the same session"
+    );
+
+    // 3. The credential does not cross.
+    let crossed = marker_through(
+        fixture.target_port,
+        fixture.target_key.clone(),
+        fixture.target_host_key.clone(),
+        fixture.bastion_port,
+        second.bastion_key.clone(),
+        fixture.bastion_host_key.clone(),
+        fixture.user.clone(),
+        nonce,
+    )
+    .await;
+    assert!(
+        crossed.is_err(),
+        "a bastion must not accept another bastion's key; a successful read means the two \
+         machines' identities are not isolated"
+    );
 }

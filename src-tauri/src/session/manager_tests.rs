@@ -452,3 +452,50 @@ async fn a_panicking_removal_listener_does_not_abort_the_others() {
     );
     assert_eq!(registry_counts(&manager).await, (0, 0, 0));
 }
+
+/// F09 — `shutdown()` must not deadlock on the lock `close_all()` needs.
+///
+/// ## The defect this pins
+///
+/// `shutdown` took `self.lifecycle.lock()` and then called `close_all`, which takes the
+/// same `tokio::sync::Mutex`. That mutex is not reentrant, so the second `lock()` waited
+/// on a guard the same task was holding — forever.
+///
+/// Measured through the product smoke harness before the fix: the app logged
+/// `terminal smoke finalized ok=true stage=failure-observed`, then sat for the harness's
+/// full 210-second deadline without exiting. Every earlier smoke case also went through
+/// this path, but they finish by *connecting* and the assertion passes on the result file,
+/// so the hang only became visible once a case ended in an error state that still counts
+/// as a pass.
+///
+/// The timeout is what makes this a test rather than another hang: without it a
+/// regression here would stall the whole Rust suite instead of failing one case.
+#[tokio::test]
+async fn shutdown_completes_instead_of_deadlocking_on_its_own_lifecycle_lock() {
+    let manager = SessionManager::new();
+
+    tokio::time::timeout(Duration::from_secs(2), manager.shutdown())
+        .await
+        .expect("shutdown deadlocked: it holds the lifecycle mutex while close_all needs it");
+}
+
+/// The same invariant with work to do, so the case above cannot pass on an empty registry.
+#[tokio::test]
+async fn shutdown_completes_with_a_registered_session() {
+    let manager = SessionManager::new();
+    let (session, _probe) = fake_local_session("shutdown-with-a-session", true);
+    assert!(
+        manager.register_session(SessionState::Local(session)).await,
+        "registering a fake session must succeed"
+    );
+
+    tokio::time::timeout(Duration::from_secs(2), manager.shutdown())
+        .await
+        .expect("shutdown deadlocked with a session to close");
+
+    assert_eq!(
+        registry_counts(&manager).await,
+        (0, 0, 0),
+        "shutdown must leave every registry empty"
+    );
+}

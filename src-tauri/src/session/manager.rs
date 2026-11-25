@@ -358,6 +358,21 @@ impl SessionManager {
 
     /// Permanently stop accepting sessions and close every registered session.
     pub async fn shutdown(&self) {
+        /*
+         * The guard is **dropped before** `close_all` runs.
+         *
+         * `close_all` takes the same `lifecycle` mutex, and it is a `tokio::sync::Mutex`:
+         * not reentrant. Holding the guard across the call deadlocked shutdown forever —
+         * measured, through the product smoke harness: the app logged
+         * `terminal smoke finalized ok=true stage=failure-observed`, then sat for the
+         * harness's full 210 s deadline without exiting, because the exit path waits for
+         * this cleanup and the cleanup waited for a lock it was already holding.
+         *
+         * The exit path treats an exceeded cleanup deadline as a warning, which is why
+         * this was invisible in the logs: the warning is only reachable if the timeout
+         * fires, and a deadlocked task never returns to be timed out by anything but the
+         * outer harness.
+         */
         {
             let mut lifecycle = self.lifecycle.lock().await;
             lifecycle.closing = true;
