@@ -373,6 +373,32 @@ if (fixture !== null && specFiles.length > 0) {
         port: fixture.secondary.port,
       })
     }
+    /*
+     * F22 — a host that cannot connect, seeded where the app will read it.
+     *
+     * `e2e-07` asserts that a failed connection explains itself in the pane. It needs a
+     * row that *fails*, and the seed above points at a live daemon by design.
+     *
+     * The first version of that case tried to insert its own row at runtime through
+     * `plugin:sql|execute`. Measured on Linux CI: the row never reached the list, so the
+     * case failed before exercising anything — and a row written after the app started
+     * is not how a user's profile comes to hold one anyway.
+     *
+     * The port is closed rather than opened-then-closed so no window exists in which the
+     * connection could succeed. `e2e-07` does not depend on the *reason* being a refused
+     * connection; it depends on the pane saying something.
+     */
+    await seedSftpHost({
+      home: specHome,
+      configDir,
+      privateKeyPath: fixture.userKeyPath,
+      // A port in the ephemeral range that this run never binds. Nothing listens, so a
+      // connect is refused immediately rather than hanging on a black hole.
+      port: 1,
+      username: fixture.username,
+      label: 'E2E Unreachable',
+      hostId: 'e2e-unreachable-host',
+    })
   }
   log(`seeded ${fixture.seededProfiles.length} per-spec profile(s)`)
 }

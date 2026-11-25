@@ -1390,15 +1390,23 @@ pub(in crate::session) mod tests {
         let (mut guard, output_rx) = RealPtyTestGuard::new(resources);
         let mut output = Vec::new();
 
-        receive_pty_output_until(&output_rx, &mut output, format!("\x1eREADY-{nonce}\x1f").as_bytes())
-            .expect("the shell should become ready");
+        receive_pty_output_until(
+            &output_rx,
+            &mut output,
+            format!("\x1eREADY-{nonce}\x1f").as_bytes(),
+        )
+        .expect("the shell should become ready");
 
         // Input reaches the shell, and the shell echoes it back through the PTY.
         guard
             .write(format!("payload-{nonce}\n").as_bytes())
             .expect("writing to the PTY should succeed");
-        receive_pty_output_until(&output_rx, &mut output, format!("\x1eGOT-payload-{nonce}\x1f").as_bytes())
-            .expect("the shell should echo the line it read");
+        receive_pty_output_until(
+            &output_rx,
+            &mut output,
+            format!("\x1eGOT-payload-{nonce}\x1f").as_bytes(),
+        )
+        .expect("the shell should echo the line it read");
 
         // Resize is delivered to the child, which reports it itself.
         guard
@@ -1412,8 +1420,12 @@ pub(in crate::session) mod tests {
             })
             .expect("resizing the PTY should succeed");
         let mut resized = Vec::new();
-        receive_pty_output_until(&output_rx, &mut resized, format!("\x1eDONE-{nonce}\x1f").as_bytes())
-            .expect("the shell should finish after reporting its size");
+        receive_pty_output_until(
+            &output_rx,
+            &mut resized,
+            format!("\x1eDONE-{nonce}\x1f").as_bytes(),
+        )
+        .expect("the shell should finish after reporting its size");
         let text = String::from_utf8_lossy(&resized).to_string();
         assert!(
             text.contains("31 97"),

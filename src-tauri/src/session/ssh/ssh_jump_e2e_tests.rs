@@ -182,7 +182,9 @@ fn second_fixture() -> Result<Option<SecondFixture>, String> {
             .copied()
             .filter(|name| std::env::var(name).is_err())
             .collect();
-        return Err(format!("second fixture is half-configured: missing {missing:?}"));
+        return Err(format!(
+            "second fixture is half-configured: missing {missing:?}"
+        ));
     }
     let port = |name: &str| -> Result<u16, String> {
         std::env::var(name)
@@ -404,10 +406,7 @@ async fn a_bastion_refusal_is_attributed_to_the_bastion() {
      * whether trying again can possibly help, and it is the field the retry decision reads.
      */
     assert!(
-        matches!(
-            failure.error,
-            SessionError::AuthenticationRejected(_)
-        ),
+        matches!(failure.error, SessionError::AuthenticationRejected(_)),
         "a refused credential must stay terminal, not become a retryable transport \
          fault: {:?}",
         failure.error
@@ -1340,7 +1339,10 @@ async fn repeated_connect_and_disconnect_returns_to_a_clean_baseline() {
         )
         .await
         .unwrap_or_else(|failure| {
-            panic!("round {round} must connect: hop={:?} stage={:?} {:?}", failure.hop, failure.stage, failure.error)
+            panic!(
+                "round {round} must connect: hop={:?} stage={:?} {:?}",
+                failure.hop, failure.stage, failure.error
+            )
         });
 
         disconnect_jump_connections_with_shutdown(

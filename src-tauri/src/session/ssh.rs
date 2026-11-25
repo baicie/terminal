@@ -2913,8 +2913,9 @@ async fn enforce_credential_deadline<T>(
             "{operation} timed out before its deadline"
         ))),
         Ok(Ok(value)) => Ok(value),
-        Ok(Err(rejected @ (SessionError::AuthenticationRejected(_)
-        | SessionError::HostKeyRejected(_)))) => Err(rejected),
+        Ok(Err(
+            rejected @ (SessionError::AuthenticationRejected(_) | SessionError::HostKeyRejected(_)),
+        )) => Err(rejected),
         Ok(Err(other)) => Err(SessionError::AuthenticationTransportFailed(format!(
             "{operation} failed: {other}"
         ))),

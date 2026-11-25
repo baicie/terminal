@@ -558,11 +558,7 @@ async fn a_failing_session_leaves_its_neighbours_registered_and_working() {
         assert!(session.is_alive(), "{id} must still be alive");
     }
 
-    remove_test_sessions(
-        &manager,
-        &["f16-a".to_string(), "f16-b".to_string()],
-    )
-    .await;
+    remove_test_sessions(&manager, &["f16-a".to_string(), "f16-b".to_string()]).await;
     assert_eq!(registry_counts(&manager).await, (0, 0, 0));
 }
 
@@ -573,12 +569,8 @@ async fn removing_one_session_does_not_clear_another_sessions_channel() {
     let manager = SessionManager::new();
     let (first, _probe_first) = fake_local_session("f16-channel-a", true);
     let (second, _probe_second) = fake_local_session("f16-channel-b", true);
-    manager
-        .register_session(SessionState::Local(first))
-        .await;
-    manager
-        .register_session(SessionState::Local(second))
-        .await;
+    manager.register_session(SessionState::Local(first)).await;
+    manager.register_session(SessionState::Local(second)).await;
 
     assert!(manager
         .channel_manager

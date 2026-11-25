@@ -93,46 +93,42 @@ describe('F22 — a failed connection explains itself in the pane', () => {
   })
 
   it('renders a reason instead of a blank terminal', async () => {
-    const port = await closedPort()
-
     /*
-     * The host row is written through the product's own database shape, into a profile
-     * the harness isolated (`GUI_E2E_*` env is set by the runner). `browser.execute` is
-     * *not* used to fabricate a failure — the app has to discover this one.
+     * ## Why this uses the fixture's own host row
+     *
+     * `scripts/run-gui-e2e.mjs` seeds an `E2E Unreachable` row into every per-spec
+     * profile **before** the app starts, pointed at a port nothing listens on. The first
+     * version of this case tried to insert its own row at runtime through
+     * `plugin:sql|execute`; measured on Linux CI, the row never appeared in the list, so
+     * the case failed before it exercised anything — and a row written after the app has
+     * started is not how a user's profile comes to hold one anyway.
+     *
+     * The port is closed, not opened-then-closed, so there is no window in which the
+     * connection could succeed. The assertion does not depend on *which* error comes
+     * back; it depends on the pane saying something rather than staying blank.
      */
-    await browser.execute(
-      async (hostPort, hostId) => {
-        const api = globalThis.__TAURI_INTERNALS__
-        await api.invoke('plugin:sql|execute', {
-          db: 'sqlite:terminal.db',
-          query:
-            'INSERT OR REPLACE INTO hosts (id, name, hostname, port, username, auth_type, is_favorite, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)',
-          values: [hostId, 'e2e-refused', '127.0.0.1', hostPort, 'e2e', 'password', Date.now(), Date.now()],
-        })
-      },
-      port,
-      `${CASE}-host`,
+    const rows = await browser.execute(() =>
+      [...document.querySelectorAll('button')].map(button => button.textContent ?? ''),
     )
-
-    // Reload so the hosts view reads the row the way a user's would.
-    await browser.refresh()
-    await browser.waitUntil(
-      async () =>
-        (await browser.execute(() => document.body.innerText)).includes('e2e-refused'),
-      { timeout: 20_000, timeoutMsg: 'the seeded host never appeared in the host list' },
-    )
+    const seeded = rows.find(text => text.includes('E2E Unreachable'))
+    if (!seeded) {
+      throw new Error(
+        `the seeded host row is not in the list; the host names present were ${JSON.stringify(
+          rows.filter(Boolean).slice(0, 10),
+        )}`,
+      )
+    }
 
     /*
      * Ask the product to connect through the card a user clicks.
      *
      * `host-card.tsx` renders the whole card as a `<button>` whose `onClick` is
      * `onConnect(host)` — there is no separate connect control, and inventing a
-     * `data-testid` for one would have been a selector that matches nothing. The click
-     * target is found by its text, which is what a person aims at too.
+     * `data-testid` for one would have been a selector that matches nothing.
      */
     await browser.execute(() => {
       const target = [...document.querySelectorAll('button')].find(button =>
-        button.textContent?.includes('e2e-refused'),
+        button.textContent?.includes('E2E Unreachable'),
       )
       if (!target) throw new Error('the seeded host card is not clickable')
       target.click()
