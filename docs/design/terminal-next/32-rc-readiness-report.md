@@ -240,6 +240,12 @@ SIGNED_PUBLIC_RELEASE_READY = NO  （签名/公证/updater 密钥 BLOCKED_EXTERN
 | Windows 三平台故障矩阵 | **NOT_RUN** | 一次性 profile 或 VM |
 | 七天真人日用 | **NOT_RUN** | 用户本人 |
 
+**合并前独立审查推翻的分类（已修）**：`map_session_error` 把 `AuthenticationRejected`
+与 `HostKeyRejected` 压成 `ConnectionFailed`，而 F22 的分类器对未识别的
+`connection_failed` 兜底成「服务器没应答」——跳板拒凭据、跳板密钥不符、隧道后非 SSH
+服务三种情况都会错报成机器没响应。已把「服务器做出的决定」排在传输症状之前，兜底
+改为更弱的「握手失败」。详见 `36-ssh-runtime-acceptance-matrix.md`。
+
 ## 十二、人工验收清单（按优先级）
 
 1. 打开应用，连一台不可达的主机 → 面板必须说出原因，不能是空白终端。
