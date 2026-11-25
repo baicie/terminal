@@ -232,7 +232,7 @@ SIGNED_PUBLIC_RELEASE_READY = NO  （签名/公证/updater 密钥 BLOCKED_EXTERN
 
 | 项 | 状态 | 需要什么 |
 | --- | --- | --- |
-| `e2e-07` GUI 失败诊断 | **NOT_RUN** | 真实 WebView + 辅助功能权限；本会话运行在 Claude 桌面应用内，无法启动可见 GUI。它会在 CI 的 macOS GUI job 上首次执行 |
+| `e2e-07` GUI 失败诊断 | **CI 已实跑四轮，未通过** | 在 CI 的 macOS GUI job 上跑了四轮。前三轮的失败都是真结论：两轮是用例自己写错（没进 Hosts 路由；等「页面里有错误字样」，1.6 秒被主机列表本身满足），第三轮对上了产品 —— 连接被拒被说成「无法验证 SSH 主机密钥」。`8daf0bb` 修了产品侧（预检按结构归成六步）与用例侧（改断言两层真实顺序）。仍未观察到绿 |
 | F12 断连注入 | **PARTIAL** | 代理已就位、对照用例通过（健康连接经代理成功）；`resetAfterMs`/`blackhole` 的逐场景注入尚未编写驱动 |
 | F13 自定义策略真实执行 | **NOT_RUN** | 出货的 `terminalSessionManager` 不收参数，自定义退避到不了真实后端 |
 | F14 100 轮 soak | **NOT_RUN** | 需要手动 workflow 与稳定机器；12 轮的快速回归已在 CI |
