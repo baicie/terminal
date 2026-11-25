@@ -127,7 +127,33 @@ connect jump host failed: Connection reset by peer (os error 54)
 | SSH16 多目标隔离 | `NOT_RUN` | **REAL_RUST_VERIFIED** | `four_machines_keep_their_own_identity` |
 | SSH19 永久失败 | 只有直连 | 双跳场景表已编排；`TUNNEL_OPEN_FAILED` 真机通过 | `terminal-smoke-failure-scenarios.mjs` |
 | SSH20 阶梯 | 纯函数 | 纯函数 + 真实耗尽计数（`attempts` 有生产者了） | F10 |
-| 全部 | 无 GUI 失败用例 | `e2e-07` 已编写 | 真机 `NOT_RUN`，CI 首次执行 |
+| 全部 | 无 GUI 失败用例 | `e2e-07` 已编写并在 CI 实跑 | 见下 |
 
-**`NATIVE_GUI_VERIFIED` 仍然没有任何一行达到**：`e2e-07` 需要真实 WebView，本会话
-跑不了。在 CI 的 macOS GUI job 跑过之前，这一列保持空白。
+### `e2e-07` 在真实 GUI 上跑了四轮，前三轮的失败都是真结论
+
+| 轮 | head | 失败原因 | 是产品缺陷吗 |
+| --- | --- | --- | --- |
+| 1 | `89718bd` | 从未进入 Hosts 路由，按钮只有 `["Local","Vaults","Ctrl+K"]` | 否，用例没写对 |
+| 2 | `5c41a18` | 等到「页面里有错误字样」1.6 秒即满足，满足它的是主机列表本身 | 否，断言太宽 |
+| 3 | `90967c1`/`8c9c316` | 等 `terminal-error-overlay` 超时，页面里却有说明 | **是**，见下 |
+| 4 | `8daf0bb` | 待测 | — |
+
+第三轮是这一列第一次对上产品。页面上的实际文本：
+
+```
+Could not verify the SSH host key
+connection failed: connect host-key probe failed: Connection refused (os error 61)
+```
+
+两个产品缺陷：**连接被拒被说成主机密钥问题**（预检在会话之前跑，端口没人听必然
+死在预检，而浮层对一切失败只有一句话，把用户指向 known_hosts），以及**内部调用栈
+直出**。第三个问题是 `e2e-07` 自己：它断言的元素在该路径上结构不可达。
+
+`8daf0bb` 修了这三点：预检按结构归成六步并各给一句标题（`unreachable` 是
+"服务器没有响应"），只剥本仓库自己的操作名前缀且永不返回空串，`e2e-07` 改为
+断言两层真实顺序（预检失败 → 浮层；预检通过、会话被拒 → 终端浮层，用第二台 sshd
+配一把它不认的私钥构造）。
+
+**`NATIVE_GUI_VERIFIED` 仍不能填。** 在 `8daf0bb` 的 macOS GUI job 出结果之前，
+这一列保持空白 —— 前三轮的教训正是「写了用例」和「用例在真机上证明了一件事」之间
+隔着三处错误。
