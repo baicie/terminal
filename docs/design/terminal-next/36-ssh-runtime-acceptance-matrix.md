@@ -92,6 +92,26 @@ connect jump host failed: Connection reset by peer (os error 54)
   正在用仓库既有的 `scripts/verify-install/ssh-jump-e2e.mjs`（Rust 级、真实双跳、
   8 个用例）判断健康双跳在本机是否成立。
 
+### F09 的结论：找到并修掉一个真实产品缺陷
+
+隔离实验（保持跳板拓扑与 failure 标志不变、只关掉 `authorized_keys` 替换）连接成功，
+证明 fixture 拓扑一直可用。真正的原因有两层，都是我自己写错的：
+
+1. `failureScenario` 并进了选项层的 `failureRequired`，但设置 `TERMINAL_SMOKE_FAILURE`
+   的那一行没有 —— 每个 `--scenario` 都以普通成功模式启动。
+2. 修好门之后，产品报 `hop: "bastion"`，我的表写 `null`。核对后是产品对：`hop` 是
+   持有隧道的连接，`diagnosis` 才是给用户的那句。
+
+**然后修门之后暴露出真正的产品缺陷**：跳板拒绝认证时，产品重试了 6 次且
+`diagnosis` 为 null。根因是 `enforce_authentication_deadline` 把所有内层错误
+无条件转成 `AuthenticationTransportFailed`——包括 `AuthenticationRejected`。
+后果有两层：重连阶梯重试一个服务器已经拒绝的凭据，且前端永远收不到
+`bastion-auth-rejected`（SSH11 专门为此加的诊断）。已修，并补了
+`enforce_credential_deadline` 保留拒绝类的 kind。
+
+**既有真实双跳套件抓不到它**：8 条用例只断言 `hop`/`stage`，从不断言 `kind`。
+已补断言——变异回旧包装后，这条现在会红。
+
 **在结论出来之前，F09 记为 `PARTIAL`。** 场景表与编排代码已就绪且单测覆盖，
 但「每个场景在真实后端上产生预期 diagnosis」一条都还没有被真实运行证明。
 不得因为表写好了就记 PASS。
