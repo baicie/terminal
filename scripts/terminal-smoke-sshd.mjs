@@ -721,6 +721,16 @@ export async function startTerminalSmokeSshd({
       configPath: paths.connection,
       homePath: paths.home,
       knownHostsPath: paths.knownHosts,
+      /**
+       * F09 — where this daemon's `authorized_keys` lives.
+       *
+       * Exported so a failure scenario can point the daemon at a key the client does not
+       * hold, producing a real refusal from the server rather than a simulated error. It
+       * is derived from the fixture's own paths rather than re-derived by the caller:
+       * guessing the layout from `homePath` is the kind of coupling that breaks silently
+       * when a fixture is reorganised.
+       */
+      authorizedKeysPath: paths.authorizedKeys,
       shell,
       /** Raw client identity, unaffected by connectionExtra overrides. */
       identityKey: privateKey,
