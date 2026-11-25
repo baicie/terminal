@@ -1294,7 +1294,23 @@ async fn repeated_connect_and_disconnect_returns_to_a_clean_baseline() {
         FixtureLookup::Broken(reason) => panic!("the harness is not usable: {reason}"),
     };
 
-    const ROUNDS: usize = 12;
+    /*
+     * F17 — the round count is an environment knob, not a constant, so the same case
+     * serves both levels the task book asks for:
+     *
+     *   * an ordinary PR run uses the default 12 — a fast lifecycle regression;
+     *   * the manually dispatched soak sets `SSH_JUMP_E2E_ROUNDS=100` and gets the real
+     *     curve, on a machine nobody else is using.
+     *
+     * A separate soak harness would be a second thing to keep working; the invariant
+     * being checked is the same one.
+     */
+    let rounds: usize = std::env::var("SSH_JUMP_E2E_ROUNDS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(12)
+        .max(1);
+    eprintln!("running {rounds} connect/disconnect rounds");
 
     let (pool_before, registry_before) = ssh_resource_keys().await;
     assert_eq!(
@@ -1304,7 +1320,7 @@ async fn repeated_connect_and_disconnect_returns_to_a_clean_baseline() {
          meaningless"
     );
 
-    for round in 0..ROUNDS {
+    for round in 0..rounds {
         let target = JumpTarget {
             host: "127.0.0.1".to_string(),
             port: fixture.target_port,
@@ -1362,6 +1378,6 @@ async fn repeated_connect_and_disconnect_returns_to_a_clean_baseline() {
     assert_eq!(
         (pool_after.len(), registry_after.len()),
         (0, 0),
-        "after {ROUNDS} full rounds the product's own resource view must be empty"
+        "after {rounds} full rounds the product's own resource view must be empty"
     );
 }
