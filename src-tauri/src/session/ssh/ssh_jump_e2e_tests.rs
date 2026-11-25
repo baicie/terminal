@@ -27,8 +27,9 @@
 //! convention `sftp_command_e2e_tests` uses.
 
 use super::{
-    disconnect_jump_connections_with_shutdown, interactive_ssh_config, ConnectionHop,
-    ConnectionStage, JumpHostConfig, JumpTarget, SessionError, SshSession,
+    connection_key, disconnect_jump_connections_with_shutdown, get_connection_pool,
+    interactive_ssh_config, ssh_resource_keys, ConnectionHop, ConnectionStage, JumpHostConfig,
+    JumpTarget, SessionError, SshSession,
 };
 use std::sync::Arc;
 
@@ -539,4 +540,106 @@ fn established_connections(port: u16) -> usize {
 fn public_key(value: &str) -> russh::keys::PublicKey {
     russh::keys::PublicKey::from_openssh(value.trim())
         .expect("the fixture writes a valid OpenSSH public key")
+}
+
+/// SSH16 — a jump connection registers **one** pool entry, under a key that names the
+/// bastion, and releases it on disconnect.
+///
+/// ## What this covers that the key-shape unit tests do not
+///
+/// `jump_pool_key_includes_bastion_identity` proves two paths produce different
+/// strings. It cannot prove the pool is actually written and cleaned up: those are
+/// `insert`/`release` on a `SshConnectionPool` that has no entries in a unit test.
+///
+/// The leak this guards against is a session that ends while its entry stays behind —
+/// the pool would keep an `Arc<Handle>` alive, and SFTP/port-forward would find a
+/// transport whose SSH session is gone. `ssh_resource_keys` is the product's own view
+/// of what is registered, so the assertion is against the real registry rather than a
+/// bookkeeping copy.
+#[tokio::test]
+#[ignore = "needs scripts/verify-install/ssh-jump-e2e.mjs to start two daemons"]
+async fn a_jump_session_registers_one_pool_entry_and_releases_it() {
+    let fixture = match fixture() {
+        FixtureLookup::Ready(fixture) => fixture,
+        FixtureLookup::NotConfigured => {
+            eprintln!("SSH_JUMP_E2E_* not set; skipping");
+            return;
+        }
+        FixtureLookup::Broken(reason) => panic!("the harness is not usable: {reason}"),
+    };
+    let target = JumpTarget {
+        host: "127.0.0.1".to_string(),
+        port: fixture.target_port,
+        username: fixture.user.clone(),
+        password: None,
+        private_key: Some(fixture.target_key.clone()),
+        certificate: None,
+        expected_host_key: Some(public_key(&fixture.target_host_key)),
+        use_agent: false,
+        allow_agent_forwarding: false,
+    };
+    let jump = jump_config(&fixture);
+    let (target_handle, jump_handle, guard, _slot) = SshSession::connect_via_jump(
+        Arc::new(interactive_ssh_config()),
+        target,
+        jump.clone(),
+        tokio::time::Instant::now() + std::time::Duration::from_secs(20),
+    )
+    .await
+    .expect("the healthy fixture must connect");
+
+    /*
+     * Write the entry exactly the way `SshSession::create` does: same key function, same
+     * arguments. Recomputing the format string here would let the test and the product
+     * drift apart while both stayed green.
+     */
+    let session_id = format!("ssh16-{}", std::process::id());
+    let pool_key = connection_key(
+        &session_id,
+        "127.0.0.1",
+        fixture.target_port,
+        &fixture.user,
+        Some(&jump),
+        false,
+    );
+    let pool = get_connection_pool();
+    pool.clone()
+        .insert(
+            pool_key.clone(),
+            Arc::new(target_handle),
+            Some(Arc::new(jump_handle)),
+        )
+        .await;
+
+    let (pool_keys, registry_keys) = ssh_resource_keys().await;
+    assert!(
+        pool_keys.contains(&pool_key),
+        "the jump session must be registered under its own key: {pool_keys:?}"
+    );
+    assert!(
+        registry_keys.contains(&pool_key),
+        "the registry SFTP/port-forward reads must hold the same key: {registry_keys:?}"
+    );
+    /*
+     * The key names both ends. A key that only carried the target would let two
+     * different bastions — different networks, different accounts — share one entry.
+     */
+    assert!(
+        pool_key.contains(&fixture.bastion_port.to_string())
+            && pool_key.contains(&fixture.target_port.to_string()),
+        "the pool key must name both legs: {pool_key}"
+    );
+
+    pool.clone().release(pool_key.clone()).await;
+
+    let (pool_after, registry_after) = ssh_resource_keys().await;
+    assert!(
+        !pool_after.contains(&pool_key),
+        "the pool must drop the entry on release, still has: {pool_after:?}"
+    );
+    assert!(
+        !registry_after.contains(&pool_key),
+        "the registry must drop the entry too, still has: {registry_after:?}"
+    );
+    drop(guard);
 }
