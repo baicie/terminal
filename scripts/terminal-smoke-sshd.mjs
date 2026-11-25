@@ -722,15 +722,14 @@ export async function startTerminalSmokeSshd({
       homePath: paths.home,
       knownHostsPath: paths.knownHosts,
       /**
-       * F09 — where this daemon's `authorized_keys` lives.
+       * F09 — what this daemon logged, for diagnosing a scenario that fails.
        *
-       * Exported so a failure scenario can point the daemon at a key the client does not
-       * hold, producing a real refusal from the server rather than a simulated error. It
-       * is derived from the fixture's own paths rather than re-derived by the caller:
-       * guessing the layout from `homePath` is the kind of coupling that breaks silently
-       * when a fixture is reorganised.
+       * The fixture already pipes sshd's stderr into `collectOutput`; until now it was
+       * only used for start-up errors, so a scenario that failed *after* the daemon was
+       * up had no server-side evidence at all. Reading it is how "the product retried a
+       * refused credential" is told apart from "every attempt really was reset".
        */
-      authorizedKeysPath: paths.authorizedKeys,
+      daemonLog: () => daemon.stderr(),
       shell,
       /** Raw client identity, unaffected by connectionExtra overrides. */
       identityKey: privateKey,
