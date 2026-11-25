@@ -1253,3 +1253,108 @@ async fn a_healthy_connection_through_the_proxies_succeeds() {
          be measuring the proxy instead of the product",
     );
 }
+
+/// F14 — a fixed number of real connect/disconnect rounds leaves no resource behind.
+///
+/// ## What this is, and what it is not
+///
+/// This is the **fast lifecycle regression** F17 asks for: enough rounds to catch a leak
+/// in the pool or the registry, few enough to belong in an ordinary CI run. It is not a
+/// soak test — a 100-round soak with RSS and FD curves belongs in the manually dispatched
+/// workflow, because a curve needs a stable machine to mean anything.
+///
+/// ## Why the product's own view
+///
+/// `ssh_resource_keys()` is the pool and registry the *product* reads, not a test-local
+/// count. A leak that the product would not see is not a leak a user experiences — and a
+/// count the test maintains itself would pass no matter what the product did.
+///
+/// ## The baseline is asserted, not assumed
+///
+/// Every round here is fully closed before the next begins, so the count before and after
+/// must both be zero. An earlier version of a similar check in this repository compared
+/// "after" against "before" without asserting what "before" was, and passed while three
+/// resources were already outstanding.
+#[tokio::test]
+#[ignore = "needs scripts/verify-install/ssh-jump-e2e.mjs to start two daemons"]
+async fn repeated_connect_and_disconnect_returns_to_a_clean_baseline() {
+    let fixture = match fixture() {
+        FixtureLookup::Ready(fixture) => fixture,
+        FixtureLookup::NotConfigured => {
+            eprintln!("SSH_JUMP_E2E_* not set; skipping");
+            return;
+        }
+        FixtureLookup::Broken(reason) => panic!("the harness is not usable: {reason}"),
+    };
+
+    const ROUNDS: usize = 12;
+
+    let (pool_before, registry_before) = ssh_resource_keys().await;
+    assert_eq!(
+        (pool_before.len(), registry_before.len()),
+        (0, 0),
+        "the baseline must be clean; a non-zero start makes every later comparison \
+         meaningless"
+    );
+
+    for round in 0..ROUNDS {
+        let target = JumpTarget {
+            host: "127.0.0.1".to_string(),
+            port: fixture.target_port,
+            username: fixture.user.clone(),
+            password: None,
+            private_key: Some(fixture.target_key.clone()),
+            certificate: None,
+            expected_host_key: Some(public_key(&fixture.target_host_key)),
+            use_agent: false,
+            allow_agent_forwarding: false,
+        };
+        let (target_handle, jump_handle, guard, _slot) = SshSession::connect_via_jump(
+            Arc::new(interactive_ssh_config()),
+            target,
+            jump_config(&fixture),
+            tokio::time::Instant::now() + std::time::Duration::from_secs(20),
+        )
+        .await
+        .unwrap_or_else(|failure| {
+            panic!("round {round} must connect: hop={:?} stage={:?} {:?}", failure.hop, failure.stage, failure.error)
+        });
+
+        disconnect_jump_connections_with_shutdown(
+            target_handle,
+            jump_handle,
+            guard,
+            "f14 round complete",
+            tokio::time::Instant::now() + std::time::Duration::from_secs(5),
+        )
+        .await;
+
+        /*
+         * Poll rather than assert immediately: `sshd` tears its side down a moment after
+         * the client does, and the pool releases on a task. The deadline is what makes
+         * this a leak check instead of a race — a real leak never reaches zero, however
+         * long you wait.
+         */
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let (pool, registry) = ssh_resource_keys().await;
+            if pool.is_empty() && registry.is_empty() {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "round {round} left {} pool and {} registry entries behind",
+                pool.len(),
+                registry.len()
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    }
+
+    let (pool_after, registry_after) = ssh_resource_keys().await;
+    assert_eq!(
+        (pool_after.len(), registry_after.len()),
+        (0, 0),
+        "after {ROUNDS} full rounds the product's own resource view must be empty"
+    );
+}
