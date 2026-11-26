@@ -40,6 +40,29 @@ const HARNESS = readFileSync(
 )
 const WORKFLOW = readFileSync(path.join(ROOT, '.github/workflows/ci.yml'), 'utf8')
 
+const { parseCaseNames } = await import(
+  path.join(ROOT, 'scripts/verify-install/ssh-jump-e2e.mjs')
+)
+
+/**
+ * Real captured stdout from run 45790480314's main invocation, verbatim in shape.
+ *
+ * Two cases print to stderr, which `--nocapture` interleaves into the run: the
+ * fault-injection case prints `SSH_JUMP_E2E_RESULT`, and the soak prints its round
+ * banner. In both, libtest's `ok` then lands on the following line.
+ */
+const CAPTURED = [
+  'running 12 tests',
+  'test session::ssh::ssh_jump_e2e_tests::a_bastion_refusal_is_attributed_to_the_bastion ... ok',
+  'test session::ssh::ssh_jump_e2e_tests::an_injected_fault_names_its_own_leg_and_no_more ... SSH_JUMP_E2E_RESULT scenario=healthy elapsed_ms=258',
+  'ok',
+  'test session::ssh::ssh_jump_e2e_tests::repeated_connect_and_disconnect_returns_to_a_clean_baseline ... running 12 connect/disconnect rounds',
+  'ok',
+  'test session::ssh::ssh_jump_e2e_tests::two_sessions_through_one_bastion_do_not_share_a_transport ... ok',
+  '',
+  'test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 513 filtered out; finished in 2.40s',
+].join('\n')
+
 /** The `real-ssh-jump` job's text, from its key to the next top-level job. */
 function realSshJumpJob(source) {
   const start = source.indexOf('\n  real-ssh-jump:')
@@ -127,5 +150,69 @@ describe('a passing scenario says so in the log', () => {
     const passBranch = HARNESS.slice(passStart, passStart + 1600)
     assert.match(passBranch, /proxy\.stats\.accepted/, 'the pass line must carry `accepted`')
     assert.match(passBranch, /proxy\.stats\.cut/, 'the pass line must carry `cut`')
+  })
+})
+
+describe('the report lists every case that ran', () => {
+  it('counts a case whose verdict landed on the next line', () => {
+    /*
+     * Measured on run 45790480314: the report listed 10 cases and the invocation said
+     * `12 passed`. The two it dropped were the two that print — the fault-injection case
+     * and the soak — so the under-listing fell exactly on the coverage a reader would go
+     * looking for, and nothing in the report said it was short.
+     */
+    const cases = parseCaseNames(CAPTURED)
+    assert.equal(cases.length, 4, `expected 4 cases, got ${cases.length}`)
+    assert.deepEqual(
+      cases.map(c => c.outcome),
+      ['ok', 'ok', 'ok', 'ok'],
+    )
+  })
+
+  it('keeps the name of a case whose output interrupted the line', () => {
+    const cases = parseCaseNames(CAPTURED)
+    const names = cases.map(c => c.name.split('::').pop())
+    assert.ok(
+      names.includes('an_injected_fault_names_its_own_leg_and_no_more'),
+      'the fault-injection case must appear, not vanish behind its own output',
+    )
+    assert.ok(
+      names.includes('repeated_connect_and_disconnect_returns_to_a_clean_baseline'),
+      'the soak case must appear, not vanish behind its round banner',
+    )
+  })
+
+  it('takes the count from the run, not from the summary line', () => {
+    /*
+     * The summary says 12 but the captured snippet has 4. Deriving the list from the
+     * summary would hide a case that printed and then failed to be parsed — the exact
+     * defect. The summary is only used elsewhere to decide pass/fail.
+     */
+    assert.equal(parseCaseNames(CAPTURED).length, 4)
+  })
+
+  it('does not invent a verdict for a truncated run', () => {
+    const truncated = 'test session::ssh::ssh_jump_e2e_tests::some_case ... some output\n'
+    const cases = parseCaseNames(truncated)
+    assert.equal(cases.length, 1)
+    // Named, but explicitly not ok: a case cut off mid-run must not read as a pass.
+    assert.equal(cases[0].outcome, 'NO_VERDICT')
+  })
+
+  it('does not treat a FAILED case as ok just because the next line says ok', () => {
+    // A real failure prints its verdict inline; the parser must not pair it with the
+    // next case's verdict.
+    const mixed = [
+      'test session::ssh::ssh_jump_e2e_tests::a ... FAILED',
+      'test session::ssh::ssh_jump_e2e_tests::b ... ok',
+    ].join('\n')
+    const cases = parseCaseNames(mixed)
+    assert.deepEqual(
+      cases.map(c => [c.name.split('::').pop(), c.outcome]),
+      [
+        ['a', 'FAILED'],
+        ['b', 'ok'],
+      ],
+    )
   })
 })
