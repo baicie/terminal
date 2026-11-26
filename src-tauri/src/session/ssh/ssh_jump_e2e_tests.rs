@@ -662,26 +662,124 @@ fn established_connections(port: u16) -> usize {
      * `sshd`'s side is the row whose *local* address is the port, i.e. the port appears
      * before the arrow.
      */
-    let local = format!("127.0.0.1.{port}");
+    /*
+     * ## Two address formats, and the one that only ever matched macOS
+     *
+     * The same command prints the local address differently per platform:
+     *
+     *   macOS  tcp4  0  0  127.0.0.1.61030  127.0.0.1.61031  ESTABLISHED
+     *   Linux  tcp   0  0  127.0.0.1:54321   127.0.0.1:2299   ESTABLISHED
+     *
+     * This matched only `127.0.0.1.<port>`, so on Linux every count was zero. Measured
+     * on run 45763897639 once the job finally had its system libraries: two cases failed
+     * with `the bastion must show an established session before the disconnect` and
+     * `baseline 0, after 0` — the assertion working exactly as designed, catching that
+     * the counter saw nothing. Both cases were written and verified on macOS.
+     *
+     * Matching either separator is the fix. The field index is shared: in both formats
+     * the local address is the fourth whitespace-separated field after
+     * `Established`/`ESTABLISHED` normalisation below.
+     */
+    count_established_on_port(&text, port)
+}
+
+/// Count `ESTABLISHED` rows whose **local** address is `127.0.0.1:<port>`.
+///
+/// Split out from `established_connections` so both platform formats are testable
+/// without a live daemon — the only place this went wrong was a format difference
+/// nobody could see from the machine it was written on.
+fn count_established_on_port(text: &str, port: u16) -> usize {
     text.lines()
         .filter(|line| line.contains("ESTABLISHED"))
         .filter(|line| {
-            /*
-             * `netstat -an -p tcp` on macOS prints the local address first and the peer
-             * second, with no arrow between them:
-             *
-             *   tcp4  0  0  127.0.0.1.61030  127.0.0.1.61031  ESTABLISHED
-             *
-             * so "the daemon's side" is the row where the port appears in an early
-             * address field. Splitting on `->` (the `lsof` shape) matched nothing and
-             * silently counted zero — which the control assertion caught.
-             */
-            // Field 4 is the local address (`tcp4 0 0 <local> <peer> ESTABLISHED`).
             line.split_whitespace()
                 .nth(3)
-                .is_some_and(|field| field.contains(&local))
+                .is_some_and(|field| local_address_is_port(field, port))
         })
         .count()
+}
+
+/// Whether a `netstat` address field names `127.0.0.1:<port>`, exactly.
+///
+/// `contains("127.0.0.1.229")` would also match `127.0.0.1.2299`, which is the kind of
+/// off-by-a-digit that reads as a pass until two test ports happen to share a prefix —
+/// and it is caught here by `does_not_match_a_longer_port_by_prefix`, written before
+/// the naive version was trusted.
+fn local_address_is_port(field: &str, port: u16) -> bool {
+    ["127.0.0.1.", "127.0.0.1:"].iter().any(|prefix| {
+        field
+            .strip_prefix(prefix)
+            .is_some_and(|rest| rest == port.to_string())
+    })
+}
+
+#[cfg(test)]
+mod netstat_format_tests {
+    use super::count_established_on_port;
+
+    /// The exact shapes `netstat -an -p tcp` prints, one per platform.
+    const MACOS: &str = "\
+tcp4       0      0  127.0.0.1.54321        127.0.0.1.2299         ESTABLISHED
+tcp4       0      0  127.0.0.1.2299         127.0.0.1.54321        ESTABLISHED
+tcp4       0      0  127.0.0.1.2299         *.*                    LISTEN
+tcp4       0      0  127.0.0.1.50000        127.0.0.1.50001        ESTABLISHED
+";
+    const LINUX: &str = "\
+tcp        0      0 127.0.0.1:54321         127.0.0.1:2299          ESTABLISHED
+tcp        0      0 127.0.0.1:2299          127.0.0.1:54321         ESTABLISHED
+tcp        0      0 127.0.0.1:2299          0.0.0.0:*               LISTEN
+tcp        0      0 127.0.0.1:50000         127.0.0.1:50001         ESTABLISHED
+";
+
+    /*
+     * One live session produces two ESTABLISHED rows (each end of the loopback pair).
+     * Only the daemon's side — the row whose *local* address is the port — counts.
+     * Anything else makes a single session read as two.
+     */
+    #[test]
+    fn counts_the_listener_side_only_on_macos() {
+        assert_eq!(count_established_on_port(MACOS, 2299), 1);
+    }
+
+    #[test]
+    fn counts_the_listener_side_only_on_linux() {
+        assert_eq!(count_established_on_port(LINUX, 2299), 1);
+    }
+
+    /// The defect: the Linux format matched nothing, so every count was zero and the
+    /// two callers that assert "a session exists" failed on a real runner.
+    #[test]
+    fn the_linux_format_is_not_zero() {
+        assert!(
+            count_established_on_port(LINUX, 2299) > 0,
+            "the colon form must be recognised, or the counter sees nothing on Linux"
+        );
+    }
+
+    /// An unrelated established row must not be counted as this port.
+    #[test]
+    fn ignores_other_ports() {
+        assert_eq!(count_established_on_port(MACOS, 50000), 1);
+        assert_eq!(count_established_on_port(LINUX, 50000), 1);
+        assert_eq!(count_established_on_port(LINUX, 2299), 1);
+    }
+
+    /// A prefix collision: port 229 must not match 2299.
+    #[test]
+    fn does_not_match_a_longer_port_by_prefix() {
+        assert_eq!(count_established_on_port(LINUX, 229), 0);
+        assert_eq!(count_established_on_port(MACOS, 229), 0);
+    }
+
+    /// Nothing established at all is zero, not a panic.
+    #[test]
+    fn an_empty_table_counts_zero() {
+        assert_eq!(count_established_on_port("", 2299), 0);
+        assert_eq!(
+            count_established_on_port("tcp4 0 0 127.0.0.1.2299 *.* LISTEN", 2299),
+            0
+        );
+    }
 }
 
 /// SSH17 — two sessions through the same bastion are two connections, and ending one
