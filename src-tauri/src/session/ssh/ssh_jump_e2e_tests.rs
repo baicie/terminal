@@ -1262,6 +1262,154 @@ async fn a_healthy_connection_through_the_proxies_succeeds() {
     );
 }
 
+/// F12 — each injected fault produces the failure its own scenario implies.
+///
+/// ## Why one case per scenario instead of one loop
+///
+/// "The connection eventually failed" is true of every one of these and proves nothing.
+/// What the disconnect matrix has to answer is **which leg broke and what it looked
+/// like**: a reset mid-handshake is a transport failure, a black hole is a deadline, and
+/// a healthy pass-through is neither. A loop that accepted any error would pass while
+/// the product reported the wrong one.
+///
+/// ## Which leg
+///
+/// The **bastion** leg, because it is the only one the proxy chain can shape: a jump
+/// connection never dials the target — it asks the bastion to forward to the target's
+/// real address, and `PermitOpen` names exactly that port (see the control case). So
+/// these scenarios interrupt the bastion transport and say so.
+///
+/// The harness starts a **fresh proxy per scenario**: a proxy that has already cut one
+/// connection is not the clean fault injector the next scenario needs.
+#[tokio::test]
+#[ignore = "needs scripts/verify-install/ssh-jump-e2e.mjs to start a per-scenario proxy"]
+async fn an_injected_fault_names_its_own_leg_and_no_more() {
+    let fixture = match fixture() {
+        FixtureLookup::Ready(fixture) => fixture,
+        FixtureLookup::NotConfigured => {
+            eprintln!("SSH_JUMP_E2E_* not set; skipping");
+            return;
+        }
+        FixtureLookup::Broken(reason) => panic!("the harness is not usable: {reason}"),
+    };
+    let Ok(port) = std::env::var("SSH_JUMP_E2E_BASTION_PROXY_PORT").map(|value| {
+        value
+            .parse::<u16>()
+            .expect("SSH_JUMP_E2E_BASTION_PROXY_PORT must be a port")
+    }) else {
+        eprintln!("SSH_JUMP_E2E_BASTION_PROXY_PORT not set; skipping the disconnect matrix");
+        return;
+    };
+    let scenario = std::env::var("SSH_JUMP_E2E_SCENARIO").unwrap_or_else(|_| "healthy".to_string());
+
+    let target = JumpTarget {
+        host: "127.0.0.1".to_string(),
+        port: fixture.target_port,
+        username: fixture.user.clone(),
+        password: None,
+        private_key: Some(fixture.target_key.clone()),
+        certificate: None,
+        expected_host_key: Some(public_key(&fixture.target_host_key)),
+        use_agent: false,
+        allow_agent_forwarding: false,
+    };
+    let jump = JumpHostConfig {
+        host: "127.0.0.1".to_string(),
+        port,
+        username: fixture.user.clone(),
+        auth_type: "key".to_string(),
+        password: None,
+        private_key: Some(fixture.bastion_key.clone()),
+        certificate: None,
+        expected_host_key: Some(fixture.bastion_host_key.clone()),
+        target_auth_type: None,
+    };
+
+    let started = tokio::time::Instant::now();
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        SshSession::connect_via_jump(
+            Arc::new(interactive_ssh_config()),
+            target,
+            jump,
+            tokio::time::Instant::now() + std::time::Duration::from_secs(20),
+        ),
+    )
+    .await;
+    let elapsed = started.elapsed();
+    eprintln!(
+        "SSH_JUMP_E2E_RESULT scenario={scenario} elapsed_ms={}",
+        elapsed.as_millis()
+    );
+
+    match scenario.as_str() {
+        /*
+         * The control. The same call, through a pass-through proxy, with nothing
+         * injected: it must succeed. Without this case a broken proxy would make every
+         * fault scenario "pass" for the wrong reason.
+         */
+        "healthy" => {
+            let connected = result.unwrap_or_else(|_| {
+                panic!("a pass-through proxy must not stall the connection ({elapsed:?})")
+            });
+            connected.expect("with nothing injected the connection must succeed");
+        }
+        /*
+         * The bastion accepts TCP and then says nothing. The client has its own connect
+         * and stage deadlines, so this must end as a failure inside the budget — not as a
+         * hang. That distinction is the whole point of the case: a black hole is the one
+         * fault an unbounded client cannot tell from "slow".
+         */
+        "blackhole" => {
+            let outcome = result.unwrap_or_else(|_| {
+                panic!(
+                    "a black hole must still fail within the budget, not hang forever \
+                     ({elapsed:?})"
+                )
+            });
+            let Err(failure) = outcome else {
+                panic!("a bastion that forwards nothing cannot produce a working session")
+            };
+            assert_eq!(
+                failure.hop,
+                Some(ConnectionHop::Bastion),
+                "a transport that never answered is the bastion's, not the target's: hop={:?} stage={:?} error={}",
+                failure.hop,
+                failure.stage,
+                failure.error
+            );
+        }
+        /*
+         * The proxy destroys the connection a moment after it opens, which lands during
+         * the handshake. The bastion leg is the one that broke, and the failure must say
+         * so rather than blaming the target.
+         */
+        "reset" => {
+            let outcome = result.expect("a reset must resolve, not hang");
+            let Err(failure) = outcome else {
+                panic!("a connection cut mid-handshake cannot succeed")
+            };
+            assert_eq!(
+                failure.hop,
+                Some(ConnectionHop::Bastion),
+                "a reset on the bastion transport must be attributed to the bastion: hop={:?} stage={:?} error={}",
+                failure.hop,
+                failure.stage,
+                failure.error
+            );
+            assert!(
+                !matches!(failure.error, SessionError::AuthenticationRejected(_)),
+                "a transport reset is not a credential refusal: {}",
+                failure.error
+            );
+        }
+        other => panic!(
+            "unknown scenario {other:?}; the harness and this case must agree on the \
+             scenario names (healthy, blackhole, reset)"
+        ),
+    }
+}
+
 /// F14 — a fixed number of real connect/disconnect rounds leaves no resource behind.
 ///
 /// ## What this is, and what it is not
@@ -1312,6 +1460,25 @@ async fn repeated_connect_and_disconnect_returns_to_a_clean_baseline() {
         .unwrap_or(12)
         .max(1);
     eprintln!("running {rounds} connect/disconnect rounds");
+    /*
+     * F17 — the resource curve.
+     *
+     * The pool/registry assertions below are the blocking facts. RSS and descriptor
+     * count are recorded every round because a *single* reading is not evidence of
+     * anything: both move with the allocator and with `sshd` teardown timing. A leak is
+     * a slope that never comes back down across many rounds, and only the harness that
+     * sees the whole series can tell that from noise — so this prints samples and lets
+     * `scripts/verify-install/ssh-jump-e2e.mjs` decide. Nothing here gates a merge.
+     *
+     * The prefix is parsed by that harness; changing it means changing both.
+     */
+    let mut metrics_series = Vec::with_capacity(rounds);
+    if let Some(baseline) = crate::session::process_metrics::current() {
+        eprintln!(
+            "SSH_SOAK_METRICS round=0 rss={} fds={}",
+            baseline.rss_bytes, baseline.open_fds
+        );
+    }
 
     let (pool_before, registry_before) = ssh_resource_keys().await;
     assert_eq!(
@@ -1376,6 +1543,37 @@ async fn repeated_connect_and_disconnect_returns_to_a_clean_baseline() {
             );
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
+
+        // Sampled after the round is fully closed, so a rising curve is retained
+        // resources rather than a connection still being torn down.
+        if let Some(sample) = crate::session::process_metrics::current() {
+            metrics_series.push(sample);
+            eprintln!(
+                "SSH_SOAK_METRICS round={} rss={} fds={}",
+                round + 1,
+                sample.rss_bytes,
+                sample.open_fds
+            );
+        }
+    }
+
+    /*
+     * Report the endpoints of the curve here too, so a run whose harness cannot parse
+     * the lines still leaves the numbers in the log. The verdict stays with the harness:
+     * two numbers are not a slope, and calling them one is how a noisy CI machine gets
+     * mistaken for a leak.
+     */
+    if let (Some(first), Some(last)) = (metrics_series.first(), metrics_series.last()) {
+        eprintln!(
+            "SSH_SOAK_CURVE rounds={} rss_first={} rss_last={} fds_first={} fds_last={} rss_peak={} fds_peak={}",
+            metrics_series.len(),
+            first.rss_bytes,
+            last.rss_bytes,
+            first.open_fds,
+            last.open_fds,
+            metrics_series.iter().map(|m| m.rss_bytes).max().unwrap_or(0),
+            metrics_series.iter().map(|m| m.open_fds).max().unwrap_or(0)
+        );
     }
 
     let (pool_after, registry_after) = ssh_resource_keys().await;
