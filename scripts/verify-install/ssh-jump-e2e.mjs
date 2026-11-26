@@ -95,6 +95,18 @@ function finish(verdict, detail) {
   }
   console.log(`\n[ssh12] verdict: ${verdict}`)
   for (const note of report.notes) console.log(`[ssh12] ${note}`)
+  /*
+   * ## A FAIL verdict has to fail the process
+   *
+   * Measured on run 45758649504: `finish('FAIL')` printed the verdict, wrote the report,
+   * and returned — and the `Real SSH jump matrix` job went green while all three
+   * disconnect scenarios had failed. Only the `main().catch` path set an exit code, so
+   * every verdict reached through the normal flow was advisory.
+   *
+   * `NOT_RUN` is deliberately not a failure: a platform without `sshd` is a missing
+   * precondition, and the job's own contract (see `ci.yml`) treats it as such.
+   */
+  if (verdict === 'FAIL') process.exitCode = 1
 }
 
 async function main() {
@@ -266,6 +278,23 @@ async function main() {
      * five times for five scenarios inside the main invocation, the matrix runs here and
      * its results land in `report.disconnectMatrix`.
      */
+    const result = await waitForTests(cargo, Number(process.env.SSH_JUMP_E2E_TIMEOUT_MS ?? 300_000))
+    process.stdout.write(result.stdout)
+    if (result.stderr.trim() !== '') process.stderr.write(result.stderr)
+    /*
+     * ## The matrix runs AFTER the main invocation, on the binary it built
+     *
+     * Measured on run 45758649504: it ran first, so each of its three scenarios started
+     * its own `cargo test` against an unbuilt `target/`. They blocked on each other's
+     * package-cache and build-directory locks and then failed with
+     * `failed to run custom build command for gobject-sys` — a build race, not a
+     * product result. Combined with the exit-code defect (`finish('FAIL')` did not fail
+     * the process), the job went green over three failed scenarios.
+     *
+     * Here the main run has already compiled and linked the test binary, so each
+     * scenario is an incremental no-op build: it still invokes cargo, but there is
+     * nothing left to compile and nothing left to contend for.
+     */
     report.disconnectMatrix = []
     const scenarios = [
       { name: 'healthy', proxy: {} },
@@ -346,9 +375,7 @@ async function main() {
       }
     }
 
-    const result = await waitForTests(cargo, Number(process.env.SSH_JUMP_E2E_TIMEOUT_MS ?? 300_000))
-    process.stdout.write(result.stdout)
-    if (result.stderr.trim() !== '') process.stderr.write(result.stderr)
+
 
     /*
      * The verdict comes from the test binary's own summary, not from the exit code

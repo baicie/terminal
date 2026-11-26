@@ -233,10 +233,10 @@ SIGNED_PUBLIC_RELEASE_READY = NO  （签名/公证/updater 密钥 BLOCKED_EXTERN
 | 项 | 状态 | 需要什么 |
 | --- | --- | --- |
 | `e2e-07` GUI 失败诊断 | **PASS（macOS + Linux）** | 四轮才通过。前三轮的失败都是真结论：两轮是用例写错（没进 Hosts 路由；等「页面里有错误字样」，1.6 秒被主机列表本身满足），第三轮对上了产品——连接被拒被说成「无法验证 SSH 主机密钥」，且内部调用栈直出。`9f9e3bd` 上 macOS（阻塞）与 Linux 两条 case 全 ✓、`notRunCount: 0`。**这一行是矩阵里唯一达到 `NATIVE_GUI_VERIFIED` 的** |
-| F12 断连注入 | **PARTIAL** | 代理已就位、对照用例通过（健康连接经代理成功）；`resetAfterMs`/`blackhole` 的逐场景注入尚未编写驱动 |
+| F12 断连注入 | **PASS（bastion 腿，三场景）** | 逐场景驱动已写（`an_injected_fault_names_its_own_leg_and_no_more`），断言**归因**而不只是「失败了」。healthy / blackhole / reset 三场景**本地实跑**全过，`reset` 的 `cut: 1` 证明注入真的切断了连接。**CI 那轮是假绿**：三场景因 `gobject-sys` 编译竞态全失败，而 `finish('FAIL')` 不设退出码，job 仍报成功——已修（矩阵移到主构建之后 + FAIL 设非零退出码），并用源码级断言钉住这两点。**只覆盖 bastion 腿**——跳板连接不直连目标，`PermitOpen` 只放行目标真实端口，目标腿无法整形 |
 | F13 自定义策略真实执行 | **NOT_RUN** | 出货的 `terminalSessionManager` 不收参数，自定义退避到不了真实后端 |
-| F14 100 轮 soak | **NOT_RUN** | 需要手动 workflow 与稳定机器；12 轮的快速回归已在 CI |
-| F17 RSS/FD 曲线 | **NOT_RUN** | 同上；只把确定性事实设为阻塞 |
+| F14 100 轮 soak | **PASS（本地 100 轮）** | 真跑完 100 轮：RSS 15.63→15.96 MB（峰值 16.01，**终值低于峰值**）、FD 恒 9、`NO_LEAK_DETECTED`。12 轮的快速回归在 CI 每次跑。**这是本机结果**，尚未在 CI 派发过 100 轮 |
+| F17 RSS/FD 曲线 | **PASS（Unix，采集+判读）** | `session::process_metrics` 真实测量（macOS `proc_pidinfo`、Linux `/proc/self`），soak 每轮采样，判读是纯函数 `scripts/ssh-soak-curve.mjs`（13 项测试）。**Windows 返回 `None` 而非 0**——0 会进曲线并伪装成完美平坦。判读规则被测试改过一次：只看相对比例会漏掉大基线上的真实泄漏（2 GiB 涨 156 MiB = 7.6%），已加持续性判据 |
 | Windows 三平台故障矩阵 | **NOT_RUN** | 一次性 profile 或 VM |
 | 七天真人日用 | **NOT_RUN** | 用户本人 |
 
