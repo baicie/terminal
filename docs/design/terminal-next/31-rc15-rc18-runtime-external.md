@@ -22,15 +22,28 @@
 | **认证拒绝是终态** | `NON_RETRYABLE_KINDS` 含 `authentication_rejected` | `terminal-session-manager-auth-kinds.test.ts` |
 | 密码/密钥凭证失败不消耗网络预算 | `credential-retry.test.ts` | 多条 |
 
-### 缺的验证
+### 服务器侧计数（已补上）
 
-任务书要求「从服务器日志和网络尝试次数独立验证」。那需要一个允许密码认证的隔离
-fixture，并计数 sshd 侧收到的连接尝试。本会话没有构造它。
+任务书要求「从服务器日志和网络尝试次数独立验证」。现在由两个拒绝场景在**每次**
+`--scenario` 运行时自动完成，不需要标志：
+
+- `TARGET_AUTH_REJECTED` 数目标 sshd，`BASTION_AUTH_REJECTED` 数跳板 sshd
+- 统计的是 `Failed publickey` 行，**不是** `Connection from`——fixture 自己的
+  `waitUntilReady` 会先用正确密钥登录一次，那行是 harness 的流量，数进去会得到 2
+  并把产品误判成缺陷（第一版正是如此）
+- 判据是「恰好 1 次拒绝」：第二次意味着阶梯跑了，把服务器已经拒绝过的秘密又发了一遍
+
+实测：两个场景各 1 次拒绝。**变异**（把 `authentication_rejected` 从
+`NON_RETRYABLE_KINDS` 移除）后，同一场景记到 **4 次**——检查确实指向真实行为，
+而不是一个总能通过的形状。
 
 ```
 SSH_RETRY_BUDGET_IMPLEMENTED        = PASS   （代码 + 单测）
-SSH_RETRY_COUNTED_FROM_SERVER_SIDE  = NOT_RUN（需要隔离 fixture 与 sshd 日志计数）
+SSH_RETRY_COUNTED_FROM_SERVER_SIDE  = PASS   （真实 sshd，两次拒绝场景各 1 次）
 ```
+
+**未覆盖**：密码认证路径（Docker 后端的 fixture 不暴露日志）与 Windows。上面计的是
+公钥拒绝，而「拒绝不消耗预算」这条性质本身与认证方式无关。
 
 ---
 
