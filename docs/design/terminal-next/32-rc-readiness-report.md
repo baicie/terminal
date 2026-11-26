@@ -79,7 +79,7 @@ RC06 都不变红。已在源码注释写明它是防御性的，以及它在什
 | RC13 | **VERIFIED** | 1440px 的 +224 异常**已消失**：`896 = 1440−46−182−300−16` |
 | RC14 | PARTIAL | 100 次 resize 有界、双 Pane 各自 fit、dispose 隔离；共享节流的变异是行为等价，见下 |
 | RC15 | **VERIFIED** | 重试预算实现完整且有测试；**服务器侧计数已补上**：凭证被拒时跳板/目标 sshd 的 `Failed publickey` 记到 **1 次**（不是 5 次），证明 `authentication_rejected` 是终态、没有消耗重试预算。变异（把它从 `NON_RETRYABLE_KINDS` 移除）后同一场景记到 **4 次**拒绝，检查确实会长红 |
-| RC16 | PARTIAL | Two-hop 凭据已在真实 sshd 验证；断连矩阵 NOT_RUN |
+| RC16 | **PARTIAL（归因已 PASS）** | 跳板/目标的认证拒绝与 host-key 不符各有真实用例断言 `hop`（6 个，CI 阻塞），`JUMP_ERROR_ATTRIBUTION` 由 NOT_RUN 改为 **PASS**——`SessionFailure { error, hop, stage }` 解决了当时 `SessionError` 序列化边界挡住的那个改动。断连矩阵保持 PARTIAL：跳板腿三场景已有（F12），**目标腿缺**——跳板不直连目标，`PermitOpen` 只放行真实端口，故障整形不到那一腿 |
 | RC17 | PARTIAL | Rust 侧 10 MiB 背压 PASS；**真实 WebView NOT_RUN** |
 | RC18 | **NOT_RUN** | 需要真实 GUI 长时运行 |
 
