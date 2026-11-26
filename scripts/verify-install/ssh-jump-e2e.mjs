@@ -361,6 +361,24 @@ async function main() {
         if (!ok) {
           process.stdout.write(`[ssh12] scenario ${scenario.name} output:\n${outcome.stdout}`)
           if (outcome.stderr.trim() !== '') process.stderr.write(outcome.stderr)
+        } else {
+          /*
+           * Print the pass too, with the proxy's own counters.
+           *
+           * Measured on run 45786015950: the job went green, and the only scenario line in
+           * the whole log was the *main* invocation's `SSH_JUMP_E2E_RESULT scenario=healthy`
+           * — the matrix's three runs printed nothing because only failures were reported.
+           * A green job whose log cannot show that the three injected scenarios ran is the
+           * same shape as the false green this file was written to fix: readable as
+           * coverage, verifiable from nothing.
+           *
+           * `accepted`/`cut` are the injection's own proof: a `reset` scenario that reports
+           * `cut: 0` never interrupted anything and its assertion passed for no reason.
+           */
+          process.stdout.write(
+            `[ssh12] scenario ${scenario.name} passed ` +
+              `(accepted=${proxy.stats.accepted}, cut=${proxy.stats.cut})\n`,
+          )
         }
         report.disconnectMatrix.push({
           scenario: scenario.name,

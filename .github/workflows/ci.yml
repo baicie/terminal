@@ -687,13 +687,29 @@ jobs:
         run: node scripts/verify-install/ssh-jump-e2e.mjs
         env:
           SSH_JUMP_E2E_TIMEOUT_MS: '600000'
+          # ## Without this the upload below had nothing to upload
+          #
+          # The harness writes its report only when `SSH_JUMP_E2E_REPORT` names a path
+          # (`finish()` in `ssh-jump-e2e.mjs`). This job has uploaded
+          # `/tmp/ssh-jump-report.json` since the step was added and never set the
+          # variable, so every run logged `No files were found with the provided path`
+          # and carried on — the artifact was never produced, and the matrix's per-scenario
+          # results (`passed`/`cut`/`accepted`) were unverifiable from any output.
+          #
+          # Measured on run 45786015950: job green, matrix PASS, and no artifact. A
+          # report step that silently produces nothing is the same defect class as the
+          # exit code that did not fail the job.
+          SSH_JUMP_E2E_REPORT: /tmp/ssh-jump-report.json
+      # `if-no-files-found: error`, not `warn`: the default silently turned a report that
+      # never got written into a green job. `always()` stays, so a failing matrix still
+      # uploads the report that explains it — which is exactly when it matters most.
       - name: Upload the matrix report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: real-ssh-jump-report-${{ github.run_id }}
           path: /tmp/ssh-jump-report.json
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 7
 
   cargo-audit:
