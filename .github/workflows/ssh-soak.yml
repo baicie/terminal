@@ -55,5 +55,9 @@ jobs:
         with:
           name: ssh-soak-report-${{ github.run_id }}
           path: soak-report.json
-          if-no-files-found: warn
+          # Same rule as the PR-time matrix job (`ci.yml`): a report that was never
+          # written must fail the step, not warn. This workflow does set
+          # `SSH_JUMP_E2E_REPORT`, so the file exists today — but `warn` is what let the
+          # PR-time job upload nothing for its whole history without anyone noticing.
+          if-no-files-found: error
           retention-days: 30

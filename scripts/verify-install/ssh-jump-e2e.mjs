@@ -361,6 +361,24 @@ async function main() {
         if (!ok) {
           process.stdout.write(`[ssh12] scenario ${scenario.name} output:\n${outcome.stdout}`)
           if (outcome.stderr.trim() !== '') process.stderr.write(outcome.stderr)
+        } else {
+          /*
+           * Print the pass too, with the proxy's own counters.
+           *
+           * Measured on run 45786015950: the job went green, and the only scenario line in
+           * the whole log was the *main* invocation's `SSH_JUMP_E2E_RESULT scenario=healthy`
+           * — the matrix's three runs printed nothing because only failures were reported.
+           * A green job whose log cannot show that the three injected scenarios ran is the
+           * same shape as the false green this file was written to fix: readable as
+           * coverage, verifiable from nothing.
+           *
+           * `accepted`/`cut` are the injection's own proof: a `reset` scenario that reports
+           * `cut: 0` never interrupted anything and its assertion passed for no reason.
+           */
+          process.stdout.write(
+            `[ssh12] scenario ${scenario.name} passed ` +
+              `(accepted=${proxy.stats.accepted}, cut=${proxy.stats.cut})\n`,
+          )
         }
         report.disconnectMatrix.push({
           scenario: scenario.name,
@@ -468,11 +486,57 @@ async function main() {
  * cannot list the cases it ran is not evidence that any case ran.
  */
 export function parseCaseNames(stdout) {
-  return stdout
-    .split('\n')
-    .map(line => /^test (\S*ssh_jump_e2e_tests::\S+) \.\.\. (ok|FAILED)/.exec(line.trim()))
-    .filter(Boolean)
-    .map(match => ({ name: match[1], outcome: match[2] }))
+  /*
+   * ## `--nocapture` moves the verdict off the test's own line
+   *
+   * libtest prints `test <name> ... ` and then runs the case, so without `--nocapture` the
+   * verdict follows on the same line. With it — which is how this harness runs, because it
+   * needs the cases' diagnostics — whatever the case writes to stderr lands right there
+   * instead, and the `ok` ends up alone on the *next* line:
+   *
+   *     test …::an_injected_fault_names_its_own_leg_and_no_more ... SSH_JUMP_E2E_RESULT scenario=healthy elapsed_ms=258
+   *     ok
+   *
+   * Measured on run 45790480314: the report listed 10 cases while the invocation had
+   * reported `12 passed`. The two missing ones were exactly the cases that print — the
+   * fault-injection case and the 12-round soak — so the report under-listed precisely the
+   * coverage a reader would go looking for. A report that cannot list the cases it ran is
+   * not evidence that any case ran, which is why this function exists at all.
+   *
+   * So: a `test <name> ...` line opens a case, and the verdict is either on that line or
+   * on the next line that is a bare verdict.
+   */
+  const cases = []
+  let pending = null
+  for (const raw of stdout.split('\n')) {
+    const line = raw.trim()
+    if (pending === null) {
+      const opened = /^test (\S*ssh_jump_e2e_tests::\S+) \.\.\.(?:\s(.*))?$/.exec(line)
+      if (opened === null) continue
+      const inline = /^(ok|FAILED)\s*$/.exec(opened[2] ?? '')
+      if (inline !== null) {
+        cases.push({ name: opened[1], outcome: inline[1] })
+      } else {
+        // The verdict comes on a later line; until it does, this case names the next one.
+        pending = opened[1]
+      }
+      continue
+    }
+    const verdict = /^(ok|FAILED)\s*$/.exec(line)
+    if (verdict !== null) {
+      cases.push({ name: pending, outcome: verdict[1] })
+      pending = null
+    }
+  }
+  /*
+   * A case whose verdict never arrived is not silently dropped: libtest always prints one,
+   * so a dangling name means the output was truncated, and the caller should see that
+   * rather than a list that is simply one shorter.
+   */
+  if (pending !== null) {
+    cases.push({ name: pending, outcome: 'NO_VERDICT' })
+  }
+  return cases
 }
 
 /**
