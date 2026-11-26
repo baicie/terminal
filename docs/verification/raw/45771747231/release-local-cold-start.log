@@ -1,0 +1,249 @@
+
+> @terminal/monorepo@0.0.1-dev.2 smoke:local-cold-start /Users/runner/work/terminal/terminal
+> node scripts/run-local-cold-start-stopwatch.mjs -- --app-path /Users/runner/work/terminal/terminal/src-tauri/target/release/terminal
+
+{
+  "ok": true,
+  "appPath": "/Users/runner/work/terminal/terminal/src-tauri/target/release/terminal",
+  "binarySha256": "74c15bca32633e75746a07beb3cab96ba0ef86e8ee2917f3949aaa98090afd1a",
+  "capturedAt": "2026-11-26T07:07:23.435Z",
+  "pid": 51716,
+  "measuredFrom": "child-spawn-event",
+  "axProbe": "none",
+  "readinessMode": "local",
+  "readinessTarget": "terminal",
+  "readyAt": "terminal",
+  "markerPath": "/var/folders/q2/p1t6rgxj5fj32g1dc7dmd49r0000gn/T/terminal-local-cold-WwoQp9/terminal-ready.marker",
+  "markerReady": true,
+  "markerChecks": [],
+  "requestToReadyMs": 2176,
+  "spawnToReadyMs": 2175,
+  "firstStageSeenMs": 1758,
+  "inAppMs": 131,
+  "outsideAppMs": 9869,
+  "stages": [
+    {
+      "atMs": 0,
+      "stage": "frontend-boot",
+      "detail": "main.tsx evaluated"
+    },
+    {
+      "atMs": 41,
+      "stage": "bootstrap-gates",
+      "detail": "bootstrap mode=shell-probe gates: smoke=not-configured(27ms) remotePrompt=not-configured(27ms) inputProbe=not-configured(27ms) rawProbe=not-configured(27ms) shellProbe=loaded(27ms)"
+    },
+    {
+      "atMs": 110,
+      "stage": "session-create-requested",
+      "detail": "local"
+    },
+    {
+      "atMs": 131,
+      "stage": "session-created",
+      "detail": "local-ead1161a-f04c-4f95-8c50-3a616b9aa087"
+    }
+  ],
+  "stageBudgets": {
+    "checked": [],
+    "violations": []
+  },
+  "windowReady": false,
+  "terminalReady": true,
+  "readiness": null,
+  "caseName": "cat-eof",
+  "marker": "TERMINAL_LOCAL_COLD_START_local_55beda529c3ae65110d65785",
+  "nonce": "local_55beda529c3ae65110d65785",
+  "probeResult": {
+    "caseName": "cat-eof",
+    "durationMs": 423,
+    "error": null,
+    "inputEvents": [
+      {
+        "kind": "text",
+        "bytes": 381,
+        "dataHex": "73747479206563686f3b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f6c6f63616c5f3535272027626564613532396333616536353131306436353738355f52454144595f5f273b2073747479202d6563686f3b2063617074757265643d2428636174293b2073747479206563686f3b206966205b202224636170747572656422203d20276361742d656f662d70726f626527205d3b207468656e207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f6c6f63616c5f3527202735626564613532396333616536353131306436353738355f504153535f5f273b20656c7365207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f6c6f63616c5f3527202735626564613532396333616536353131306436353738355f4641494c5f5f273b2066693b20737474792073616e650d"
+      },
+      {
+        "kind": "text",
+        "bytes": 14,
+        "dataHex": "6361742d656f662d70726f62650d"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "04"
+      }
+    ],
+    "ok": true,
+    "trace": [
+      "ready",
+      "pass"
+    ]
+  }
+}
+
+> @terminal/monorepo@0.0.1-dev.2 smoke:local-cold-start /Users/runner/work/terminal/terminal
+> node scripts/run-local-cold-start-stopwatch.mjs -- --app-path /Users/runner/work/terminal/terminal/src-tauri/target/release/terminal
+
+{
+  "ok": true,
+  "appPath": "/Users/runner/work/terminal/terminal/src-tauri/target/release/terminal",
+  "binarySha256": "74c15bca32633e75746a07beb3cab96ba0ef86e8ee2917f3949aaa98090afd1a",
+  "capturedAt": "2026-11-26T07:07:25.738Z",
+  "pid": 51774,
+  "measuredFrom": "child-spawn-event",
+  "axProbe": "none",
+  "readinessMode": "local",
+  "readinessTarget": "terminal",
+  "readyAt": "terminal",
+  "markerPath": "/var/folders/q2/p1t6rgxj5fj32g1dc7dmd49r0000gn/T/terminal-local-cold-ksdHes/terminal-ready.marker",
+  "markerReady": true,
+  "markerChecks": [],
+  "requestToReadyMs": 1956,
+  "spawnToReadyMs": 1954,
+  "firstStageSeenMs": 1442,
+  "inAppMs": 129,
+  "outsideAppMs": 9871,
+  "stages": [
+    {
+      "atMs": 0,
+      "stage": "frontend-boot",
+      "detail": "main.tsx evaluated"
+    },
+    {
+      "atMs": 36,
+      "stage": "bootstrap-gates",
+      "detail": "bootstrap mode=shell-probe gates: smoke=not-configured(23ms) remotePrompt=not-configured(22ms) inputProbe=not-configured(22ms) rawProbe=not-configured(22ms) shellProbe=loaded(23ms)"
+    },
+    {
+      "atMs": 123,
+      "stage": "session-create-requested",
+      "detail": "local"
+    },
+    {
+      "atMs": 129,
+      "stage": "session-created",
+      "detail": "local-82f93755-8a1c-4fb0-b59e-df37b625f9ae"
+    }
+  ],
+  "stageBudgets": {
+    "checked": [],
+    "violations": []
+  },
+  "windowReady": false,
+  "terminalReady": true,
+  "readiness": null,
+  "caseName": "cat-eof",
+  "marker": "TERMINAL_LOCAL_COLD_START_local_0ef9a1ee319495962e63b5b1",
+  "nonce": "local_0ef9a1ee319495962e63b5b1",
+  "probeResult": {
+    "caseName": "cat-eof",
+    "durationMs": 384,
+    "error": null,
+    "inputEvents": [
+      {
+        "kind": "text",
+        "bytes": 381,
+        "dataHex": "73747479206563686f3b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f6c6f63616c5f3065272027663961316565333139343935393632653633623562315f52454144595f5f273b2073747479202d6563686f3b2063617074757265643d2428636174293b2073747479206563686f3b206966205b202224636170747572656422203d20276361742d656f662d70726f626527205d3b207468656e207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f6c6f63616c5f3027202765663961316565333139343935393632653633623562315f504153535f5f273b20656c7365207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f6c6f63616c5f3027202765663961316565333139343935393632653633623562315f4641494c5f5f273b2066693b20737474792073616e650d"
+      },
+      {
+        "kind": "text",
+        "bytes": 14,
+        "dataHex": "6361742d656f662d70726f62650d"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "04"
+      }
+    ],
+    "ok": true,
+    "trace": [
+      "ready",
+      "pass"
+    ]
+  }
+}
+
+> @terminal/monorepo@0.0.1-dev.2 smoke:local-cold-start /Users/runner/work/terminal/terminal
+> node scripts/run-local-cold-start-stopwatch.mjs -- --app-path /Users/runner/work/terminal/terminal/src-tauri/target/release/terminal
+
+{
+  "ok": true,
+  "appPath": "/Users/runner/work/terminal/terminal/src-tauri/target/release/terminal",
+  "binarySha256": "74c15bca32633e75746a07beb3cab96ba0ef86e8ee2917f3949aaa98090afd1a",
+  "capturedAt": "2026-11-26T07:07:28.147Z",
+  "pid": 51821,
+  "measuredFrom": "child-spawn-event",
+  "axProbe": "none",
+  "readinessMode": "local",
+  "readinessTarget": "terminal",
+  "readyAt": "terminal",
+  "markerPath": "/var/folders/q2/p1t6rgxj5fj32g1dc7dmd49r0000gn/T/terminal-local-cold-xWowap/terminal-ready.marker",
+  "markerReady": true,
+  "markerChecks": [],
+  "requestToReadyMs": 2057,
+  "spawnToReadyMs": 2055,
+  "firstStageSeenMs": 1641,
+  "inAppMs": 130,
+  "outsideAppMs": 9870,
+  "stages": [
+    {
+      "atMs": 0,
+      "stage": "frontend-boot",
+      "detail": "main.tsx evaluated"
+    },
+    {
+      "atMs": 36,
+      "stage": "bootstrap-gates",
+      "detail": "bootstrap mode=shell-probe gates: smoke=not-configured(23ms) remotePrompt=not-configured(23ms) inputProbe=not-configured(23ms) rawProbe=not-configured(23ms) shellProbe=loaded(23ms)"
+    },
+    {
+      "atMs": 124,
+      "stage": "session-create-requested",
+      "detail": "local"
+    },
+    {
+      "atMs": 130,
+      "stage": "session-created",
+      "detail": "local-7c94a2ee-9dd0-4ee9-b052-c5e486b9cb89"
+    }
+  ],
+  "stageBudgets": {
+    "checked": [],
+    "violations": []
+  },
+  "windowReady": false,
+  "terminalReady": true,
+  "readiness": null,
+  "caseName": "cat-eof",
+  "marker": "TERMINAL_LOCAL_COLD_START_local_fafa16d94d4d73dc72d901bc",
+  "nonce": "local_fafa16d94d4d73dc72d901bc",
+  "probeResult": {
+    "caseName": "cat-eof",
+    "durationMs": 385,
+    "error": null,
+    "inputEvents": [
+      {
+        "kind": "text",
+        "bytes": 381,
+        "dataHex": "73747479206563686f3b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f6c6f63616c5f6661272027666131366439346434643733646337326439303162635f52454144595f5f273b2073747479202d6563686f3b2063617074757265643d2428636174293b2073747479206563686f3b206966205b202224636170747572656422203d20276361742d656f662d70726f626527205d3b207468656e207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f6c6f63616c5f6627202761666131366439346434643733646337326439303162635f504153535f5f273b20656c7365207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f6c6f63616c5f6627202761666131366439346434643733646337326439303162635f4641494c5f5f273b2066693b20737474792073616e650d"
+      },
+      {
+        "kind": "text",
+        "bytes": 14,
+        "dataHex": "6361742d656f662d70726f62650d"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "04"
+      }
+    ],
+    "ok": true,
+    "trace": [
+      "ready",
+      "pass"
+    ]
+  }
+}

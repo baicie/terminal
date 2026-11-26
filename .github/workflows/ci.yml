@@ -649,6 +649,31 @@ jobs:
         with:
           node-version-file: .node-version
           cache: pnpm
+      # ## The Tauri system libraries, which this job never installed
+      #
+      # `cargo test --lib` compiles the whole dependency tree, WebKit stack included.
+      # Without these, `glib-sys`' build script fails with
+      # `Package glib-2.0 was not found in the pkg-config search path`, every scenario
+      # in the disconnect matrix dies before it connects, and nothing about the product
+      # was measured.
+      #
+      # Measured on runs 45758649504 and 45763897639. The first was masked by the
+      # exit-code defect (the job went green over three failed scenarios); the second
+      # reported the failure honestly, which is how this was found.
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            libssl-dev \
+            libudev-dev \
+            libwebkit2gtk-4.1-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.96.0
