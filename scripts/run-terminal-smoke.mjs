@@ -22,6 +22,8 @@ import {
 import {
   connectionCountProblems,
   countServerConnections,
+  countServerRefusals,
+  credentialRefusalProblems,
 } from './terminal-smoke-server-dials.mjs'
 
 const execFileAsync = promisify(execFileCallback)
@@ -1230,6 +1232,39 @@ function reconnectPolicyEnvironment(policy) {
  * nothing about how many dials to expect. That run is legitimate (it exercises the backoff)
  * but it cannot be checked by counting, and pretending otherwise would invent a number.
  */
+
+/**
+ * RC15 — refused credentials are checked on every run of a refusal scenario.
+ *
+ * Deliberately not behind a flag: this is a property the product must always have, and a
+ * check that only runs when someone remembers to pass a flag is the mechanism-with-no-
+ * consumer shape this repository keeps finding. The cost is reading a log the harness has
+ * already collected.
+ *
+ * ## Which daemon
+ *
+ * The one that refuses. `BASTION_AUTH_REJECTED` refuses at the bastion, `TARGET_AUTH_REJECTED`
+ * at the target; counting the other one would read zero and pass for the wrong reason.
+ */
+function credentialRefusalDialChecks({ scenario, fixture }) {
+  const logOf = {
+    BASTION_AUTH_REJECTED: fixture?.jumpLog,
+    TARGET_AUTH_REJECTED: fixture?.targetLog,
+  }[scenario]
+  if (typeof logOf !== 'function') return []
+  /*
+   * An empty log means this run has no daemon output to judge — a test double, or a daemon
+   * that failed to start and whose failure the run already reports. Treating it as "zero
+   * refusals, therefore wrong" would fail on the absence of evidence rather than on
+   * evidence of a defect; measured: two harness tests whose fake daemons log nothing went
+   * red with "server refused it 0 time(s)". A log with content is the only case where a
+   * missing refusal means something.
+   */
+  const log = logOf()
+  if (typeof log !== 'string' || log.trim() === '') return []
+  return credentialRefusalProblems({ observed: countServerRefusals(log) })
+}
+
 function reconnectPolicyDialChecks({ policy, scenario, fixture }) {
   if (!Number.isSafeInteger(policy.maxAttempts) || policy.maxAttempts <= 0) {
     throw new Error(
@@ -1549,6 +1584,22 @@ async function runTerminalSmokeAttempt({
             daemonLogDetail(fixture),
         )
       }
+    }
+    /*
+     * RC15 — a refused credential costs exactly one dial.
+     *
+     * Runs on every refusal scenario rather than behind a flag: this is a property the
+     * product must always have, and the log it reads is already collected.
+     */
+    const refusalProblems = credentialRefusalDialChecks({
+      scenario: failureScenario,
+      fixture,
+    })
+    if (refusalProblems.length > 0) {
+      throw new Error(
+        `credential refusal spent more than one dial: ${refusalProblems.join('; ')}` +
+          daemonLogDetail(fixture),
+      )
     }
     /*
      * F09 — a scenario is only passed when the pane names the right machine.
