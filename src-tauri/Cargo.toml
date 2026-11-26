@@ -197,3 +197,12 @@ inherits = "release"
 lto = "fat"
 codegen-units = 1
 strip = "symbols"
+
+[target.'cfg(unix)'.dependencies]
+# F17 — the soak measures this process's own RSS and open file descriptors.
+#
+# `libc` is already in the tree (0.2.186, arriving via tokio et al.); naming it directly
+# costs nothing new and avoids pulling a process-metrics crate for two syscalls. Windows
+# needs a different API and a different permission model, so `session::process_metrics`
+# reports `None` there rather than pretending to measure.
+libc = "0.2"

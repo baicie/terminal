@@ -4,6 +4,8 @@ import { defaultSettings } from '@/service/database'
 import { useAppStore } from '@/store/app'
 import { useRightPanelStore } from '@/store/right-panel-store'
 import { DOCK_WIDTH } from './right-panel'
+import { OVERVIEW_RULER_WIDTH } from './terminal-width-budget'
+import { useTerminalStatusStore } from '@/store/terminal-status'
 import {
   chooseLayout,
   type LayoutDecision,
@@ -128,10 +130,29 @@ export function usePanelLayout(input: PanelLayoutInput): PanelLayoutDecision {
    * not. That is the whole 60-column-floor failure in E2E-02, and it is a product defect
    * — the layout is supposed to yield *before* the terminal is starved.
    */
-  const cellWidth = useMeasuredCellWidth(
+  const estimatedCellWidth = useMeasuredCellWidth(
     settings.fontSize ?? defaultSettings.fontSize,
     settings.fontFamily ?? defaultSettings.fontFamily,
   )
+  /*
+   * ## A mounted terminal knows its cell width; a canvas only guesses it
+   *
+   * `useMeasuredCellWidth` measures the font stack with a canvas. That was the fix for
+   * the *first* version of this defect (the layout read `'monospace'` while xterm got
+   * `Menlo, …`) and it still fails on a machine where the named faces are absent: the
+   * canvas substitutes a font, reports 8.4px, and xterm — which substitutes differently
+   * — renders at ~10.8px. Measured on the Linux GUI runner: at 768px the decision
+   * predicted 62 columns from 8.4 and the terminal reported 50 at 10.8, so the explorer
+   * stayed a column and the terminal was starved below its floor.
+   *
+   * The terminal itself publishes the truth — `cols` and the width it was fitted to —
+   * through `useTerminalStatusStore`, and this layout already subscribes to it. Deriving
+   * the cell width from those two numbers is not an estimate: it is the value xterm
+   * actually used, back-computed. The canvas measurement stays as the value for the
+   * first frame, before any terminal has mounted.
+   */
+  const observedCellWidth = useObservedCellWidth()
+  const cellWidth = observedCellWidth ?? estimatedCellWidth
   // The shell, not the window: the window includes OS chrome and any caption
   // buttons, and feeding the already-squeezed terminal element back in is what
   // makes a layout oscillate.
@@ -241,4 +262,38 @@ function useShellWidth(): { width: number; ref: RefObject<HTMLDivElement | null>
   }, [])
 
   return { width, ref }
+}
+
+/**
+ * The cell width a mounted terminal is actually using, or `null` before one exists.
+ *
+ * ## Why back-compute instead of asking xterm
+ *
+ * xterm's render service exposes its measured cell, but only on an instance, and the
+ * layout renders *around* the terminal layer rather than owning it — reaching into it
+ * would invert that relationship and couple the shell to the pane's internals.
+ *
+ * What the pane already publishes is enough: `cols` and the CSS width it was fitted to.
+ * `(fittedWidth - ruler - padding) / cols` is the same arithmetic
+ * `terminal-columns.ts` does forwards, so the layout ends up deciding against exactly
+ * the cell width the terminal is rendering with.
+ *
+ * `null` is returned rather than a fallback so the caller can tell "no terminal yet"
+ * from "a terminal that measured the same as the canvas estimate".
+ */
+function useObservedCellWidth(): number | null {
+  const snapshot = useTerminalStatusStore(state => state.active)
+  const fittedWidth = useTerminalStatusStore(state => state.fittedWidth)
+  if (snapshot === null || snapshot.cols <= 0) return null
+  if (!Number.isFinite(fittedWidth) || fittedWidth <= 0) return null
+  const usable = fittedWidth - OVERVIEW_RULER_WIDTH
+  if (usable <= 0) return null
+  const cell = usable / snapshot.cols
+  /*
+   * A sanity band, not a filter for tidiness. A back-computed cell outside this range
+   * means the two numbers describe different things — a stale `cols` from before a
+   * resize, or a width read from the wrong element — and using it would move the
+   * decision on garbage. The band is wide enough to cover every plausible font size.
+   */
+  return cell >= 4 && cell <= 24 ? cell : null
 }

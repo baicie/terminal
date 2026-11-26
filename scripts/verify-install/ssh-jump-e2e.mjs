@@ -36,6 +36,7 @@ import { fileURLToPath } from 'node:url'
 import { launchProcess, stopProcess } from './process-lifecycle.mjs'
 import { startTerminalSmokeSshd } from '../terminal-smoke-sshd.mjs'
 import { startShapingProxy } from '../sftp-shaping-proxy.mjs'
+import { summariseCurve } from '../ssh-soak-curve.mjs'
 
 const PROJECT_ROOT = path.resolve(import.meta.dirname, '..', '..')
 
@@ -50,6 +51,34 @@ const report = {
   verdict: 'NOT_RUN',
   cases: [],
   notes: [],
+  /**
+   * F17 — the resource curve, when the run measured one.
+   *
+   * Absent on a normal PR run (12 rounds is a lifecycle regression, not a curve) and on
+   * platforms that cannot measure themselves. Present on the manually dispatched soak.
+   */
+  curve: null,
+}
+
+/**
+ * Read the per-round samples the Rust case prints.
+ *
+ * The format is `SSH_SOAK_METRICS round=<n> rss=<bytes> fds=<count>`, emitted after the
+ * round is fully closed. Parsing it here rather than computing anything in Rust keeps
+ * the decision in one place — `ssh-soak-curve.mjs` — where it is unit-tested.
+ */
+export function parseSoakMetrics(stdout) {
+  const rss = []
+  const fds = []
+  const pattern = /SSH_SOAK_METRICS round=(\d+) rss=(\d+) fds=(\d+)/g
+  for (const match of stdout.matchAll(pattern)) {
+    const round = Number(match[1])
+    // Round 0 is the baseline taken before any connection; it belongs in the series.
+    if (round === 0 && rss.length > 0) continue
+    rss.push(Number(match[2]))
+    fds.push(Number(match[3]))
+  }
+  return { rss, fds }
 }
 
 function finish(verdict, detail) {
@@ -173,6 +202,41 @@ async function main() {
     }
 
     console.log(`[ssh12] env: bastion=${bastion.port} target=${target.port} key=${String(bastion.privateKey).slice(0, 24)}...`)
+    /*
+     * One source for the fixture environment, because the disconnect matrix below runs
+     * cargo again per scenario. The first version of that matrix referenced a helper that
+     * did not exist (`fixtureEnvironment()`); sharing this object is what keeps the two
+     * invocations from drifting — a scenario run that forgot `SSH_JUMP_E2E_TARGET_PORT`
+     * would fail for a reason that has nothing to do with the injected fault.
+     */
+    const fixtureEnvironment = {
+      ...process.env,
+      SSH_JUMP_E2E_BASTION_PORT: String(bastion.port),
+      SSH_JUMP_E2E_TARGET_PORT: String(target.port),
+      SSH_JUMP_E2E_USER: os.userInfo().username,
+      SSH_JUMP_E2E_BASTION_KEY: bastion.privateKey,
+      SSH_JUMP_E2E_TARGET_KEY: target.privateKey,
+      // `expectedHostKey` is a russh `PublicKey`; its `toString()` is the OpenSSH
+      // one-line form, which is what `PublicKey::from_openssh` on the Rust side reads.
+      SSH_JUMP_E2E_TARGET_HOST_KEY: target.expectedHostKey
+        ? target.expectedHostKey.toString()
+        : '',
+      SSH_JUMP_E2E_BASTION_PROXY_PORT: String(bastionProxy.port),
+      SSH_JUMP_E2E_TARGET_PROXY_PORT: String(targetProxy.port),
+      SSH_JUMP_E2E_B_PORT: String(bastionB.port),
+      SSH_JUMP_E2E_B_TARGET_PORT: String(targetB.port),
+      SSH_JUMP_E2E_B_BASTION_KEY: bastionB.privateKey,
+      SSH_JUMP_E2E_B_TARGET_KEY: targetB.privateKey,
+      SSH_JUMP_E2E_B_TARGET_HOST_KEY: targetB.expectedHostKey
+        ? targetB.expectedHostKey.toString()
+        : '',
+      SSH_JUMP_E2E_B_BASTION_HOST_KEY: bastionB.expectedHostKey
+        ? bastionB.expectedHostKey.toString()
+        : '',
+      SSH_JUMP_E2E_BASTION_HOST_KEY: bastion.expectedHostKey
+        ? bastion.expectedHostKey.toString()
+        : '',
+    }
     const cargo = launchProcess(
       'cargo',
       [
@@ -187,36 +251,101 @@ async function main() {
       {
         cwd: path.join(PROJECT_ROOT, 'src-tauri'),
         detached: true,
-        env: {
-          ...process.env,
-          SSH_JUMP_E2E_BASTION_PORT: String(bastion.port),
-          SSH_JUMP_E2E_TARGET_PORT: String(target.port),
-          SSH_JUMP_E2E_USER: os.userInfo().username,
-          SSH_JUMP_E2E_BASTION_KEY: bastion.privateKey,
-          SSH_JUMP_E2E_TARGET_KEY: target.privateKey,
-          // `expectedHostKey` is a russh `PublicKey`; its `toString()` is the OpenSSH
-          // one-line form, which is what `PublicKey::from_openssh` on the Rust side reads.
-          SSH_JUMP_E2E_TARGET_HOST_KEY: target.expectedHostKey
-            ? target.expectedHostKey.toString()
-            : '',
-          SSH_JUMP_E2E_BASTION_PROXY_PORT: String(bastionProxy.port),
-          SSH_JUMP_E2E_TARGET_PROXY_PORT: String(targetProxy.port),
-          SSH_JUMP_E2E_B_PORT: String(bastionB.port),
-          SSH_JUMP_E2E_B_TARGET_PORT: String(targetB.port),
-          SSH_JUMP_E2E_B_BASTION_KEY: bastionB.privateKey,
-          SSH_JUMP_E2E_B_TARGET_KEY: targetB.privateKey,
-          SSH_JUMP_E2E_B_TARGET_HOST_KEY: targetB.expectedHostKey
-            ? targetB.expectedHostKey.toString()
-            : '',
-          SSH_JUMP_E2E_B_BASTION_HOST_KEY: bastionB.expectedHostKey
-            ? bastionB.expectedHostKey.toString()
-            : '',
-          SSH_JUMP_E2E_BASTION_HOST_KEY: bastion.expectedHostKey
-            ? bastion.expectedHostKey.toString()
-            : '',
-        },
+        env: fixtureEnvironment,
       },
     )
+    /*
+     * ## F12 — the disconnect matrix, one proxy per scenario
+     *
+     * Each scenario needs a *fresh* proxy: a proxy that already cut one connection is not
+     * the clean fault injector the next one needs (`resetAfterMs` fires once, per
+     * connection, but a partially-consumed `cutAfterBytes` budget is not reusable).
+     *
+     * They also need a *separate* cargo invocation with `SSH_JUMP_E2E_SCENARIO` set,
+     * because the case reads its scenario from the environment. Rather than run cargo
+     * five times for five scenarios inside the main invocation, the matrix runs here and
+     * its results land in `report.disconnectMatrix`.
+     */
+    report.disconnectMatrix = []
+    const scenarios = [
+      { name: 'healthy', proxy: {} },
+      // The bastion accepts and forwards nothing: the client's own deadline is the only
+      // thing that can end this, so the case asserts it ends rather than hangs.
+      { name: 'blackhole', proxy: { blackhole: true } },
+      /*
+       * Destroyed after a small amount of traffic, which lands during the handshake.
+       *
+       * `resetAfterMs` was the first choice and it did not fire: measured on a local run,
+       * a healthy two-hop connection completes in **97 ms**, so a 250 ms timer never ran
+       * before the socket closed on its own (`cut: 0` in the report, and the scenario
+       * failed for a reason that had nothing to do with the product). A byte threshold
+       * has no such race — the handshake always moves bytes, so this cuts inside it.
+       */
+      { name: 'reset', proxy: { cutAfterBytes: { up: 512, down: 512 } } },
+    ]
+    const runScenario = async scenario => {
+      const proxy = await startShapingProxy({
+        targetPort: bastion.port,
+        ...scenario.proxy,
+      })
+      proxies.push(proxy)
+      try {
+        const run = launchProcess(
+          'cargo',
+          [
+            'test',
+            '--lib',
+            'an_injected_fault_names_its_own_leg_and_no_more',
+            '--',
+            '--ignored',
+            '--nocapture',
+            '--test-threads=1',
+          ],
+          {
+            cwd: path.join(PROJECT_ROOT, 'src-tauri'),
+            detached: true,
+            env: {
+              ...process.env,
+              ...fixtureEnvironment,
+              SSH_JUMP_E2E_BASTION_PROXY_PORT: String(proxy.port),
+              SSH_JUMP_E2E_SCENARIO: scenario.name,
+            },
+          },
+        )
+        const outcome = await waitForTests(run, Number(process.env.SSH_JUMP_E2E_SCENARIO_TIMEOUT_MS ?? 120_000))
+        const ok = /test result: ok\. 1 passed/.test(outcome.stdout)
+        /*
+         * Print the scenario's output either way.
+         *
+         * Measured on the first real run: the matrix reported `scenario reset failed` and
+         * nothing else — the cargo output was captured and discarded, so the reason (the
+         * proxy never fired, the hop was wrong, the case panicked) was not recoverable
+         * from the log. A scenario that fails silently is not a diagnosis.
+         */
+        if (!ok) {
+          process.stdout.write(`[ssh12] scenario ${scenario.name} output:\n${outcome.stdout}`)
+          if (outcome.stderr.trim() !== '') process.stderr.write(outcome.stderr)
+        }
+        report.disconnectMatrix.push({
+          scenario: scenario.name,
+          proxyPort: proxy.port,
+          passed: ok,
+          cut: proxy.stats.cut,
+          accepted: proxy.stats.accepted,
+          note: ok ? null : (outcome.timedOut ? 'TIMEOUT' : 'the case failed'),
+        })
+        return ok
+      } finally {
+        await proxy.close()
+      }
+    }
+    for (const scenario of scenarios) {
+      const ok = await runScenario(scenario)
+      if (!ok) {
+        report.notes.push(`DISCONNECT_MATRIX: scenario ${scenario.name} failed`)
+      }
+    }
+
     const result = await waitForTests(cargo, Number(process.env.SSH_JUMP_E2E_TIMEOUT_MS ?? 300_000))
     process.stdout.write(result.stdout)
     if (result.stderr.trim() !== '') process.stderr.write(result.stderr)
@@ -234,6 +363,16 @@ async function main() {
       finish('FAIL')
     } else if (failed > 0) {
       finish('FAIL')
+    } else if (report.disconnectMatrix.some(entry => !entry.passed)) {
+      /*
+       * F12 — a failed injected-fault scenario fails the harness.
+       *
+       * It is checked before the generic PASS branch because the matrix runs in its own
+       * cargo invocations: their exit codes never reach `failed` above, so without this
+       * line a scenario that reported the wrong hop would be recorded in the report and
+       * still finish PASS. A recorded-but-ignored result is worse than no matrix.
+       */
+      finish('FAIL')
     } else if (passed === 0) {
       report.notes.push('NO_TEST_RAN: the filter matched nothing, which is not a pass')
       finish('FAIL')
@@ -249,6 +388,22 @@ async function main() {
       )
       finish('NOT_RUN')
     } else {
+      /*
+       * F17 — judge the curve before declaring PASS.
+       *
+       * Only when the run produced one: a 12-round PR regression prints samples too, but
+       * 12 is below the minimum-sample rule and would report INSUFFICIENT_DATA, which is
+       * correct and not a failure. The curve never fails this harness on its own — the
+       * soak is manual, and a slope on a shared runner is a hypothesis, not a fact. It
+       * is recorded so a person reading the report has the numbers and the rule.
+       */
+      const measured = parseSoakMetrics(result.stdout)
+      if (measured.rss.length > 0) {
+        report.curve = summariseCurve(measured)
+        report.notes.push(
+          `CURVE ${report.curve.verdict}: ${report.curve.rss.reason}; ${report.curve.fds.reason}`,
+        )
+      }
       finish('PASS')
     }
   } finally {
