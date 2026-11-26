@@ -66,9 +66,11 @@ SSH05–SSH20 的每一轮都在文档里记了 PASS，但那些 PASS 的**层�
 3. **SSH16 的池注册/释放测试不代表多目标隔离。** 它证明「一条双跳连接注册一个池条目
    并在释放后清掉」，不证明 Bastion A / Bastion B / Target A / Target B 之间互不串用。
    后者属于 F11。
-4. **SSH20 的阶梯矩阵只在默认策略上跑过真实后端。** 出货的
-   `terminalSessionManager` 是 `new TerminalSessionManager()`，不收参数，所以自定义
-   `baseDelayMs` / `maxAttempts` 的真实执行是 `NOT_RUN`，而 F13 要求补上它。
+4. ~~**SSH20 的阶梯矩阵只在默认策略上跑过真实后端。**~~ **已由 F13 闭合。**
+   出货的 `terminalSessionManager` 仍是 `new TerminalSessionManager()`，但策略改为可在
+   运行时替换，并且有真实来源（设置）与真实观测（跳板 sshd 的 `Connection from` 计数）。
+   实测 `maxAttempts` 1/2/3 → 3/4/5 次拨号，`baseDelayMs` 改变整轮时长而不改拨号数；
+   去掉注入接线后记录到默认的 7 次。判定见 `32-rc-readiness-report.md` 的 F13 行。
 
 ## F09 首次真实编排的结果（必须保留）
 

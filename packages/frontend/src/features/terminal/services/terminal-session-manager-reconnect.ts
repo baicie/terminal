@@ -1,19 +1,20 @@
-import { formatIpcError } from '@/hooks/terminal-session-helpers'
 import { closeTerminalBackend } from './terminal-session-backend'
-import { reconnectDelayFor, resolveReconnectPolicy } from './terminal-session-reconnect-policy'
+import {
+  TerminalReconnectPolicyHolder,
+  type ResolvedReconnectPolicy,
+} from './terminal-reconnect-policy-holder'
 import type {
   TerminalReconnectDependencies,
   TerminalReconnectOptions,
 } from './terminal-session-reconnect-types'
-import { updateTerminalState, terminalFailureState } from './terminal-session-state'
-import { recordTerminalConnectionFailure } from './terminal-connection-failure-log'
-import type { TerminalFailure } from './terminal-session-manager-errors'
+import { updateTerminalState } from './terminal-session-state'
 import { TerminalSessionRecoveryTimer } from './terminal-session-recovery-timer'
 import {
   prepareReconnectIo,
   prepareReconnectRecord,
   scheduleReconnectRecovery,
 } from './terminal-session-reconnect-prepare'
+import { runReconnectLadder } from './terminal-session-reconnect-ladder'
 import { TerminalSessionWakeRecovery } from './terminal-session-wake-recovery'
 import type { TerminalRecord } from './terminal-session-manager-types'
 
@@ -22,9 +23,24 @@ export type {
   TerminalReconnectOptions,
   TerminalReconnectStartResult,
 } from './terminal-session-reconnect-types'
+export type { ResolvedReconnectPolicy } from './terminal-reconnect-policy-holder'
 
 export class TerminalSessionReconnect {
-  private readonly policy: ReturnType<typeof resolveReconnectPolicy>
+  /*
+   * F13 — the policy is replaceable, because it is a *user* setting.
+   *
+   * It was `readonly` while the only way to shape it was the constructor, and the shipped
+   * singleton never passed one (`new TerminalSessionManager()`), so every custom value a
+   * test could name was unreachable from the real backend. A reconnect policy the user can
+   * change is only meaningful if the change reaches the ladder that runs; storing it once
+   * at construction makes the answer "no".
+   *
+   * Replacement takes effect on the **next** ladder rung: a ladder already walking reads
+   * `this.policies.get()` fresh each time, so a mid-ladder change is honoured from the
+   * attempt after the one in flight. That is deliberately not a restart — cancelling and
+   * relaunching on a settings write would make changing a preference drop a live attempt.
+   */
+  private readonly policies: TerminalReconnectPolicyHolder
   private readonly abortControllers = new WeakMap<
     TerminalRecord,
     AbortController
@@ -36,7 +52,27 @@ export class TerminalSessionReconnect {
     private readonly dependencies: TerminalReconnectDependencies,
     options: TerminalReconnectOptions = {},
   ) {
-    this.policy = resolveReconnectPolicy(options)
+    this.policies = new TerminalReconnectPolicyHolder(options)
+  }
+
+  /**
+   * The policy the ladder is actually walking, with the same normalisation the run
+   * applies — so a caller comparing "what I configured" to "what runs" sees the resolved
+   * numbers rather than its own input echoed back.
+   */
+  reconnectPolicy(): ResolvedReconnectPolicy {
+    return this.policies.get()
+  }
+
+  /**
+   * Replace the policy for every ladder started from here on.
+   *
+   * `undefined` values fall back to the defaults through `resolveReconnectPolicy`, which
+   * is the same normalisation the constructor uses; passing nothing therefore restores the
+   * shipped behaviour rather than leaving the previous custom value in place.
+   */
+  setReconnectPolicy(options: TerminalReconnectOptions = {}): void {
+    this.policies.set(options)
   }
 
   async disconnect(record: TerminalRecord): Promise<void> {
@@ -142,137 +178,52 @@ export class TerminalSessionReconnect {
     signal: AbortSignal,
   ): Promise<void> {
     const generation = ++record.generation
-    const sessionId = this.prepare(record, mode)
-    const attempts = mode === 'automatic' ? this.policy.maxAttempts : 1
     /*
-     * F06 — the ladder remembers the last *failure*, not just its sentence.
-     *
-     * Keeping only a string dropped the hop/stage/diagnosis the classifier had attached,
-     * so an exhausted jump connection published "authentication rejected" without saying
-     * which of the two logins was refused. The whole failure is replaced on every attempt,
-     * never merged: a later failure that carries no hop must clear an older one instead of
-     * inheriting a claim about a machine this attempt never touched.
+     * Read once, at the top of the ladder, from the holder rather than a field copied at
+     * construction. A change made before this line reaches this ladder; one made after it
+     * applies to the next. That is the guarantee worth stating: a ladder is a unit of work
+     * with one budget, and letting its attempt count change halfway through would make the
+     * number it finally reports depend on when a settings write landed.
      */
-    let lastFailure: TerminalFailure = {
-      error: reason,
-      retryable: true,
-      recovery: 'automatic',
-    }
-
-    let attempt = 0
-    while (attempt < attempts) {
-      attempt += 1
-      if (attempt > 1) this.prepareIo(record, mode)
-      const delay =
-        mode === 'automatic' ? reconnectDelayFor(this.policy, attempt) : 0
-      updateTerminalState(record, {
-        status: 'reconnecting',
-        sessionId: null,
-        error: null,
-        attempt,
-        reason: lastFailure.error,
-        nextRetryAt:
-          mode === 'automatic' ? this.policy.now() + delay : undefined,
-        retryable: true,
-        // This loop is the automatic ladder, so the record says so while it
-        // runs. Without it the record would carry `null` and a host wake could
-        // not tell an in-progress network recovery from a vault failure.
-        recovery: 'automatic',
-      })
-      if (attempt === 1 && sessionId) {
-        await closeTerminalBackend(record.request.tabType, sessionId)
-      }
-      if (!this.isActive(record, generation)) return
-
-      if (mode === 'automatic') {
-        try {
-          await this.policy.sleep(delay, signal)
-        } catch (error) {
-          if (signal.aborted || !this.isActive(record, generation)) return
-          if (this.isActive(record, generation)) {
-            updateTerminalState(record, {
-              status: 'error',
-              error: formatIpcError(error),
-              retryable: true,
-              recovery: 'automatic',
-            })
-            scheduleReconnectRecovery(
+    const policy = this.policies.get()
+    const sessionId = this.prepare(record, mode)
+    await runReconnectLadder({
       record,
-      this.recoveryTimer,
-      this.policy.recoveryDelayMs,
-      () => this.launch(record, 'automatic', 'Retrying after automatic backoff'),
-    )
-          }
-          return
-        }
-      }
-      if (!this.isActive(record, generation)) return
-
-      const result = await this.dependencies.start(record, generation, signal)
-      if (result === 'connected' || result === 'cancelled') return
-      if (result.status === 'retry') {
-        // A host wake can arrive while this reconnect loop is waiting on an
-        // in-flight SSH handshake. Restart the same loop with a fresh budget;
-        // launching another reconnect here would be rejected by the Promise
-        // guard and leave the pane stuck in `reconnecting`.
-        //
-        // F06 — the whole failure travels with the restart. It used to be the message
-        // alone, which is how a wake during a bastion failure could end up publishing a
-        // context-free verdict.
-        lastFailure = result.failure
-        attempt = 0
-        this.prepareIo(record, mode)
-        continue
-      }
-      lastFailure = {
-        error: result.error,
-        retryable: result.retryable,
-        recovery: result.recovery,
-        ...(result.credentialKind !== undefined
-          ? { credentialKind: result.credentialKind }
-          : {}),
-        ...(result.hop !== undefined ? { hop: result.hop } : {}),
-        ...(result.stage !== undefined ? { stage: result.stage } : {}),
-        ...(result.diagnosis !== undefined
-          ? { diagnosis: result.diagnosis }
-          : {}),
-      }
-      if (result.recovery !== 'automatic') {
-        // The retry loop is itself the automatic ladder. A failure that needs
-        // the vault fixed, or a person to change something, must leave the loop
-        // rather than run out its remaining attempts against the same cause.
-        // Writing the verdict through `updateTerminalState` also carries the
-        // credential kind to the pane.
-        updateTerminalState(record, {
-          status: 'error',
-          sessionId: null,
-          ...terminalFailureState(lastFailure),
-          attempt,
-        })
-        return
-      }
-    }
-    if (!this.isActive(record, generation)) return
-    // F06 — exhausted: describe the *last* attempt, never whichever one carried a hop.
-    // `recovery` stays `'automatic'`; a recovery timer may still open another ladder.
-    updateTerminalState(record, {
-      status: 'error',
-      sessionId: null,
-      ...terminalFailureState(lastFailure),
-      // F10 — "the attempt that ended", republished by the snapshot as `attempts`.
-      attempt,
+      mode,
+      reason,
+      signal,
+      generation,
+      policy,
+      dependencies: {
+        start: (target, attemptGeneration, attemptSignal) =>
+          this.dependencies.start(target, attemptGeneration, attemptSignal),
+        isActive: (target, attemptGeneration) =>
+          this.isActive(target, attemptGeneration),
+        prepareIo: target => this.prepareIo(target, mode),
+        initialSessionId: sessionId,
+        armRecovery: ladderPolicy => this.armRecovery(record, ladderPolicy),
+      },
     })
-    // F18 — the ladder's verdict is a finished connection; the start path's terminal
-    // branch does not record, so exactly one of the two runs per logical connection.
-    recordTerminalConnectionFailure(record.request, lastFailure)
+  }
+
+  /**
+   * Arm the timer that opens the next ladder after a backoff.
+   *
+   * Extracted because two paths end an automatic ladder the same way (the last attempt
+   * exhausted, and a sleep that failed), and a policy change must reach both. A copy per
+   * call site is how one of them ends up reading a stale `recoveryDelayMs`.
+   */
+  private armRecovery(
+    record: TerminalRecord,
+    policy: ResolvedReconnectPolicy,
+  ): void {
     scheduleReconnectRecovery(
       record,
       this.recoveryTimer,
-      this.policy.recoveryDelayMs,
+      policy.recoveryDelayMs,
       () => this.launch(record, 'automatic', 'Retrying after automatic backoff'),
     )
   }
-
 
   private prepare(
     record: TerminalRecord,
@@ -296,4 +247,3 @@ export class TerminalSessionReconnect {
     )
   }
 }
-

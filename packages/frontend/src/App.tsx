@@ -17,6 +17,7 @@ import { useTeamStore } from './store/team'
 import { getAppSettings } from './service/database'
 import { applyNotificationPrefs } from './service/notifications'
 import { syncCloseToTray } from './service/window-ux'
+import { applyReconnectSettings } from './service/database/app-settings-reconnect-apply'
 import { useTerminalHostWake } from './hooks/use-terminal-host-wake'
 import {
   STARTUP_FALLBACK_DEFER_MS,
@@ -101,6 +102,23 @@ export default function App({ startupTerminalFallbackAt }: AppProps) {
           ids: s.enabledExtensions ?? [],
           sequence: extensionListSequence,
         })
+        /*
+         * F13 — the reconnect policy the ladder will walk.
+         *
+         * Applied here, next to the other startup applies, so the first connection of the
+         * session already uses the numbers the user chose. Without this the manager kept
+         * the defaults its constructor resolved: `new TerminalSessionManager()` takes no
+         * arguments, so a stored preference had no consumer at all.
+         */
+        applyReconnectSettings(s)
+        /*
+         * F13 — the reconnect policy the ladder will walk.
+         *
+         * Applied here, next to the other startup applies, so the first connection of the
+         * session already uses the numbers the user chose. Without this the manager kept
+         * the defaults its constructor resolved: `new TerminalSessionManager()` takes no
+         * arguments, so a stored preference had no consumer at all.
+         */
       } catch (e) {
         console.warn('Failed to apply desktop UX prefs on startup:', e)
       }

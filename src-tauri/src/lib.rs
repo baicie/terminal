@@ -91,8 +91,9 @@ use storage::{
 use tauri::Manager;
 use terminal_smoke::{
     terminal_smoke_complete, terminal_smoke_config, terminal_smoke_connected,
-    terminal_smoke_emit_stale_output, terminal_smoke_host_wake, terminal_smoke_reconnect_requested,
-    terminal_smoke_renderer_heartbeat_config, terminal_smoke_resources, TerminalSmokeState,
+    terminal_smoke_emit_stale_output, terminal_smoke_host_wake, terminal_smoke_reconnect_policy,
+    terminal_smoke_reconnect_requested, terminal_smoke_renderer_heartbeat_config,
+    terminal_smoke_resources, TerminalSmokeState,
 };
 use vault::{
     vault_can_encrypt_for_team, vault_change_password, vault_create, vault_decrypt_for_team,
@@ -463,6 +464,7 @@ pub fn run() {
             is_main_window_focused,
             // Explicitly gated local terminal reliability smoke
             terminal_smoke_config,
+            terminal_smoke_reconnect_policy,
             terminal_smoke_renderer_heartbeat_config,
             terminal_smoke_connected,
             terminal_smoke_resources,

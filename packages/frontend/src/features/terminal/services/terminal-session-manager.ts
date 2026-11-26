@@ -12,6 +12,7 @@ import {
 } from './terminal-session-manager-resources'
 import {
   TerminalSessionReconnect,
+  type ResolvedReconnectPolicy,
   type TerminalReconnectOptions,
   type TerminalReconnectStartResult,
 } from './terminal-session-manager-reconnect'
@@ -76,6 +77,14 @@ export class TerminalSessionManager {
   }
   resourceSnapshot(): TerminalSessionResourceSnapshot {
     return terminalSessionResourceSnapshot(this.records, this.sessionToTab)
+  }
+  /* F13 — the policy the ladder walks and the one it walks next; `set` replaces rather
+   * than cancels, so a preference change never drops an attempt in flight. */
+  reconnectPolicy(): ResolvedReconnectPolicy {
+    return this.reconnects.reconnectPolicy()
+  }
+  setReconnectPolicy(options: TerminalReconnectOptions = {}): void {
+    this.reconnects.setReconnectPolicy(options)
   }
   attach(
     request: TerminalSessionRequest,
@@ -147,19 +156,15 @@ export class TerminalSessionManager {
     }
   }
   /**
-   * Re-arm automatic reconnect for every remote session left in a retryable
-   * error state. Called when the window becomes visible again after sleep,
-   * because a suspended host spends the whole retry budget without the backend
-   * emitting another event to trigger recovery.
+   * Re-arm automatic reconnect for every remote session left in a retryable error state.
+   * A suspended host spends the whole retry budget without the backend emitting anything.
    */
   handleHostWake(): void {
     for (const record of this.records.values()) {
       if (this.reconnects.resume(record, 'Resumed after host wake')) continue
-      // Waking resumes timers and the socket at the same time, so an in-flight
-      // attempt is often still connecting when the wake arrives and only fails
-      // a moment later. That failure carries no sessionId, so the ordinary
-      // I/O-error path cannot re-arm it and the pane would stay stuck. Arm the
-      // recovery now so the post-wake failure restarts a fresh attempt budget.
+      // Waking resumes timers and the socket together, so an in-flight attempt is still
+      // connecting when the wake lands and fails a moment later — with no sessionId, which
+      // the ordinary I/O-error path cannot re-arm. Arm now so it restarts with fresh budget.
       this.reconnects.armAfterWake(record)
     }
   }
@@ -259,13 +264,9 @@ export class TerminalSessionManager {
   ): void {
     const record = this.records.get(tabId)
     const failure = classifyTerminalFailure(error)
-    const shouldReconnect =
-      record?.request.tabType === 'remote' &&
-      Boolean(record.sessionId) &&
-      // Only a transient fault re-arms the ladder. A vault failure on an
-      // established session has the same problem as one on connect: retrying it
-      // five times cannot unlock anything.
-      failure.recovery === 'automatic'
+    // Only a transient fault re-arms; retrying a vault failure cannot unlock anything.
+    const shouldReconnect = record?.request.tabType === 'remote' &&
+      Boolean(record.sessionId) && failure.recovery === 'automatic'
     if (record) this.cancelConnection(record)
     if (record?.sessionId) this.lifecycle.retire(record.sessionId)
     handleTerminalIoError(

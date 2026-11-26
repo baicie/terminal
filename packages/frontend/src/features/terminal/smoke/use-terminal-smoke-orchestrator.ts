@@ -19,6 +19,16 @@ const RUST_DEADLINE_RESERVE_MS = 15_000
 export function useTerminalSmokeOrchestrator(
   config: TerminalSmokeConfig,
   submitResult: (result: TerminalSmokeResult) => Promise<void>,
+  /**
+   * F13 — resolves once the injected reconnect policy is applied, if one was injected.
+   *
+   * Awaited at the one point where the order actually matters: immediately before
+   * `roundIndex` becomes 0, which is what mounts the first round and opens its connection.
+   * It is deliberately not a render gate — an ordinary run has no policy, and making every
+   * run wait a round-trip to learn that also stalled the lifecycle tests, which have no IPC
+   * to answer the call.
+   */
+  policyReady: Promise<void> = Promise.resolve(),
 ) {
   const applicationStartedAtRef = useRef(performance.now())
   const [controller] = useState(() => new AbortController())
@@ -53,9 +63,13 @@ export function useTerminalSmokeOrchestrator(
     void waitForStableTerminalSmokeResources(undefined, {
       signal: controller.signal,
     })
-      .then(baseline => {
+      .then(async baseline => {
         if (controller.signal.aborted) return
         baselineRef.current = baseline
+        // The injected policy must be in place before the first connection opens; see the
+        // parameter's comment for why this is the only place that waits on it.
+        await policyReady
+        if (controller.signal.aborted) return
         setRoundIndex(0)
       })
       .catch(error => {
@@ -79,7 +93,7 @@ export function useTerminalSmokeOrchestrator(
       const tabId = currentTabRef.current
       if (tabId) void terminalSessionManager.close(tabId)
     }
-  }, [config, controller, submitOnce])
+  }, [config, controller, policyReady, submitOnce])
 
   const completeRound = useCallback(
     async (

@@ -173,10 +173,28 @@ it('runs ten isolated SSH rounds and waits for exact resource recovery', async (
 
 it('preserves the round failure when resource recovery also fails', async () => {
   mocks.resourceSnapshot.mockReturnValue(frontendResourceBaseline)
-  mocks.invoke
-    .mockResolvedValueOnce(backendResourceBaseline)
-    .mockResolvedValueOnce(backendResourceBaseline)
-    .mockRejectedValueOnce(new Error('resource recovery failed'))
+  /*
+   * Dispatched by command name rather than by call order.
+   *
+   * F13 added one IPC call from the smoke root (`terminal_smoke_reconnect_policy`, which
+   * asks whether the harness injected a reconnect policy). With an order-based queue that
+   * call consumed the first baseline response and every later expectation shifted by one —
+   * measured: this test failed with `close` never called, because the round never started.
+   * Keying on the command is also what the mock should always have done: these assertions
+   * are about resource reads, not about how many IPC calls precede them.
+   */
+  let resourceReads = 0
+  mocks.invoke.mockImplementation(async (command: string) => {
+    // The F13 policy probe is not a resource read, so it must not advance the counter;
+    // that it is answered by name is what keeps this test about recovery, not about IPC
+    // ordering.
+    if (command === 'terminal_smoke_reconnect_policy') return null
+    resourceReads += 1
+    // The third read is the recovery check after the round failed, and the point of this
+    // case is that it fails too.
+    if (resourceReads >= 3) throw new Error('resource recovery failed')
+    return backendResourceBaseline
+  })
   mocks.close.mockResolvedValue(undefined)
   mocks.useTerminal.mockImplementation((_term, request) => ({
     sessionId: `ssh-session-${request.tabId}`,

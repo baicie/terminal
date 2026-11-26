@@ -19,6 +19,10 @@ import {
   compareFailureObservation,
   FAILURE_EXPECTATIONS,
 } from './terminal-smoke-failure-scenarios.mjs'
+import {
+  connectionCountProblems,
+  countServerConnections,
+} from './terminal-smoke-server-dials.mjs'
 
 const execFileAsync = promisify(execFileCallback)
 
@@ -1183,6 +1187,68 @@ async function startFailureScenarioFixture({
  * Bounded on purpose: sshd's VERBOSE log is long, and the lines that matter are the last
  * few — the connection attempts the product just made.
  */
+/**
+ * F13 — the environment that makes the shipped manager walk a chosen policy.
+ *
+ * Absent fields are omitted rather than defaulted, so a scenario that sets only
+ * `maxAttempts` leaves the product's own backoff in place. A value that is not a positive
+ * integer throws here, at harness start, instead of reaching the app and being normalised
+ * into the defaults — which would make the run pass while proving nothing.
+ */
+function reconnectPolicyEnvironment(policy) {
+  if (policy === undefined || policy === null) return {}
+  const environment = {}
+  for (const [field, variable] of [
+    ['baseDelayMs', 'TERMINAL_SMOKE_RECONNECT_BASE_DELAY_MS'],
+    ['maxAttempts', 'TERMINAL_SMOKE_RECONNECT_MAX_ATTEMPTS'],
+  ]) {
+    const value = policy[field]
+    if (value === undefined) continue
+    if (!Number.isSafeInteger(value) || value <= 0) {
+      throw new Error(
+        `reconnectPolicy.${field} must be a positive integer, got ${JSON.stringify(value)}`,
+      )
+    }
+    environment[variable] = String(value)
+  }
+  return environment
+}
+
+/**
+ * F13 — check the dials the server logged against the policy the run asked for.
+ *
+ * ## Which daemon
+ *
+ * The scenario decides. A policy run is meant to use a scenario whose first hop a client
+ * must dial every time — for a jump scenario that is the **bastion**, because the target is
+ * only reachable through the forwarded channel. Counting on the wrong daemon would read
+ * zero and fail a correct product, so an unknown scenario is an error rather than a guess.
+ *
+ * ## Why `maxAttempts` is required
+ *
+ * The dial relationship is `1 + maxAttempts`; a policy that sets only `baseDelayMs` says
+ * nothing about how many dials to expect. That run is legitimate (it exercises the backoff)
+ * but it cannot be checked by counting, and pretending otherwise would invent a number.
+ */
+function reconnectPolicyDialChecks({ policy, scenario, fixture }) {
+  if (!Number.isSafeInteger(policy.maxAttempts) || policy.maxAttempts <= 0) {
+    throw new Error(
+      'a reconnectPolicy used for server-side verification must set a positive maxAttempts',
+    )
+  }
+  const logOf = { TUNNEL_OPEN_FAILED: fixture?.jumpLog }[scenario]
+  if (typeof logOf !== 'function') {
+    throw new Error(
+      `reconnectPolicy needs a scenario whose first hop is always dialled; ` +
+        `${scenario ?? 'no scenario'} has no daemon to count on`,
+    )
+  }
+  return connectionCountProblems({
+    observed: countServerConnections(logOf()),
+    maxAttempts: policy.maxAttempts,
+  })
+}
+
 function daemonLogDetail(fixture) {
   const parts = []
   for (const [label, log] of [
@@ -1271,6 +1337,14 @@ async function runTerminalSmokeAttempt({
   failureRequired = false,
   /** F09 — which concrete break to set up; implies `failureRequired`. */
   failureScenario,
+  /**
+   * F13 — the reconnect policy the ladder must walk, as `{ baseDelayMs?, maxAttempts? }`.
+   *
+   * Reaches the *shipped* singleton through the two environment variables Rust reads, so
+   * the numbers under test are the ones the product would use, not a manager this harness
+   * built for the occasion.
+   */
+  reconnectPolicy,
   auth = 'key',
   skipBuild = false,
   release = false,
@@ -1364,6 +1438,15 @@ async function runTerminalSmokeAttempt({
       ...(failureRequired || failureScenario !== undefined
         ? { TERMINAL_SMOKE_FAILURE: '1' }
         : {}),
+      /*
+       * F13 — the reconnect policy this run must walk.
+       *
+       * Passed through as the two environment variables the Rust smoke command reads, so
+       * the policy reaches the *shipped* singleton the smoke UI drives. That is the whole
+       * point of the flag: before it, a custom `baseDelayMs`/`maxAttempts` existed only in
+       * unit tests that constructed their own manager.
+       */
+      ...reconnectPolicyEnvironment(reconnectPolicy),
       ...(rendererHeartbeat
         ? {
             TERMINAL_SMOKE_RENDERER_HEARTBEAT_ENDPOINT:
@@ -1446,6 +1529,27 @@ async function runTerminalSmokeAttempt({
       hostWakeRequired,
       failureRequired: failureRequired || failureScenario !== undefined,
     })
+    /*
+     * F13 — a policy is only proven when the *server* saw the dials it implies.
+     *
+     * The count comes from sshd's own log, not from the client's idea of how many times it
+     * tried: a ladder wired to a policy that never reaches it still believes whatever it
+     * reports, so a client-side count would agree with a broken client by construction.
+     */
+    if (reconnectPolicy !== undefined) {
+      const dialProblems = reconnectPolicyDialChecks({
+        policy: reconnectPolicy,
+        scenario: failureScenario,
+        fixture,
+      })
+      if (dialProblems.length > 0) {
+        throw new Error(
+          `reconnect policy ${JSON.stringify(reconnectPolicy)} not observed on the server: ` +
+            dialProblems.join('; ') +
+            daemonLogDetail(fixture),
+        )
+      }
+    }
     /*
      * F09 — a scenario is only passed when the pane names the right machine.
      *
@@ -1540,7 +1644,11 @@ async function runTerminalSmokeAttempt({
         await fixture?.stop()
       } finally {
         await rendererHeartbeat?.close()
-        await dependencies.rm(runDirectory, { recursive: true, force: true })
+        if (process.env.TERMINAL_SMOKE_KEEP_DIR === '1') {
+          console.error(`[smoke] kept run directory: ${runDirectory}`)
+        } else {
+          await dependencies.rm(runDirectory, { recursive: true, force: true })
+        }
       }
     }
   }
@@ -1619,6 +1727,32 @@ export async function runTerminalSmoke(options = {}) {
   }
 }
 
+/**
+ * F13 — parse the two policy flags.
+ *
+ * Returns `undefined` when neither was given, so an ordinary run is unaffected. A flag
+ * with a missing or non-numeric value throws: silently ignoring it would make
+ * `--reconnect-attempts two` look like a run without a policy, which passes by proving
+ * nothing.
+ */
+export function reconnectPolicyFromArgv(argv) {
+  const read = flag => {
+    if (!argv.includes(flag)) return undefined
+    const raw = argv[argv.indexOf(flag) + 1]
+    if (raw === undefined || !/^\d+$/.test(raw) || Number(raw) <= 0) {
+      throw new Error(`${flag} must be a positive integer, got ${JSON.stringify(raw)}`)
+    }
+    return Number(raw)
+  }
+  const baseDelayMs = read('--reconnect-base-delay-ms')
+  const maxAttempts = read('--reconnect-attempts')
+  if (baseDelayMs === undefined && maxAttempts === undefined) return undefined
+  return {
+    ...(baseDelayMs === undefined ? {} : { baseDelayMs }),
+    ...(maxAttempts === undefined ? {} : { maxAttempts }),
+  }
+}
+
 const isDirectRun =
   process.argv[1] !== undefined &&
   path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
@@ -1629,11 +1763,19 @@ if (isDirectRun) {
   const failureScenario = argv.includes('--scenario')
     ? argv[argv.indexOf('--scenario') + 1]
     : undefined
+  /*
+   * F13 — `--reconnect-attempts N` / `--reconnect-base-delay-ms N` ask the product to walk
+   * a policy this harness then checks against the daemon's own dial count. Spelled as two
+   * flags rather than one JSON blob so a typo is rejected at parse time (below) instead of
+   * reaching the app as a missing field.
+   */
+  const reconnectPolicy = reconnectPolicyFromArgv(argv)
   runTerminalSmoke({
     reconnect: argv.includes('--reconnect'),
     release: argv.includes('--release'),
     failureRequired: argv.includes('--failure'),
     ...(failureScenario === undefined ? {} : { failureScenario }),
+    ...(reconnectPolicy === undefined ? {} : { reconnectPolicy }),
     auth,
   })
     .then(result => {
