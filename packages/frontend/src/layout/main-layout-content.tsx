@@ -102,11 +102,12 @@ export function MainLayoutContent({
       onTouchEnd={onSwipeEnd}
     >
       <TopToolbar onToggleSidebar={onToggleSidebar} />
-
       <div
         ref={panelLayout.shellRef}
         className="flex-1 flex overflow-hidden min-h-0 relative"
         data-terminal-shell=""
+        data-layout-cell-width={panelLayout.cellWidth.toFixed(3)}
+        data-predicted-cols={String(panelLayout.predictedCols)}
       >
         {swipeProgress > 0 && (
           <SwipeBackIndicator
@@ -116,7 +117,6 @@ export function MainLayoutContent({
         )}
 
         {!isMobile ? <ActivityRail /> : null}
-
         {/* Sibling of the terminal: opening or closing this never touches
             `TerminalByUrl`, so no PTY is created or disposed. The presentation is
             honoured for both modes — previously only `explorer` read it, and only

@@ -120,6 +120,22 @@ async function readCols({ timeout = 10_000, interval = 100, width = null } = {})
  */
 async function readPresentations() {
   return browser.execute(() => {
+    /*
+     * What the layout decided *with*, not just what it rendered.
+     *
+     * A width matrix can show the terminal at 50 columns and still not say why: the
+     * decision may have used the canvas estimate (8.4px) or the value back-computed
+     * from a mounted terminal (7.72px), and at 768px those predict 62 and 52 columns —
+     * opposite verdicts on the same policy. Recording both here is what makes the next
+     * failure name its cause.
+     */
+    const shell = document.querySelector('[data-terminal-shell]')
+    const decision = shell
+      ? {
+          cellWidth: shell.getAttribute('data-layout-cell-width'),
+          predictedCols: shell.getAttribute('data-predicted-cols'),
+        }
+      : { cellWidth: null, predictedCols: null }
     // TN-01 (merged as #44) renders the drawer as `left-drawer` and the column as
     // `left-column`. Reading both is what makes "the DOM obeys the decision"
     // checkable; before TN-01 only `connection-explorer` existed and a drawer
@@ -183,6 +199,7 @@ async function readPresentations() {
     const measure = element =>
       element ? Math.round(element.getBoundingClientRect().width) : null
     return {
+      ...decision,
       left,
       leftColumnWidth: leftAny ? Math.round(leftAny.getBoundingClientRect().width) : 0,
       right: rightPresentation,
