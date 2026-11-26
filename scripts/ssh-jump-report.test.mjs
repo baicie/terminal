@@ -118,6 +118,19 @@ describe('the matrix report is written and uploaded', () => {
       'the report must be uploaded when the matrix fails, not only when it passes',
     )
   })
+
+  it('applies the same rule to the soak workflow', () => {
+    /*
+     * `ssh-soak.yml` runs the same harness with the same upload shape. It does set
+     * `SSH_JUMP_E2E_REPORT`, so its artifact exists today — but `warn` is the setting
+     * that let the PR-time job upload nothing for its entire history, and a soak report
+     * nobody can read is the same defect one workflow over.
+     */
+    const soak = readFileSync(path.join(ROOT, '.github/workflows/ssh-soak.yml'), 'utf8')
+    assert.match(soak, /SSH_JUMP_E2E_REPORT:\s*\S+/, 'the soak must name its report path')
+    assert.match(soak, /if-no-files-found:\s*error/, 'a missing soak report must fail')
+    assert.doesNotMatch(soak, /if-no-files-found:\s*warn/, 'warn hides a report that never wrote')
+  })
 })
 
 describe('a passing scenario says so in the log', () => {
