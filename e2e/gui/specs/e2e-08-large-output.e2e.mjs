@@ -56,6 +56,11 @@ const SCROLLBACK = 10_000
  * platform gap reported as a product result. Each platform gets an idiom that actually
  * runs. A third platform would need a third branch rather than a silent fallback to a
  * command that cannot work.
+ *
+ * This is separate from *how the command is typed*. The second Windows run got past the
+ * command and still failed, with `linesAfter: 1475` out of 300k and `inputAfterFlood:
+ * false` — the delivery path, not the command, was the problem, and the fix for that is
+ * below: WebDriver's own key sequence instead of `terminal.paste()`.
  */
 const FLOOD_COMMAND_POSIX =
   'seq 1 300000 | awk \'{ printf "%s padding padding padding padding\\n", $1; if (NR % 20000 == 0) system("sleep 0.25") }\''
@@ -207,31 +212,22 @@ describe('E2E-08 large output through a real WebView', () => {
     const beforeLines = (await probeSnapshot())?.lines ?? ready.lines
     measured.linesBefore = beforeLines
     /*
-     * Check the write's own answer before polling for its effect.
+     * ## Typed through the real key path, not `terminal.paste()`
      *
-     * `typeIntoActiveTerminal` returns whether xterm accepted the paste, and the first
-     * version of this spec discarded it. The run then sat 120 s polling a buffer that had
-     * never been asked to change — `linesBefore: 43, linesAfter: 43` — and reported "the
-     * buffer never grew", which reads like a product problem and was not one.
-     */
-    const accepted = await browser.execute(
-      text => globalThis.__terminalGuiE2E?.typeIntoActiveTerminal?.(text) ?? false,
-      FLOOD_COMMAND,
-    )
-    if (!accepted) {
-      measured.notRun = 'NOT_RUN'
-      measured.note = 'xterm refused the paste; the probe could not deliver the command'
-      return
-    }
-    /*
-     * ## The Return key is a separate write
+     * Two measured failures led here:
      *
-     * Measured on the third run, with the buffer dumped right after the write: the command
-     * sat on the line with its `\r` rendered as text and the shell never ran it, because
-     * `terminal.paste()` inserts characters rather than interpreting control sequences.
-     * That is correct xterm behaviour — a paste must never execute — and the first version
-     * assumed otherwise. `browser.keys('Enter')` is the real key path `e2e-01` already uses.
+     * 1. `paste()` inserts characters rather than interpreting them, so the command sat on
+     *    the line with its `\r` rendered as text and the shell never ran it.
+     * 2. On Windows the paste route produced `linesAfter: 1475` out of 300k — the flood
+     *    stopped early and input was dead afterwards (`inputAfterFlood: false`), while
+     *    `e2e-01` on the *same* runner drove the same terminal fine.
+     *
+     * `e2e-01` uses WebDriver's *Element Send Keys* against `.xterm-helper-textarea`, which
+     * is the browser's own key sequence rather than a DOM call. That is the path a user's
+     * keystrokes take, and the one that works on every platform this suite runs on.
      */
+    const helper = await browser.$('.xterm-helper-textarea')
+    await helper.addValue(FLOOD_COMMAND)
     await browser.keys('Enter')
 
     // Poll for growth rather than sleeping a fixed time: a fixed sleep measures the
@@ -263,12 +259,17 @@ describe('E2E-08 large output through a real WebView', () => {
      * assertion cannot see.
      */
     const token = `guie2e08${Date.now()}`
-    const echoCommand =
-      process.platform === 'win32' ? `Write-Output ${token}` : `echo ${token}`
-    await browser.execute(
-      text => globalThis.__terminalGuiE2E?.typeIntoActiveTerminal?.(text),
-      echoCommand,
-    )
+    /*
+     * The same real key path as the flood, and a POSIX `echo` on every platform.
+     *
+     * `e2e-01` sends `echo <token>` on Windows too — the runner's shell there is not
+     * required to be PowerShell for this to be the right command, because the earlier run
+     * proved that exact form works on the Windows runner. Using `Write-Output` here would
+     * test a different shell than the one the flood just ran in.
+     */
+    const echoCommand = `echo ${token}`
+    const echoHelper = await browser.$('.xterm-helper-textarea')
+    await echoHelper.addValue(echoCommand)
     await browser.keys('Enter')
     await browser.waitUntil(
       async () => {
