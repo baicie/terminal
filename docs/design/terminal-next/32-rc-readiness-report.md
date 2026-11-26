@@ -80,7 +80,7 @@ RC06 都不变红。已在源码注释写明它是防御性的，以及它在什
 | RC14 | PARTIAL | 100 次 resize 有界、双 Pane 各自 fit、dispose 隔离；共享节流的变异是行为等价，见下 |
 | RC15 | **VERIFIED** | 重试预算实现完整且有测试；**服务器侧计数已补上**：凭证被拒时跳板/目标 sshd 的 `Failed publickey` 记到 **1 次**（不是 5 次），证明 `authentication_rejected` 是终态、没有消耗重试预算。变异（把它从 `NON_RETRYABLE_KINDS` 移除）后同一场景记到 **4 次**拒绝，检查确实会长红 |
 | RC16 | **PARTIAL（归因已 PASS）** | 跳板/目标的认证拒绝与 host-key 不符各有真实用例断言 `hop`（6 个，CI 阻塞），`JUMP_ERROR_ATTRIBUTION` 由 NOT_RUN 改为 **PASS**——`SessionFailure { error, hop, stage }` 解决了当时 `SessionError` 序列化边界挡住的那个改动。断连矩阵保持 PARTIAL：跳板腿三场景已有（F12），**目标腿缺**——跳板不直连目标，`PermitOpen` 只放行真实端口，故障整形不到那一腿 |
-| RC17 | PARTIAL | Rust 侧 10 MiB 背压 PASS；**真实 WebView NOT_RUN** |
+| RC17 | **VERIFIED** | Rust 侧 10 MiB 背压 PASS；**真实 WebView 已补上**：`e2e-08` 在 macOS GUI E2E（阻塞门禁）里灌入 11.6 MB / 5 秒，缓冲区 43→10043 行（恰为 43 + scrollback 10000），停止后输入仍可用。变异把 scrollback 提到 100000 后在有界断言变红（21009 > 12000）。未覆盖 Linux/Windows 与并发操作穿插 |
 | RC18 | **NOT_RUN** | 需要真实 GUI 长时运行 |
 
 RC14 有一条要说清楚：我想用「节流状态模块级共享」模拟双 Pane 干扰，**四次都没能让

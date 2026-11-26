@@ -101,12 +101,28 @@ RC17 真正要的是**真实 Tauri WebView + xterm** 的大输出，并穿插输
 切 Tab、切 Pane、滚动、Resize、关 Dock、窗口隐藏，同时采样回显延迟、吞吐、ACK、
 CPU、RSS。
 
-那需要启动 GUI 并长时间驱动。本会话按用户要求不弹窗。
+那需要启动 GUI 并长时间驱动。**已补齐**：`e2e/gui/specs/e2e-08-large-output.e2e.mjs` 在
+真实 Tauri WebView 里向本地终端灌入 11.6 MB / 5 秒，macOS GUI E2E 是阻塞门禁。
+
+判据刻意避开了「跑完没崩」——那几乎总是真的，且对背压只字未提。三条同时成立才算过：
+
+1. **缓冲区尾部在前进**：43 → 10043 行，数据被 xterm 吃掉而不是堵在队列里；
+2. **缓冲区有界**：10043 = 43 + 10000，正好是 scrollback 上限加的基线，说明产品在
+   按自己的淘汰策略工作；
+3. **停止输出后输入仍可用**：再发一条命令并等到回显——背压失效最典型的症状是界面
+   看着在滚、却再也敲不进东西。
+
+**变异**：把默认 `scrollback` 从 10000 提到 100000，断言在有界那一条变红
+（`Received: 21009, Expected: <= 12000`），失败点正确。
 
 ```
 PTY_BACKPRESSURE_10MIB_RUST        = PASS
-PTY_BACKPRESSURE_IN_REAL_WEBVIEW   = NOT_RUN（需要 GUI）
+PTY_BACKPRESSURE_IN_REAL_WEBVIEW   = PASS（macOS，真实 WebView）
 ```
+
+**未覆盖**：Linux / Windows（两平台 GUI E2E 仍是 informational），以及 RC17 原文里
+「穿插 Ctrl+C / 切 Tab / 切 Pane / 滚动 / Resize / 关 Dock」这些并发操作——本 case
+只测了灌入与之后的输入恢复。
 
 ---
 
