@@ -282,18 +282,25 @@ async function main() {
     process.stdout.write(result.stdout)
     if (result.stderr.trim() !== '') process.stderr.write(result.stderr)
     /*
-     * ## The matrix runs AFTER the main invocation, on the binary it built
+     * ## The matrix runs AFTER the main invocation
      *
-     * Measured on run 45758649504: it ran first, so each of its three scenarios started
-     * its own `cargo test` against an unbuilt `target/`. They blocked on each other's
-     * package-cache and build-directory locks and then failed with
-     * `failed to run custom build command for gobject-sys` — a build race, not a
-     * product result. Combined with the exit-code defect (`finish('FAIL')` did not fail
-     * the process), the job went green over three failed scenarios.
+     * Ordering is right even though it turned out not to be the whole fix.
      *
-     * Here the main run has already compiled and linked the test binary, so each
-     * scenario is an incremental no-op build: it still invokes cargo, but there is
-     * nothing left to compile and nothing left to contend for.
+     * Measured on run 45758649504, the matrix ran first and its three scenarios failed
+     * with `failed to run custom build command for gobject-sys`. That looked like a
+     * build race, and moving the matrix after the main build is what a race would call
+     * for — but run 45763897639, with the move in place, failed identically *before* the
+     * main invocation had produced any binary:
+     *
+     *     pkg-config --libs --cflags glib-2.0 → Package glib-2.0 was not found
+     *
+     * The real cause was that `ci.yml`'s `real-ssh-jump` job never installed the Tauri
+     * system libraries, so `cargo test --lib` could not compile the WebKit stack at all.
+     * That is fixed in the workflow.
+     *
+     * The ordering stays: running on an already-built tree means a scenario failure is
+     * a product result rather than a compile error, which is what makes the verdict
+     * mean something.
      */
     report.disconnectMatrix = []
     const scenarios = [
