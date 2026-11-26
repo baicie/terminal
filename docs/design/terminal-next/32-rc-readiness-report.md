@@ -18,7 +18,7 @@
 | SFTP 网络故障 | **PASS**（一处归因纠正） | RC07–RC12，见 §三 |
 | 终端运行时 | **PARTIAL** | RC13/RC14 定论，RC15–RC18 见 §四 |
 | 三平台 GUI | **PASS（CI）** | macOS 7m46s / Linux 12m22s / Windows 19m32s，全 success |
-| 资源稳定性 | **NOT_RUN** | 需真实 GUI 长时运行 |
+| 资源稳定性 | **PARTIAL** | 进程级 RSS/FD 曲线已有两次 100 轮实测（本机 + CI，均 `NO_LEAK_DETECTED`），见 F14/F17；**缺真实 GUI 长时运行**（WebView 侧的内存与 DOM 增长不在进程级曲线里） |
 | 安装升级 | **PARTIAL** | macOS/Linux 已验证，Windows NSIS `BLOCKED_EXTERNAL` |
 | 七天真人日用 | **NOT_RUN** | 必须由用户完成 |
 | 正式签名发布 | **BLOCKED_EXTERNAL** | 无 Apple/Windows 签名与生产 Updater Key |
@@ -266,7 +266,7 @@ SIGNED_PUBLIC_RELEASE_READY = NO  （签名/公证/updater 密钥 BLOCKED_EXTERN
 | `e2e-07` GUI 失败诊断 | **PASS（macOS + Linux）** | 四轮才通过。前三轮的失败都是真结论：两轮是用例写错（没进 Hosts 路由；等「页面里有错误字样」，1.6 秒被主机列表本身满足），第三轮对上了产品——连接被拒被说成「无法验证 SSH 主机密钥」，且内部调用栈直出。`9f9e3bd` 上 macOS（阻塞）与 Linux 两条 case 全 ✓、`notRunCount: 0`。**这一行是矩阵里唯一达到 `NATIVE_GUI_VERIFIED` 的** |
 | F12 断连注入 | **PASS（bastion 腿，三场景；CI 已可核对）** | 逐场景驱动（`an_injected_fault_names_its_own_leg_and_no_more`）断言**归因**而不只是「失败了」。**这条判定花了四轮**，每轮都是真结论：① run 45758649504 三场景全失败而 job 报绿——`finish('FAIL')` 不设退出码（`#164` 修）；② 同一轮三场景死于 `gobject-sys`，根因是 job 从未装 Tauri 系统库（`#164` 修）；③ run 45786015950 真绿了，但**从任何产物都核不了**：`ci.yml` 从未设 `SSH_JUMP_E2E_REPORT`，报告从不写盘，upload 自加入起一直空转；通过场景在日志里也静默（`#165` 修，`if-no-files-found` 改 `error`）；④ 报告接上后，第一份 artifact 自己暴露了它只列 10 条而实际跑了 12 条——`--nocapture` 把测试自己的 stderr 插进 `test <name> ... ` 之后，`ok` 被挤到下一行，正则漏掉，且漏的恰是故障注入用例本身（`#165` 修）。**现在可核对**：run 45790480314 的 artifact 里 `verdict: PASS`、12 条用例、三场景 `cut` 分别为 0/0/1。**只覆盖 bastion 腿**——跳板连接不直连目标，`PermitOpen` 只放行目标真实端口，目标腿无法整形 |
 | F13 自定义策略真实执行 | **PASS（真实 sshd，服务器侧计数）** | `terminalSessionManager` 是 `new TerminalSessionManager()`，从不传参，所以自定义策略到不了后端。现在：设置里可存 `reconnectBaseDelayMs`/`reconnectMaxAttempts`，启动时 `applyReconnectSettings` 应用到单例，管理器新增 `reconnectPolicy()`/`setReconnectPolicy()`（策略持有在 `terminal-reconnect-policy-holder`）。**证据来自服务器而不是客户端**：`run-terminal-smoke.mjs --reconnect-attempts N` 经 Rust 命令注入，`TUNNEL_OPEN_FAILED` 场景读跳板 sshd 的 `Connection from` 行计数。实测 `maxAttempts` 1/2/3 → 拨号 3/4/5（`maxAttempts + 2`：初始 1 次 + 阶梯 N 次 + 隧道路径重建跳板 1 次），`baseDelayMs` 100→2000 使整轮 865→6885 ms 而拨号数不变。**反证**：去掉注入接线后同一命令记录到 7 次拨号（默认 5），证明链路真的是新增的。**未覆盖**：Windows 与 GUI 内的手动改设置（只测了启动应用） |
-| F14 100 轮 soak | **PASS（本地 100 轮）** | 真跑完 100 轮：RSS 15.63→15.96 MB（峰值 16.01，**终值低于峰值**）、FD 恒 9、`NO_LEAK_DETECTED`。12 轮的快速回归在 CI 每次跑。**这是本机结果**，尚未在 CI 派发过 100 轮 |
+| F14 100 轮 soak | **PASS（本机 + CI 各 100 轮）** | 本机：RSS 15.63→15.96 MB、FD 恒 9、`NO_LEAK_DETECTED`。**CI 上第一次真跑**（run `45827098364`，macOS runner，100/100 轮）：RSS 23,232,512→23,543,808 B（21.16→22.45 MiB，终值即峰值）、FD 恒 12、`NO_LEAK_DETECTED`。两次的绝对值不同是因为平台与构建不同，判据是**形状**不是绝对数。与 F12 共用同一 artifact：`verdict: PASS`、12 条用例、三场景 `cut` 0/0/1。12 轮的快速回归仍在每个 PR 上跑。**发现并修掉一个 workflow 缺陷**：该 workflow 从未派发过，首次派发死在写死的 pnpm `10.18.3`（与 `packageManager: 10.34.3` 冲突），见第 8 节「第五种形态」 |
 | F17 RSS/FD 曲线 | **PASS（Unix，采集+判读）** | `session::process_metrics` 真实测量（macOS `proc_pidinfo`、Linux `/proc/self`），soak 每轮采样，判读是纯函数 `scripts/ssh-soak-curve.mjs`（13 项测试）。**Windows 返回 `None` 而非 0**——0 会进曲线并伪装成完美平坦。判读规则被测试改过一次：只看相对比例会漏掉大基线上的真实泄漏（2 GiB 涨 156 MiB = 7.6%），已加持续性判据 |
 | Windows 三平台故障矩阵 | **NOT_RUN** | 一次性 profile 或 VM |
 | 七天真人日用 | **NOT_RUN** | 用户本人 |
