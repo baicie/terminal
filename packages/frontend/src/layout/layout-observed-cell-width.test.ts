@@ -100,6 +100,37 @@ describe('an observed cell width wins over the canvas estimate', () => {
   })
 })
 
+describe('the publisher does not re-run on every render', () => {
+  it('keeps the width getter out of the effect dependencies', () => {
+    /*
+     * ## The defect this pins, measured on macOS
+     *
+     * `measureWidth` is written inline at the call site, so its identity changes on
+     * every render. Listing it in the effect's dependencies made the effect re-run each
+     * render → `publish` → store change → render → new getter → effect again. The
+     * layout stopped rendering entirely: e2e-02 could not find the status bar at *any*
+     * width, including 1440, and three of its cases failed with `last text: null`.
+     *
+     * This is checkable without a browser because the property is textual: the getter
+     * lives in a ref and the dependency array does not name it.
+     */
+    const publisher = source(
+      'features/terminal/components/terminal-container/use-publish-terminal-size.ts',
+    )
+    expect(publisher).toContain('useRef(measureWidth)')
+    expect(publisher).toMatch(/measureWidthRef\.current\?\.\(\)/)
+
+    const depsLine = publisher
+      .split('\n')
+      .find(line => line.trimStart().startsWith('}, [tabId'))
+    expect(depsLine, 'the effect must keep a dependency array').toBeDefined()
+    expect(
+      depsLine,
+      'naming the inline getter in the dependencies re-runs the effect every render',
+    ).not.toContain('measureWidth')
+  })
+})
+
 describe('the publisher only reports what it measured', () => {
   it('omits fittedWidth when the pane cannot measure itself', () => {
     /*

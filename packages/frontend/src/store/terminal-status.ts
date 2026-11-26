@@ -59,13 +59,28 @@ export const useTerminalStatusStore = create<TerminalStatusState>(set => ({
   fittedWidth: 0,
   publish: snapshot =>
     set(state => {
+      /*
+       * ## `?.` on the first access only was a crash, not a shorthand
+       *
+       * The version above compared `state.active?.tabId === snapshot.tabId &&` and then
+       * read `state.active.cols` on the next line. When `active` is null — every publish
+       * after the first `clear()`, which is what a background tab does — the optional
+       * chain stops at `undefined === tabId` (false), so `&&` short-circuits and the
+       * reads never happen. But it only short-circuits when the tab ids differ; the
+       * moment they match with `active` null, `state.active.cols` throws.
+       *
+       * Measured on the macOS GUI run: the status bar never became readable, because
+       * `publish` was throwing on every call.
+       */
+      const previous = state.active
       const unchanged =
-        state.active?.tabId === snapshot.tabId &&
-        state.active.cols === snapshot.cols &&
-        state.active.rows === snapshot.rows &&
-        state.active.status === snapshot.status &&
-        state.active.sessionType === snapshot.sessionType &&
-        state.active.fittedWidth === snapshot.fittedWidth
+        previous !== null &&
+        previous.tabId === snapshot.tabId &&
+        previous.cols === snapshot.cols &&
+        previous.rows === snapshot.rows &&
+        previous.status === snapshot.status &&
+        previous.sessionType === snapshot.sessionType &&
+        previous.fittedWidth === snapshot.fittedWidth
       if (unchanged) return state
       return {
         active: snapshot,

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import {
   useTerminalStatusStore,
   type TerminalStatusSnapshot,
@@ -87,6 +87,21 @@ export function usePublishTerminalSize(options: {
   const publish = useTerminalStatusStore(state => state.publish)
   const clear = useTerminalStatusStore(state => state.clear)
   const { tabId, isActive, isReady, term, status, sessionType, measureWidth } = options
+  /*
+   * ## The getter is held in a ref, not in the dependency array
+   *
+   * `measureWidth` is written inline at the call site (`() => measureElementWidth(...)`),
+   * so its identity changes on every render. Putting it in the effect's dependencies
+   * therefore re-ran the effect on every render → `publish` → store change → render →
+   * new getter → effect again. Measured on the macOS GUI run: the layout stopped
+   * rendering entirely and e2e-02 could not find the status bar at all, at every width
+   * including 1440.
+   *
+   * A ref keeps the effect's dependency list stable while still calling the latest
+   * getter — which is what a getter is for.
+   */
+  const measureWidthRef = useRef(measureWidth)
+  measureWidthRef.current = measureWidth
 
   // A closed tab must not leave its size behind. The effect below only clears
   // when its dependencies change, so without this an unmount while active would
@@ -103,7 +118,7 @@ export function usePublishTerminalSize(options: {
     const report = (cols: number, rows: number) => {
       if (!Number.isSafeInteger(cols) || !Number.isSafeInteger(rows)) return
       if (cols <= 0 || rows <= 0) return
-      const measured = measureWidth?.() ?? null
+      const measured = measureWidthRef.current?.() ?? null
       publish({
         tabId,
         cols,
@@ -118,5 +133,5 @@ export function usePublishTerminalSize(options: {
     report(term.cols, term.rows)
     const subscription = term.onResize(({ cols, rows }) => report(cols, rows))
     return () => subscription.dispose()
-  }, [tabId, isActive, isReady, term, status, sessionType, publish, clear, measureWidth])
+  }, [tabId, isActive, isReady, term, status, sessionType, publish, clear])
 }
