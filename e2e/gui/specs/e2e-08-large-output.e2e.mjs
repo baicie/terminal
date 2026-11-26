@@ -46,12 +46,25 @@ const SCROLLBACK = 10_000
  * scheduler happen to be — a slow runner would look like a backpressure failure and a fast
  * one would finish before the first sample. Neither is a statement about the product.
  *
- * `awk` sleeps between chunks instead, so the stream is large enough to cross the 1 MiB
- * pause watermark (measured decision below) while lasting long enough to observe: roughly
- * 300k lines over several seconds.
+ * Chunks sleep between writes instead, so the stream is large enough to cross the 1 MiB
+ * pause watermark while lasting long enough to observe: roughly 300k lines over seconds.
+ *
+ * ## Why there are two commands
+ *
+ * Measured on the Windows GUI E2E job: `seq` and `awk` do not exist in PowerShell, so the
+ * POSIX command printed an error and the case failed on "the buffer never grew" — a
+ * platform gap reported as a product result. Each platform gets an idiom that actually
+ * runs. A third platform would need a third branch rather than a silent fallback to a
+ * command that cannot work.
  */
-const FLOOD_COMMAND =
+const FLOOD_COMMAND_POSIX =
   'seq 1 300000 | awk \'{ printf "%s padding padding padding padding\\n", $1; if (NR % 20000 == 0) system("sleep 0.25") }\''
+
+const FLOOD_COMMAND_POWERSHELL =
+  '1..300000 | ForEach-Object { "$_ padding padding padding padding"; if ($_ % 20000 -eq 0) { Start-Sleep -Milliseconds 250 } }'
+
+const FLOOD_COMMAND =
+  process.platform === 'win32' ? FLOOD_COMMAND_POWERSHELL : FLOOD_COMMAND_POSIX
 
 async function probeSnapshot() {
   return browser.execute(() => globalThis.__terminalGuiE2E?.snapshot?.() ?? null)
@@ -68,16 +81,85 @@ async function activeLocalTab() {
 }
 
 describe('E2E-08 large output through a real WebView', () => {
+  /*
+   * ## Why the verdict is computed in `after`, not written inside the case
+   *
+   * `scripts/gui-evidence-integrity.test.mjs` requires every spec that writes evidence to
+   * read `currentTest.state`, and the reason is the false-PASS shape measured on `e2e-02`:
+   * a case that throws after its own `writeEvidence(..., 'PASS')` leaves an evidence file
+   * claiming success next to a failing job. Writing PASS at the end of the happy path only
+   * moves the problem — an assertion that fires before that line still leaves the previous
+   * run's file on disk.
+   *
+   * So this spec collects measurements and lets the state decide. `skipped` (no local tab,
+   * no probe) stays NOT_RUN: the harness could not drive the product, which is not a
+   * product result either way.
+   */
+  const measured = {}
+  const caseFailures = []
+
+  afterEach(function () {
+    if (this.currentTest?.state === 'failed') {
+      /*
+       * ## `currentTest.err` is undefined under this runner
+       *
+       * Measured, not assumed: a diagnostic dump of `Object.keys(this.currentTest)` on a
+       * deliberately failing case lists `state`, `title`, `duration`, `timedOut` — and no
+       * `err` at all. Reading `err?.message` therefore produced
+       * `(no error text for "…")` in the evidence, which is a FAIL with no reason in it.
+       *
+       * The recorded fields are the ones that exist. The measurement block below carries
+       * `linesAfter` and `bound`, so an assertion that fired on the bound is still legible
+       * from the file even without the thrown message — the numbers are the reason. Nothing
+       * is invented to fill the gap.
+       */
+      const test = this.currentTest
+      const facts = [
+        test.timedOut === true ? 'timed out' : null,
+        typeof test.duration === 'number' ? `${test.duration} ms` : null,
+      ].filter(Boolean)
+      caseFailures.push({
+        title: test.title ?? '<unknown case>',
+        error:
+          facts.length > 0
+            ? `failed (${facts.join(', ')}); the runner exposes no error object, see the measurements`
+            : 'failed; the runner exposes no error object, see the measurements',
+      })
+    }
+  })
+
+  after(async () => {
+    const verdict = caseFailures.length > 0 ? 'FAIL' : measured.notRun ?? 'PASS'
+    await writeEvidence(CASE, {
+      verdict,
+      command: FLOOD_COMMAND,
+      ...(caseFailures.length > 0
+        ? {
+            error: caseFailures
+              .map(failure => `${failure.title}: ${failure.error}`)
+              .join('; '),
+          }
+        : {}),
+      ...(measured.note === undefined ? {} : { notes: measured.note }),
+      extra: {
+        linesBefore: measured.linesBefore ?? null,
+        linesAfter: measured.linesAfter ?? null,
+        bound: measured.bound ?? null,
+        scrollback: SCROLLBACK,
+        inputAfterFlood: measured.inputAfterFlood ?? false,
+        platform: process.platform,
+      },
+    })
+  })
+
   it('streams a large output while the terminal keeps consuming it', async function () {
     this.timeout(180_000)
 
     const activated = await activeLocalTab()
     if (!activated.ok) {
       // No local tab means there is nothing to flood. Say so; do not invent a pass.
-      await writeEvidence(CASE, {
-        verdict: 'NOT_RUN',
-        notes: `no local terminal tab in this run (tabs: ${activated.tabs})`,
-      })
+      measured.notRun = 'NOT_RUN'
+      measured.note = `no local terminal tab in this run (tabs: ${activated.tabs})`
       return
     }
     if (!activated.wasActive) {
@@ -91,10 +173,9 @@ describe('E2E-08 large output through a real WebView', () => {
        * The probe is compiled in only for E2E builds. Its absence is a harness problem,
        * not a product result — the same distinction `e2e-01` draws.
        */
-      await writeEvidence(CASE, {
-        verdict: 'NOT_RUN',
-        notes: 'read-only GUI E2E probe is absent; the frontend was built without VITE_TERMINAL_GUI_E2E=1',
-      })
+      measured.notRun = 'NOT_RUN'
+      measured.note =
+        'read-only GUI E2E probe is absent; the frontend was built without VITE_TERMINAL_GUI_E2E=1'
       return
     }
 
@@ -124,83 +205,56 @@ describe('E2E-08 large output through a real WebView', () => {
     // Sampled after the prompt: the baseline must be the buffer the flood actually starts
     // from, not one taken before the shell had finished drawing its banner.
     const beforeLines = (await probeSnapshot())?.lines ?? ready.lines
+    measured.linesBefore = beforeLines
     /*
      * Check the write's own answer before polling for its effect.
      *
      * `typeIntoActiveTerminal` returns whether xterm accepted the paste, and the first
      * version of this spec discarded it. The run then sat 120 s polling a buffer that had
      * never been asked to change — `linesBefore: 43, linesAfter: 43` — and reported "the
-     * buffer never grew", which reads like a product problem and was not one. A write that
-     * reports failure must fail here, with that fact, not 120 s later with a wrong one.
-     */
-    /*
-     * ## The trailing `\r` has to be a *separate* write
-     *
-     * Measured on the third run of this spec, with the buffer dumped right after the write:
-     *
-     *     … % seq 1 300000 | awk '{ printf "%s padding padding p
-     *     adding padding\n", $1; if (NR % 20000 == 0) system("sleep 0.25") }'
-     *
-     * The command was on the line and the shell had not run it, because `terminal.paste()`
-     * treats `\r` as a character to insert, not as Return. That is correct xterm behaviour
-     * — a paste must never execute — and the first version of this spec assumed otherwise,
-     * then spent 120 s polling a buffer that was never asked to change.
-     *
-     * So: paste the text, then press Return with `browser.keys('Enter')` — the real key
-     * path `e2e-01` already uses for the same reason. A synthetic `KeyboardEvent` would
-     * not travel the product's handler, and `\n` through `paste()` is text like any other.
+     * buffer never grew", which reads like a product problem and was not one.
      */
     const accepted = await browser.execute(
       text => globalThis.__terminalGuiE2E?.typeIntoActiveTerminal?.(text) ?? false,
       FLOOD_COMMAND,
     )
     if (!accepted) {
-      await writeEvidence(CASE, {
-        verdict: 'NOT_RUN',
-        command: FLOOD_COMMAND,
-        notes: 'xterm refused the paste; the probe could not deliver the command',
-        extra: { linesBefore: beforeLines },
-      })
+      measured.notRun = 'NOT_RUN'
+      measured.note = 'xterm refused the paste; the probe could not deliver the command'
       return
     }
+    /*
+     * ## The Return key is a separate write
+     *
+     * Measured on the third run, with the buffer dumped right after the write: the command
+     * sat on the line with its `\r` rendered as text and the shell never ran it, because
+     * `terminal.paste()` inserts characters rather than interpreting control sequences.
+     * That is correct xterm behaviour — a paste must never execute — and the first version
+     * assumed otherwise. `browser.keys('Enter')` is the real key path `e2e-01` already uses.
+     */
     await browser.keys('Enter')
 
-    /*
-     * Poll for growth rather than sleeping a fixed time.
-     *
-     * A fixed sleep measures the runner's speed: a fast machine finishes the flood before
-     * the first sample and the case reads "no growth". Polling for the condition is the
-     * rule `e2e-01` already established for its own readiness checks.
-     */
-    let grown = null
-    try {
-      await browser.waitUntil(
-        async () => {
-          const current = await probeSnapshot()
-          if (!current) return false
-          grown = current
-          return current.lines >= beforeLines + MIN_BUFFER_GROWTH_LINES
-        },
-        { timeout: 120_000, interval: 500, timeoutMsg: 'the terminal buffer never grew' },
-      )
-    } catch (error) {
-      await writeEvidence(CASE, {
-        verdict: 'FAIL',
-        command: FLOOD_COMMAND,
-        error: error.message,
-        extra: { linesBefore: beforeLines, linesAfter: grown?.lines ?? null },
-      })
-      throw error
-    }
+    // Poll for growth rather than sleeping a fixed time: a fixed sleep measures the
+    // runner's speed, and a fast machine would finish the flood before the first sample.
+    await browser.waitUntil(
+      async () => {
+        const current = await probeSnapshot()
+        if (!current) return false
+        measured.linesAfter = current.lines
+        return current.lines >= beforeLines + MIN_BUFFER_GROWTH_LINES
+      },
+      { timeout: 120_000, interval: 500, timeoutMsg: 'the terminal buffer never grew' },
+    )
 
     /*
      * Bounded: scrollback is the product's own retention limit. A buffer far past it means
      * output is accumulating rather than being consumed under a policy — the shape a
-     * missing backpressure takes. The slack covers the in-flight batch plus the command's
-     * own echoed line.
+     * missing backpressure takes. Recorded as a measurement and asserted, so a failure
+     * here names the number instead of only the expectation.
      */
     const BOUND_SLACK = 2_000
-    expect(grown.lines).toBeLessThanOrEqual(SCROLLBACK + BOUND_SLACK)
+    measured.bound = SCROLLBACK + BOUND_SLACK
+    expect(measured.linesAfter).toBeLessThanOrEqual(measured.bound)
 
     /*
      * The direction that matters most: after the flood, input must still work. A terminal
@@ -209,10 +263,13 @@ describe('E2E-08 large output through a real WebView', () => {
      * assertion cannot see.
      */
     const token = `guie2e08${Date.now()}`
+    const echoCommand =
+      process.platform === 'win32' ? `Write-Output ${token}` : `echo ${token}`
     await browser.execute(
       text => globalThis.__terminalGuiE2E?.typeIntoActiveTerminal?.(text),
-      `echo ${token}\r`,
+      echoCommand,
     )
+    await browser.keys('Enter')
     await browser.waitUntil(
       async () => {
         const tail = await browser.execute(
@@ -226,17 +283,7 @@ describe('E2E-08 large output through a real WebView', () => {
         timeoutMsg: 'the shell never answered after the flood; input is blocked',
       },
     )
-
-    await writeEvidence(CASE, {
-      verdict: 'PASS',
-      command: FLOOD_COMMAND,
-      notes: `buffer ${beforeLines} → ${grown.lines} lines, then a command round-tripped`,
-      extra: {
-        linesBefore: beforeLines,
-        linesAfter: grown.lines,
-        scrollback: SCROLLBACK,
-        inputAfterFlood: true,
-      },
-    })
+    measured.inputAfterFlood = true
+    measured.note = `buffer ${beforeLines} → ${measured.linesAfter} lines, then a command round-tripped`
   })
 })
