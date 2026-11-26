@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-11-26T04:57:46.946Z",
+  "recordedAt": "2026-11-26T07:08:36.165Z",
   "recordedDate": "2026-11-26",
   "kind": "tauri-local-shell-interaction-current-worktree",
   "command": "pnpm smoke:shell-probe:matrix --reuse-binary --shells bash,zsh -- cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt",
@@ -12,7 +12,7 @@
   },
   "revision": {
     "head": "",
-    "commit": "40c81d5",
+    "commit": "a2a2b31",
     "dirtyWorktree": false
   },
   "binary": {
@@ -32,122 +32,122 @@
       "shell": "bash",
       "case": "cat-eof",
       "ok": true,
-      "durationMs": 507
+      "durationMs": 398
     },
     {
       "shell": "bash",
       "case": "readline-history",
       "ok": true,
-      "durationMs": 298
+      "durationMs": 283
     },
     {
       "shell": "bash",
       "case": "readline-tab",
       "ok": true,
-      "durationMs": 476
+      "durationMs": 404
     },
     {
       "shell": "bash",
       "case": "vim-edit",
       "ok": true,
-      "durationMs": 5195
+      "durationMs": 5134
     },
     {
       "shell": "bash",
       "case": "nano-edit",
       "ok": true,
-      "durationMs": 4688
+      "durationMs": 4644
     },
     {
       "shell": "bash",
       "case": "pty-resize",
       "ok": true,
-      "durationMs": 1443
+      "durationMs": 1361
     },
     {
       "shell": "bash",
       "case": "ctrl-c-interrupt",
       "ok": true,
-      "durationMs": 1049
+      "durationMs": 1070
     },
     {
       "shell": "zsh",
       "case": "cat-eof",
       "ok": true,
-      "durationMs": 486
+      "durationMs": 433
     },
     {
       "shell": "zsh",
       "case": "readline-history",
       "ok": true,
-      "durationMs": 318
+      "durationMs": 268
     },
     {
       "shell": "zsh",
       "case": "readline-tab",
       "ok": true,
-      "durationMs": 430
+      "durationMs": 425
     },
     {
       "shell": "zsh",
       "case": "vim-edit",
       "ok": true,
-      "durationMs": 5217
+      "durationMs": 5181
     },
     {
       "shell": "zsh",
       "case": "nano-edit",
       "ok": true,
-      "durationMs": 4667
+      "durationMs": 4672
     },
     {
       "shell": "zsh",
       "case": "pty-resize",
       "ok": true,
-      "durationMs": 1513
+      "durationMs": 1342
     },
     {
       "shell": "zsh",
       "case": "ctrl-c-interrupt",
       "ok": true,
-      "durationMs": 1149
+      "durationMs": 1075
     }
   ],
   "sshCases": [
     {
       "case": "cat-eof",
       "ok": true,
-      "durationMs": 1487
+      "durationMs": 486
     },
     {
       "case": "readline-history",
       "ok": true,
-      "durationMs": 467
+      "durationMs": 374
     },
     {
       "case": "readline-tab",
       "ok": true,
-      "durationMs": 616
+      "durationMs": 513
     },
     {
       "case": "vim-edit",
       "ok": true,
-      "durationMs": 5411
+      "durationMs": 5300
     },
     {
       "case": "nano-edit",
       "ok": true,
-      "durationMs": 4852
+      "durationMs": 4776
     },
     {
       "case": "pty-resize",
       "ok": true,
-      "durationMs": 1463
+      "durationMs": 1467
     },
     {
       "case": "ctrl-c-interrupt",
       "ok": true,
-      "durationMs": 1508
+      "durationMs": 1171
     }
   ],
   "allCasesPassed": true,
@@ -165,11 +165,11 @@
   ],
   "provenance": {
     "source": "github-actions",
-    "runId": "45756209538",
+    "runId": "45771747231",
     "runAttempt": "1",
     "workflow": "Real-machine terminal matrix",
     "job": "macos-ssh-matrix",
-    "commit": "40c81d573941200ace447367b39878313a7dcdbe",
+    "commit": "a2a2b315754716d3056e9ed1072deb2213355ab3",
     "fingerprint": "b7ec3afab9f97dfdffd2e455e914017306b1405fa0db89136485d1032211ac5d",
     "runner": {
       "os": "macOS",
