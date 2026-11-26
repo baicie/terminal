@@ -68,10 +68,18 @@ RC16 点名的八种情形里，以下需要**两个**隔离 sshd 与可控断�
 - A/B 切换时终端标题、Host ID、Session ID、远端回显的一致性。
 
 ```
-JUMP_AUTH_CHAIN_REAL               = PARTIAL（Two-hop 凭据已验证，错误分类未逐项）
-JUMP_DISCONNECT_MATRIX             = NOT_RUN
-JUMP_ERROR_ATTRIBUTION             = NOT_RUN
+JUMP_AUTH_CHAIN_REAL               = PASS      （跳板/目标认证各用自己的凭据，真实 sshd）
+JUMP_DISCONNECT_MATRIX             = PARTIAL   （跳板腿三场景已覆盖；目标腿缺）
+JUMP_ERROR_ATTRIBUTION             = PASS      （6 个归因用例，见 33-…md 的「闭合」）
 ```
+
+归因这一项在本文写作时确实不存在。后来 `SessionFailure { error, hop, stage }` 作为
+命令的返回类型解决了 `SessionError` 序列化边界的问题，证据见
+`33-rc16-jump-attribution-gap.md` 的「闭合」一节。
+
+`JUMP_DISCONNECT_MATRIX` 保持 PARTIAL 而不是 PASS：跳板腿的 healthy / blackhole /
+reset 三场景已在 CI 上跑（F12），但**目标腿**的断开没有真实用例——跳板连接不直连
+目标，`PermitOpen` 只放行目标真实端口，故障无法整形到那一腿。
 
 ---
 
