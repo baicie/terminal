@@ -21,6 +21,34 @@ export interface SizeReportingTerminal {
 }
 
 /**
+ * The element the terminal renders into, or `null` when it has not mounted.
+ *
+ * Passed as a getter rather than an element so this hook never holds a stale node
+ * across a remount, and so a pane without a measurable container simply publishes no
+ * `fittedWidth` — see `TerminalStatusSnapshot.fittedWidth` for why absent is preferable
+ * to a guess.
+ */
+export type TerminalWidthSource = () => number | null
+
+/**
+ * The width of a fitted element, or `null` when there is nothing to measure.
+ *
+ * A getter at the call site rather than a captured element, because the layout needs the
+ * *current* width at the moment of a resize and a captured node would go stale across a
+ * remount.
+ *
+ * `getBoundingClientRect` rather than `clientWidth` so a CSS transform — the mobile zoom,
+ * a split animation — is included. That is the width xterm fit to; `clientWidth` reports
+ * the untransformed box, which would make the back-computed cell width wrong by exactly
+ * the transform's scale.
+ */
+export function measureElementWidth(element: Element | null): number | null {
+  if (element === null) return null
+  const width = element.getBoundingClientRect().width
+  return Number.isFinite(width) && width > 0 ? width : null
+}
+
+/**
  * Report this pane's size to the status bar, but only while it is the active tab.
  *
  * Extracted from `TerminalContainer` because that file is at its size limit and
@@ -47,10 +75,18 @@ export function usePublishTerminalSize(options: {
   /** Re-runs the publish when the session state changes, e.g. after a reconnect. */
   status: TerminalStatusSnapshot['status']
   sessionType: TerminalStatusSnapshot['sessionType']
+  /**
+   * Width of the element xterm was fitted to, in CSS pixels.
+   *
+   * The layout needs it to back-compute the cell width the terminal is really using; a
+   * canvas measurement of the same font stack is only as good as this machine's font
+   * substitution, and on the Linux GUI runner it was wrong by 28 % (8.4 vs 10.8 px).
+   */
+  measureWidth?: TerminalWidthSource
 }): void {
   const publish = useTerminalStatusStore(state => state.publish)
   const clear = useTerminalStatusStore(state => state.clear)
-  const { tabId, isActive, isReady, term, status, sessionType } = options
+  const { tabId, isActive, isReady, term, status, sessionType, measureWidth } = options
 
   // A closed tab must not leave its size behind. The effect below only clears
   // when its dependencies change, so without this an unmount while active would
@@ -67,10 +103,20 @@ export function usePublishTerminalSize(options: {
     const report = (cols: number, rows: number) => {
       if (!Number.isSafeInteger(cols) || !Number.isSafeInteger(rows)) return
       if (cols <= 0 || rows <= 0) return
-      publish({ tabId, cols, rows, status, sessionType })
+      const measured = measureWidth?.() ?? null
+      publish({
+        tabId,
+        cols,
+        rows,
+        status,
+        sessionType,
+        ...(measured !== null && Number.isFinite(measured) && measured > 0
+          ? { fittedWidth: measured }
+          : {}),
+      })
     }
     report(term.cols, term.rows)
     const subscription = term.onResize(({ cols, rows }) => report(cols, rows))
     return () => subscription.dispose()
-  }, [tabId, isActive, isReady, term, status, sessionType, publish, clear])
+  }, [tabId, isActive, isReady, term, status, sessionType, publish, clear, measureWidth])
 }

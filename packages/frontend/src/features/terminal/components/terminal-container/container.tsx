@@ -8,15 +8,12 @@ import { useAppStore } from '@/store/app'
 import { useHostStore } from '@/store/host'
 import { getThemeColors } from '@/utils/terminal-themes'
 import { getTemporaryTerminalProfile } from '@/features/terminal/services/temporary-terminal-profiles'
-import {
-  SshHostKeyDialogSurface,
-  SshHostKeyOverlaySurface,
-} from './ssh-host-key-surfaces'
+import { SshHostKeyDialogSurface, SshHostKeyOverlaySurface } from './ssh-host-key-surfaces'
 import { PasteConfirmDialog } from './paste-confirm-dialog'
 import { usePasteConfirm } from './use-paste-confirm'
 import { usePaneShortcuts } from './use-pane-shortcuts'
 import { useTerminalPaneUi } from './use-terminal-pane-ui'
-import { usePublishTerminalSize } from './use-publish-terminal-size'
+import { measureElementWidth, usePublishTerminalSize } from './use-publish-terminal-size'
 import { useTerminalBodyProps } from './use-terminal-body-props'
 import { useTerminalErrorSurface } from './use-terminal-error-dismissal'
 import { TerminalBody } from './terminal-body'
@@ -134,9 +131,10 @@ export function TerminalContainer({
     if (isReady) requestFit()
   }, [isReady, requestFit, status])
 
-  // `backendSessionId` ties an approval to the session that produced the text, not to
-  // the tab that happens to still be open after a reconnect.
+  // `backendSessionId` binds an approval to the session that produced the text, not to
+  // the tab still open after a reconnect.
   usePublishTerminalSelection({ tabId, isActive: terminalIsActive, term: terminal.termInstance, backendSessionId: sessionId })
+  // The layout back-computes the cell width from this; see `use-panel-layout.ts`.
   usePublishTerminalSize({
     tabId,
     isActive,
@@ -144,6 +142,7 @@ export function TerminalContainer({
     term: terminal.termInstance,
     status,
     sessionType: tab?.type ?? 'local',
+    measureWidth: () => measureElementWidth(terminal.containerRef.current),
   })
   useEffect(() => {
     if (terminalIsActive) return
