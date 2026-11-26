@@ -241,6 +241,38 @@ describe('E2E-08 large output through a real WebView', () => {
       },
       { timeout: 120_000, interval: 500, timeoutMsg: 'the terminal buffer never grew' },
     )
+    measured.peakLines = measured.linesAfter
+
+    /*
+     * ## Wait for the flood to *finish*, not just to start
+     *
+     * Measured on the Windows runner: `linesAfter: 617` — well past the growth threshold,
+     * so the case moved on to the echo while the shell was still producing output. The
+     * echo then sat behind 300k lines of flood and the 30 s wait expired with
+     * `inputAfterFlood: false`. The verdict blamed the product for being unable to accept
+     * input, when the input was simply queued behind the work this case had just asked for.
+     *
+     * The prompt is the shell saying it is done. Waiting for it is what makes the next
+     * step a question about input rather than a race against the flood.
+     *
+     * Bounded by the flood's own duration (~5 s of sleeps plus the runner's throughput);
+     * a shell that never returns to a prompt is a real failure and this timeout says so.
+     */
+    await browser.waitUntil(
+      async () => {
+        const tail = await browser.execute(
+          () => globalThis.__terminalGuiE2E?.readActiveTerminalTail?.() ?? '',
+        )
+        return typeof tail === 'string' && /[$#%>]\s*$/.test(tail)
+      },
+      {
+        timeout: 120_000,
+        interval: 500,
+        timeoutMsg:
+          'the shell never returned to a prompt after the flood, so the terminal may be stuck',
+      },
+    )
+    measured.linesAfter = (await probeSnapshot())?.lines ?? measured.linesAfter
 
     /*
      * Bounded: scrollback is the product's own retention limit. A buffer far past it means
