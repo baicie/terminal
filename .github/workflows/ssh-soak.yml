@@ -29,9 +29,19 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      # No `version:` here, deliberately.
+      #
+      # The first dispatch of this workflow (run 45826816593) failed at this step:
+      #
+      #   Error: Multiple versions of pnpm specified
+      #
+      # `package.json` declares `packageManager: pnpm@10.34.3`, and this step asked for
+      # 10.18.3 — `pnpm/action-setup` refuses rather than picking one. `ci.yml` never hits
+      # this because its version comes from `env.PNPM_VERSION`, the same 10.34.3. Leaving
+      # the input out makes `packageManager` the single source, which is what the other
+      # workflows effectively do and what a fresh workflow should have done from the start.
       - uses: pnpm/action-setup@v4
         with:
-          version: 10.18.3
           run_install: false
       - uses: actions/setup-node@v4
         with:
