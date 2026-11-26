@@ -1,3 +1,4 @@
+import type { ReconnectSettings } from './app-settings-reconnect'
 /**
  * 数据库类型定义
  * 集中管理所有数据库表的行类型
@@ -118,7 +119,7 @@ export interface SSHKeyRecord {
 }
 
 // Settings types
-export interface AppSettings {
+export interface AppSettings extends ReconnectSettings {
   theme: 'light' | 'dark' | 'system'
   language: string
   fontSize: number

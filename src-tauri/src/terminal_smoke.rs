@@ -22,6 +22,10 @@ const HOST_WAKE_PATH_ENV: &str = "TERMINAL_SMOKE_HOST_WAKE_PATH";
 /// SSH19 — run the same product path against a host that never answers, and require the
 /// ladder to end in a user-visible failure that carries a structured reason.
 const FAILURE_ENV: &str = "TERMINAL_SMOKE_FAILURE";
+/// F13 — the reconnect policy to walk, so a scenario can prove a *custom* one reaches the
+/// backend instead of only the defaults the shipped singleton resolves.
+const RECONNECT_BASE_DELAY_ENV: &str = "TERMINAL_SMOKE_RECONNECT_BASE_DELAY_MS";
+const RECONNECT_MAX_ATTEMPTS_ENV: &str = "TERMINAL_SMOKE_RECONNECT_MAX_ATTEMPTS";
 const RENDERER_HEARTBEAT_ENDPOINT_ENV: &str = "TERMINAL_SMOKE_RENDERER_HEARTBEAT_ENDPOINT";
 const RENDERER_HEARTBEAT_TOKEN_ENV: &str = "TERMINAL_SMOKE_RENDERER_HEARTBEAT_TOKEN";
 const LOAD_BYTES: usize = 8 * 1024 * 1024;
@@ -127,6 +131,17 @@ pub(crate) struct TerminalSmokeConfig {
 pub(crate) struct TerminalSmokeRendererHeartbeatConfig {
     endpoint: String,
     token: String,
+}
+
+/// F13 — the reconnect policy a scenario asked the product to walk.
+///
+/// Both fields are optional on purpose: a scenario that sets only `maxAttempts` must leave
+/// `baseDelayMs` to the product's own default, not to a number this harness invented.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TerminalSmokeReconnectPolicy {
+    base_delay_ms: Option<u64>,
+    max_attempts: Option<u32>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -1134,6 +1149,46 @@ pub(crate) fn terminal_smoke_config(
     state: State<'_, TerminalSmokeState>,
 ) -> Option<TerminalSmokeConfig> {
     state.run().map(|run| run.config.clone())
+}
+
+/// F13 — read the policy the harness asked for, if it asked for one at all.
+///
+/// Returns `None` when neither variable is set, so an ordinary smoke run keeps the shipped
+/// defaults and the frontend does not apply an empty policy over them. A value that does
+/// not parse is an error rather than a silent default: a scenario that meant to inject
+/// `maxAttempts=2` and typed `two` must not pass by walking five attempts unnoticed.
+#[tauri::command]
+pub(crate) fn terminal_smoke_reconnect_policy(
+    state: State<'_, TerminalSmokeState>,
+) -> Result<Option<TerminalSmokeReconnectPolicy>, String> {
+    state
+        .run()
+        .ok_or_else(|| "terminal smoke mode is not enabled".to_string())?;
+    let base_delay_ms = optional_env_number::<u64>(RECONNECT_BASE_DELAY_ENV)?;
+    let max_attempts = optional_env_number::<u32>(RECONNECT_MAX_ATTEMPTS_ENV)?;
+    if base_delay_ms.is_none() && max_attempts.is_none() {
+        return Ok(None);
+    }
+    Ok(Some(TerminalSmokeReconnectPolicy {
+        base_delay_ms,
+        max_attempts,
+    }))
+}
+
+fn optional_env_number<T>(name: &str) -> Result<Option<T>, String>
+where
+    T: std::str::FromStr,
+{
+    match std::env::var(name) {
+        Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(std::env::VarError::NotUnicode(_)) => Err(format!("{name} must be valid UTF-8")),
+        Ok(raw) if raw.trim().is_empty() => Ok(None),
+        Ok(raw) => raw
+            .trim()
+            .parse::<T>()
+            .map(Some)
+            .map_err(|_| format!("{name} must be a positive integer, got {raw:?}")),
+    }
 }
 
 #[tauri::command]

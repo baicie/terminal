@@ -361,7 +361,26 @@ const budgets = {
   // Headroom after this: ~0.66 KB, the same order as every previous adjustment (0.6,
   // 0.6, 0.8, 0.78, 0.98). The ceiling has now been raised by exactly the measured
   // overage rather than to a round number, for the reason recorded at the 652.5 KB entry.
-  totalGzip: 664 * 1024,
+  //
+  // 665 KB (was 664 KB). F13 — the reconnect policy a user can set. Measured on the branch
+  // against the same build with the startup wiring removed, so the number is this feature's
+  // own cost rather than a branch-wide drift:
+  //
+  //   without the startup apply              663.96 KB
+  //   with it                                664.10 KB
+  //   difference                              +0.14 KB
+  //
+  // The 0.14 KB is `app-settings-reconnect-apply.ts` plus its import edge: the manager
+  // itself stays in its own lazy chunk (`js/terminal-session-manager.*.js`, still `Lazy`),
+  // so nothing was pulled onto the first-terminal critical path — the initial budget did
+  // not move (131.27 → 131.28 KB). What the bytes buy is the thing F13 exists for: without
+  // this call the stored policy had no consumer at all, because the shipped singleton is
+  // constructed with no arguments.
+  //
+  // The ceiling moves by 1 KB rather than by the 0.14 KB overage because 664.00 − 663.96
+  // is 0.04 KB of headroom, and the entries above record that a local build runs several KB
+  // below CI. A ceiling that tight would pass here and fail there.
+  totalGzip: 665 * 1024,
   maxJavaScriptRaw: 500 * 1024,
 }
 
