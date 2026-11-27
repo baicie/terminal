@@ -87,8 +87,11 @@ RC14 有一条要说清楚：我想用「节流状态模块级共享」模拟双
 变异变红**，最后查明它是**行为等价**的——`requestFit` 在节流窗口内会 `setTimeout`，
 只延迟不丢弃，最多晚 32ms。这不是可捕捉的缺陷。用例保留为冒烟测试并写明限制。
 
-RC15–RC18 的 NOT_RUN 原因相同：需要真实 GUI 会话或双跳 fixture，本轮按用户要求
-不启动应用窗口。
+RC15–RC18 在早期轮次里都因为「需要真实 GUI 会话或双跳 fixture、而本轮不启动应用窗口」
+记为 NOT_RUN。**这四项后来全部闭合**，靠的是三类不同的环境而不是启动更多窗口：
+允许密码认证的隔离 fixture（RC15 的服务端计数）、既有 sshd fixture 的双跳场景
+（RC16 归因）、以及 macOS GUI E2E 的阻塞门禁（RC17/RC18）。只有 RC16 的断连矩阵
+目标腿留在 PARTIAL，理由是结构上测不到，不是没做。
 
 ### 两个 GUI job 在 PR #171 上暴露的失败，都不是产品缺陷
 
@@ -181,18 +184,18 @@ EVIDENCE_FINGERPRINT_CURRENT = NO   （需重采，见 §六）
 
 ## 六、未完成项与需要的条件
 
-| 项 | 需要什么 |
-| --- | --- |
-| 六份验收证据重采 | `real-machine-matrix` 工作流在当前 HEAD 跑一次，提交产物 |
-| RC15 服务端重试计数 | 允许密码认证的隔离 fixture + sshd 日志解析 |
-| RC16 断连矩阵 | 两个隔离 sshd + 可控断连 |
-| RC17 真实 WebView 大输出 | 启动 GUI |
-| RC18 100 轮资源曲线 | 启动 GUI 并长时间运行 |
-| RC19 真实截图 | 启动 GUI |
-| RC20 真人键盘 | 用户本人 |
-| RC21 Windows NSIS | 一次性 profile 或 VM |
-| 七天真人日用 | 用户本人 |
-| 正式签名发布 | Apple Developer ID、Windows Authenticode、生产 Updater Key |
+| 项 | 需要什么 | 现状 |
+| --- | --- | --- |
+| 六份验收证据重采 | `real-machine-matrix` 工作流在当前 HEAD 跑一次，提交产物 | 已完成 |
+| RC15 服务端重试计数 | 允许密码认证的隔离 fixture + sshd 日志解析 | **已完成**（跳板 `Failed publickey` 计数 1 次） |
+| RC16 断连矩阵 | 两个隔离 sshd + 可控断连 | **目标腿结构上测不到**（`PermitOpen` 只放行真实端口） |
+| RC17 真实 WebView 大输出 | 启动 GUI | **已完成**（macOS 阻塞门禁） |
+| RC18 100 轮资源曲线 | 启动 GUI 并长时间运行 | **已完成**（macOS，进程外采样） |
+| RC19 真实截图 | 启动 GUI | 已完成 |
+| RC20 真人键盘 | 用户本人 | 未执行 |
+| RC21 Windows NSIS | 一次性 profile 或 VM | BLOCKED_EXTERNAL |
+| 七天真人日用 | 用户本人 | 未执行（唯一的 `CORE_DAILY_DRIVER_READY` 阻断） |
+| 正式签名发布 | Apple Developer ID、Windows Authenticode、生产 Updater Key | BLOCKED_EXTERNAL |
 
 ---
 
