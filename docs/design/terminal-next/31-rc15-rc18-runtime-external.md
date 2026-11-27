@@ -208,13 +208,20 @@ R07 里用「重复 N 轮」的方式验证过（那几项本来就跑在 Node �
 
 ```
 RC15  SSH_RETRY_BUDGET_IMPLEMENTED        PASS
-RC15  SSH_RETRY_SERVER_SIDE_COUNT         NOT_RUN
+RC15  SSH_RETRY_SERVER_SIDE_COUNT         PASS   （真实 sshd 的 Failed publickey 计数）
 RC16  JUMP_TWO_HOP_CREDENTIALS            PASS   （Phase 10.3 真实 sshd）
-RC16  JUMP_DISCONNECT_MATRIX              NOT_RUN
+RC16  JUMP_DISCONNECT_MATRIX              PARTIAL（跳板腿有，目标腿结构上测不到）
 RC17  PTY_BACKPRESSURE_10MIB              PASS   （Rust）
-RC17  PTY_BACKPRESSURE_REAL_WEBVIEW       NOT_RUN
-RC18  RESOURCE_CURVE_100_ROUNDS           NOT_RUN
+RC17  PTY_BACKPRESSURE_REAL_WEBVIEW       PASS   （macOS，阻塞门禁）
+RC18  RESOURCE_CURVE_100_ROUNDS           PASS   （macOS，进程外采样）
 ```
 
-三项 NOT_RUN 的原因相同：**需要真实 GUI 会话或双跳 fixture，而本轮按用户要求不
-启动应用窗口**。这不是「没时间做」，是「没有可以诚实地声称做了的条件」。
+这份汇总此前停在最早的版本：正文逐条更新后，代码块里还留着三项 `NOT_RUN`——一份
+文档内部自相矛盾，读者会挑任意一半相信。现在按正文的实际结论对齐。
+
+剩下没有闭合的两项都不是「没时间做」：
+
+- `JUMP_DISCONNECT_MATRIX` 的目标腿**结构上测不到**：跳板不直连目标，`PermitOpen`
+  只放行真实端口，故障整形到不了那一腿（见 F12 与 `33-rc16-jump-attribution-gap.md`）。
+- Linux / Windows 的 GUI E2E 仍是 informational job，两个 `e2e` 在这两平台上没有
+  阻塞门禁的地位，也没有被当作通过。
