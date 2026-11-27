@@ -137,8 +137,49 @@ PTY_BACKPRESSURE_IN_REAL_WEBVIEW   = PASS（macOS，真实 WebView）
 这需要真实 GUI 长时间运行。**没有捷径**：单元测试里的计数器不构成资源曲线。
 
 ```
-RESOURCE_CURVE_100_ROUNDS          = NOT_RUN（需要 GUI 与长时间运行）
+RESOURCE_CURVE_100_ROUNDS          = PASS（真实 GUI，100 轮，进程外采样）
 ```
+
+**已补齐**：`e2e/gui/specs/e2e-09-resource-curve.e2e.mjs` 在真实 Tauri WebView 里跑 100 轮
+（打开命令面板 → Escape → 读终端快照），每轮从**进程外部**采一次样。
+
+### 为什么采样必须在进程外
+
+`fixtures/process-sampler.mjs` 读 `ps` / `lsof` / `/proc`。应用自己记的计数器是被测对象
+产出的测量：插桩有 bug 数字就变，崩溃序列就没了，计数器停止更新则读成一条完美直线。
+操作系统没有这些动机。
+
+### 实测（本机，macOS）
+
+| 资源 | 起点 → 终点 | 判定 |
+| --- | --- | --- |
+| RSS | 50.3 MB → 29.0 MB（−20.28 MiB） | `NO_LEAK_DETECTED` |
+| 描述符 | 103 → 104 | `NO_LEAK_DETECTED` |
+| 线程 | 30–35 | 记录 |
+
+101 个采样点。RSS 下降而不是上升——启动期分配在结束时已经释放。
+
+### 判读规则
+
+`fixtures/resource-curve.mjs` 是纯函数，11 项测试用合成序列覆盖三种形态。判据是
+**后半段的 floor 是否还在爬**，不是「末值比初值高」：
+
+- 只比首末，锯齿波会被判成泄漏（末值碰巧落在高位）；
+- 比整段 floor，热身会被判成泄漏——写这个模块时实测过，合成平台期被判「floor rose 1100%」。
+
+**用真实序列做变异**：实测的 101 点 → `NO_LEAK_DETECTED`；同一序列每轮 +3 MiB →
+`LEAK_SUSPECTED`；热身到 60 MiB 后持平 → `NO_LEAK_DETECTED`。规则在真实数据上工作，
+不是只在合成数据上。
+
+### 它不声称什么
+
+单台 runner 上的曲线是关于那台 runner 的假设。任务要的是形状，不是合并门禁，所以
+`LEAK_SUSPECTED` 记进证据而不是抛错——抛错会让共享 runner 的噪声阻塞无关工作，
+`ssh-soak.yml` 同样拒绝这么做。
+
+**未覆盖**：Linux / Windows（本 case 只在 macOS GUI E2E 的阻塞门禁里跑；两平台的 job
+是 informational）；以及任务书点名的 SFTP / Snippet / Inspector 各阶段——本 case 的每轮
+是命令面板的开关，这是三平台上唯一行为一致的控件。
 
 ### 一项可以在无 GUI 条件下做的替代
 

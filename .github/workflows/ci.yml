@@ -481,14 +481,15 @@ jobs:
           #   * `server-state.test.mjs` guards the SFTP server-state reader, which is
           #     what makes "verified on the server" mean the server and not the pane.
           #
-          # A guard nobody runs is the shape this repository keeps having to fix. When
-          # another fixture test is added, add it here too — or replace the list with a
-          # glob, which is what this should have been.
+          # A guard nobody runs is the shape this repository keeps having to fix. This
+          # listed the fixture tests by name until RC18, and the list had already gone
+          # stale: `process-sampler.test.mjs` and `resource-curve.test.mjs` were added and
+          # would not have run. It is a glob now, so a new fixture test is picked up
+          # without editing this file.
           node --test --test-reporter=spec --test-reporter-destination=stderr \
             --test-reporter=tap --test-reporter-destination=test-results/scripts.tap \
             scripts/*.test.mjs scripts/verify-install/*.test.mjs \
-            e2e/gui/fixtures/evidence.test.mjs e2e/gui/fixtures/server-state.test.mjs \
-            e2e/gui/fixtures/server-state-escape.test.mjs
+            e2e/gui/fixtures/*.test.mjs
       - name: Upload gate script test results
         if: always()
         uses: actions/upload-artifact@v4
