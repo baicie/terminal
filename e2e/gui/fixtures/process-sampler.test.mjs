@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { emptySample, findAppPid, sampleProcess } from './process-sampler.mjs'
+import { canSample, emptySample, findAppPid, sampleProcess } from './process-sampler.mjs'
 
 describe('RC18 — sampling a real process', () => {
   it('reads the current process', () => {
@@ -27,6 +27,22 @@ describe('RC18 — sampling a real process', () => {
      * measured.
      */
     assert.equal(sampleProcess(process.pid, 'win32'), null)
+  })
+
+  it('answers whether the platform can be sampled at all', () => {
+    /*
+     * The two answers have to agree: `canSample` is only useful if it predicts what
+     * `sampleProcess` will do. A caller asks the cheap question first, so a disagreement
+     * sends it down the wrong path — which is exactly what happened on the Windows GUI
+     * job, where the pid lookup was asked before this question existed and threw.
+     */
+    for (const platform of ['linux', 'darwin', 'win32']) {
+      assert.equal(
+        canSample(platform),
+        sampleProcess(process.pid, platform) !== null,
+        `canSample(${platform}) disagrees with sampleProcess`,
+      )
+    }
   })
 
   it('refuses a pid that cannot exist', () => {

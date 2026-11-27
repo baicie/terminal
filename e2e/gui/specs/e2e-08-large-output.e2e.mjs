@@ -47,7 +47,8 @@ const SCROLLBACK = 10_000
  * one would finish before the first sample. Neither is a statement about the product.
  *
  * Chunks sleep between writes instead, so the stream is large enough to cross the 1 MiB
- * pause watermark while lasting long enough to observe: roughly 300k lines over seconds.
+ * pause watermark while lasting long enough to observe. The size it settles on is stated
+ * in bytes below, not in lines.
  *
  * ## Why there are two commands
  *
@@ -61,12 +62,35 @@ const SCROLLBACK = 10_000
  * command and still failed, with `linesAfter: 1475` out of 300k and `inputAfterFlood:
  * false` — the delivery path, not the command, was the problem, and the fix for that is
  * below: WebDriver's own key sequence instead of `terminal.paste()`.
+ *
+ * ## Why the payload is counted in bytes, not lines
+ *
+ * The first version emitted 300k short lines (~32 B each). Measured on two Windows runs
+ * of this same spec: the fast one finished the flood inside 64 s of total spec time, the
+ * slow one was still at line 215522 of 300000 after 120 s — the screenshot at the timeout
+ * shows the output advancing normally, so the product was consuming it and the runner was
+ * simply slower. PowerShell's per-iteration cost (a script-block call plus formatting) is
+ * what sets the ceiling, and it is charged **per line**, so a payload sized in lines makes
+ * the case's runtime track the runner rather than the product.
+ *
+ * What this case actually needs is stated in bytes and in rows, and neither needs 300k
+ * lines: cross the 1 MiB pause watermark (so backpressure engages at all) and exceed the
+ * 10 000-row scrollback (so eviction is observable). A 103-character pad plus the counter
+ * gives ~110-character lines: 100k of them is 10.99 MB — measured with `wc -c` on the
+ * POSIX command's output, the same byte volume the Rust test drives and ten times the
+ * scrollback — for a third of the iterations. A runner three times slower than the slow
+ * one measured still finishes inside the waits below.
+ *
+ * The line width is kept under the terminal's 120 columns on purpose: a wrapped line
+ * costs several rows and would make the row arithmetic here depend on the window size.
  */
-const FLOOD_COMMAND_POSIX =
-  'seq 1 300000 | awk \'{ printf "%s padding padding padding padding\\n", $1; if (NR % 20000 == 0) system("sleep 0.25") }\''
+const PAD = 'padding '.repeat(13).trim() // 103 characters, same on both platforms
 
-const FLOOD_COMMAND_POWERSHELL =
-  '1..300000 | ForEach-Object { "$_ padding padding padding padding"; if ($_ % 20000 -eq 0) { Start-Sleep -Milliseconds 250 } }'
+const FLOOD_LINES = 100_000
+
+const FLOOD_COMMAND_POSIX = `seq 1 ${FLOOD_LINES} | awk '{ printf "%s ${PAD}\\n", $1; if (NR % 20000 == 0) system("sleep 0.25") }'`
+
+const FLOOD_COMMAND_POWERSHELL = `$pad = '${PAD}'; 1..${FLOOD_LINES} | ForEach-Object { "$_ $pad"; if ($_ % 20000 -eq 0) { Start-Sleep -Milliseconds 250 } }`
 
 const FLOOD_COMMAND =
   process.platform === 'win32' ? FLOOD_COMMAND_POWERSHELL : FLOOD_COMMAND_POSIX
@@ -248,7 +272,7 @@ describe('E2E-08 large output through a real WebView', () => {
      *
      * Measured on the Windows runner: `linesAfter: 617` — well past the growth threshold,
      * so the case moved on to the echo while the shell was still producing output. The
-     * echo then sat behind 300k lines of flood and the 30 s wait expired with
+     * echo then sat behind the whole flood and the 30 s wait expired with
      * `inputAfterFlood: false`. The verdict blamed the product for being unable to accept
      * input, when the input was simply queued behind the work this case had just asked for.
      *
@@ -257,12 +281,25 @@ describe('E2E-08 large output through a real WebView', () => {
      *
      * Bounded by the flood's own duration (~5 s of sleeps plus the runner's throughput);
      * a shell that never returns to a prompt is a real failure and this timeout says so.
+     *
+     * ## Why the poll also samples the buffer length
+     *
+     * Measured on the Windows run that failed here: the evidence recorded
+     * `linesAfter: 674` while the screenshot taken at the same moment showed the terminal
+     * printing line 215522. `linesAfter` was only ever written by the *first* wait, which
+     * stops polling the moment the growth threshold is met — so the number in the file was
+     * a stale early sample, and the failure read as "the buffer barely moved" when the
+     * buffer had in fact grown to the scrollback limit. The artifact under-reported itself,
+     * which is the one thing evidence must never do. Sampling here keeps
+     * `linesAfter` truthful on the timeout path as well as the success path.
      */
     await browser.waitUntil(
       async () => {
         const tail = await browser.execute(
           () => globalThis.__terminalGuiE2E?.readActiveTerminalTail?.() ?? '',
         )
+        const current = await probeSnapshot()
+        if (current) measured.linesAfter = current.lines
         return typeof tail === 'string' && /[$#%>]\s*$/.test(tail)
       },
       {

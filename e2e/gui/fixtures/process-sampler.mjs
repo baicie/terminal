@@ -105,6 +105,20 @@ function sampleDarwin(pid) {
 }
 
 /**
+ * Whether this platform can be sampled at all.
+ *
+ * Exists so a caller can ask **before** it does anything else that only makes sense on a
+ * samplable platform. Measured on the Windows GUI job: `e2e-09` looked up the app's pid
+ * first, `findAppPid` answered `null` there (that platform's lookup is `wmic`, which this
+ * runner does not provide), and the case threw "could not find the app process" — a
+ * capability gap reported as a harness defect, on a job that could never have produced a
+ * sample. The order of the two questions is the whole point.
+ */
+export function canSample(platform = process.platform) {
+  return platform === 'linux' || platform === 'darwin'
+}
+
+/**
  * Sample one process, or `null` when the platform cannot.
  *
  * `null` vs a sample of nulls: a caller that cannot measure at all should say so once,

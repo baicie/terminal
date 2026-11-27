@@ -34,7 +34,7 @@ import path from 'node:path'
 import { browser, expect } from '@wdio/globals'
 import { writeEvidence } from '../fixtures/evidence.mjs'
 import { appBinaryPath } from '../../../scripts/gui-e2e-platform.mjs'
-import { findAppPid, sampleProcess } from '../fixtures/process-sampler.mjs'
+import { canSample, findAppPid, sampleProcess } from '../fixtures/process-sampler.mjs'
 import { summariseSeries } from '../fixtures/resource-curve.mjs'
 
 const CASE = 'e2e-09'
@@ -112,6 +112,7 @@ async function runRound(index) {
 describe('E2E-09 resource curve across repeated GUI work', () => {
   const samples = []
   const roundResults = []
+  const measured = {}
   const caseFailures = []
 
   afterEach(function () {
@@ -138,12 +139,23 @@ describe('E2E-09 resource curve across repeated GUI work', () => {
 
     /*
      * `LEAK_SUSPECTED` is recorded, not thrown: a curve on a shared runner is a hypothesis
-     * about that runner, and the task asks for the shape rather than a gate. A missing
-     * sample set is a different matter and does fail — that means the sampler never ran,
-     * which is a harness defect rather than a product finding.
+     * about that runner, and the task asks for the shape rather than a gate.
+     *
+     * Three outcomes, decided in order: a thrown case is a failure; a platform the sampler
+     * cannot read is NOT_RUN; anything else needs samples to be a PASS, and a run that
+     * produced none is a harness defect rather than a product result — that means the
+     * sampler never ran.
      */
-    const measured = rss.length > 0 && fds.length > 0
-    const verdict = caseFailures.length > 0 || !measured ? 'FAIL' : 'PASS'
+    let verdict
+    if (caseFailures.length > 0) {
+      verdict = 'FAIL'
+    } else if (measured.notRun === 'NOT_RUN') {
+      verdict = 'NOT_RUN'
+    } else if (rss.length > 0 && fds.length > 0) {
+      verdict = 'PASS'
+    } else {
+      verdict = 'FAIL'
+    }
 
     await writeEvidence(CASE, {
       verdict,
@@ -155,9 +167,21 @@ describe('E2E-09 resource curve across repeated GUI work', () => {
                 : 'the sampler produced no samples, so no curve exists',
           }
         : {}),
-      notes:
-        `${rss.length} round(s) sampled; RSS ${rssCurve.verdict}, descriptors ${fdCurve.verdict}` +
-        (threads.length > 0 ? `, threads ${Math.min(...threads)}–${Math.max(...threads)}` : ''),
+      /*
+       * On NOT_RUN the curve verdicts say `INSUFFICIENT_DATA` for every resource, and a
+       * note built from them would read "0 round(s) sampled" — technically true, but it
+       * describes an empty series rather than the actual reason, and the reason is the
+       * only thing a reader can act on. `measured.note` carries it.
+       */
+      ...(verdict === 'NOT_RUN'
+        ? { notes: measured.note ?? 'this run produced no samples' }
+        : {
+            notes:
+              `${rss.length} round(s) sampled; RSS ${rssCurve.verdict}, descriptors ${fdCurve.verdict}` +
+              (threads.length > 0
+                ? `, threads ${Math.min(...threads)}–${Math.max(...threads)}`
+                : ''),
+          }),
       extra: {
         rounds: ROUNDS,
         sampleCount: samples.length,
@@ -182,13 +206,30 @@ describe('E2E-09 resource curve across repeated GUI work', () => {
   it('keeps its footprint bounded across repeated GUI work', async function () {
     this.timeout(600_000)
 
+    /*
+     * ## A platform that cannot be sampled is NOT_RUN, not a failure
+     *
+     * `process-sampler.mjs` returns `null` on Windows rather than zeros, for the same reason
+     * `session/process_metrics.rs` does: a zero enters the curve as a measurement and makes
+     * an unmeasured platform look perfectly flat. The consequence here is that this case
+     * has nothing to say on that platform — and saying so is the honest outcome, not a red
+     * job that will be red on every run until someone adds Windows support.
+     *
+     * This is asked **first**, before the pid lookup. Measured on the Windows GUI job: the
+     * first version looked the pid up first, `findAppPid` answered `null` there (that path
+     * uses `wmic`, absent on the runner), and the case threw "could not find the app
+     * process" — turning a capability gap into a harness defect on a job that could never
+     * have produced a sample. A pid that cannot be found *on a samplable platform* is still
+     * a harness defect and still fails.
+     */
+    if (!canSample()) {
+      measured.notRun = 'NOT_RUN'
+      measured.note = `this platform (${process.platform}) cannot sample a process`
+      return
+    }
+
     const pid = findAppPid(appBinaryPath(ROOT))
     if (pid === null) {
-      /*
-       * No pid means the sampler cannot see the app — a harness problem, not a product
-       * result. Recorded with the reason rather than skipped silently; the `after` hook
-       * turns a sample-less run into FAIL, and this note is what explains it.
-       */
       throw new Error(
         'could not find the app process by its binary path, so no curve can be sampled',
       )
@@ -196,7 +237,9 @@ describe('E2E-09 resource curve across repeated GUI work', () => {
 
     const first = sampleProcess(pid)
     if (first === null) {
-      throw new Error(`this platform cannot sample a process (pid ${pid})`)
+      measured.notRun = 'NOT_RUN'
+      measured.note = `this platform (${process.platform}) cannot sample a process`
+      return
     }
     samples.push(first)
 

@@ -102,7 +102,8 @@ RC17 真正要的是**真实 Tauri WebView + xterm** 的大输出，并穿插输
 CPU、RSS。
 
 那需要启动 GUI 并长时间驱动。**已补齐**：`e2e/gui/specs/e2e-08-large-output.e2e.mjs` 在
-真实 Tauri WebView 里向本地终端灌入 11.6 MB / 5 秒，macOS GUI E2E 是阻塞门禁。
+真实 Tauri WebView 里向本地终端灌入 10.99 MB（103 字符宽 × 100k 行），macOS GUI E2E
+是阻塞门禁。
 
 判据刻意避开了「跑完没崩」——那几乎总是真的，且对背压只字未提。三条同时成立才算过：
 
@@ -123,6 +124,20 @@ PTY_BACKPRESSURE_IN_REAL_WEBVIEW   = PASS（macOS，真实 WebView）
 **未覆盖**：Linux / Windows（两平台 GUI E2E 仍是 informational），以及 RC17 原文里
 「穿插 Ctrl+C / 切 Tab / 切 Pane / 滚动 / Resize / 关 Dock」这些并发操作——本 case
 只测了灌入与之后的输入恢复。
+
+### 负载为什么按字节而不是按行
+
+第一版发 300k 条短行（每条约 32 B）。同一个 spec 的两次 Windows 运行：快的 63.9 秒
+跑完，慢的 **120 秒超时时还停在第 215522 行**——截图里输出正在正常推进，说明产品在
+消费、是 runner 慢。PowerShell 的每次迭代开销（脚本块调用 + 格式化）**按行计费**，
+所以按行定价的负载让这个 case 的耗时跟着 runner 走，而不是跟着产品走。
+
+这个 case 真正需要的是两个数，都不是 300k 行：**字节**要越过 1 MiB 暂停水位（否则
+背压根本不触发），**行数**要超过 10 000 行 scrollback（否则淘汰不可观测）。103 字符宽
+× 100k 行 = 10.99 MB、10 万行——与 Rust 侧测试同一个字节量级，是 scrollback 的十倍，
+迭代数只有原来的三分之一。
+
+行宽刻意压在 120 列以内：折行会一行占多行，行数算术就会依赖窗口宽度。
 
 ---
 
