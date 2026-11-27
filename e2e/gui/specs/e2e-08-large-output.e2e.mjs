@@ -182,7 +182,15 @@ describe('E2E-08 large output through a real WebView', () => {
   })
 
   it('streams a large output while the terminal keeps consuming it', async function () {
-    this.timeout(180_000)
+    /*
+     * The outer budget has to exceed the sum of the inner waits (60 s prompt + 120 s growth
+     * + 120 s flood-completion + 30 s echo), or Mocha kills the case first and the failure
+     * names no step. Measured: the previous 180 s was below two of those waits combined, so
+     * a slow runner produced "timed out" for a reason the evidence could not attribute.
+     * The inner timeouts are the ones that carry the diagnostic messages; this only has to
+     * stay out of their way.
+     */
+    this.timeout(360_000)
 
     const activated = await activeLocalTab()
     if (!activated.ok) {
