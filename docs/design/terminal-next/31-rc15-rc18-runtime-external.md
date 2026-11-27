@@ -102,7 +102,8 @@ RC17 真正要的是**真实 Tauri WebView + xterm** 的大输出，并穿插输
 CPU、RSS。
 
 那需要启动 GUI 并长时间驱动。**已补齐**：`e2e/gui/specs/e2e-08-large-output.e2e.mjs` 在
-真实 Tauri WebView 里向本地终端灌入 11.6 MB / 5 秒，macOS GUI E2E 是阻塞门禁。
+真实 Tauri WebView 里向本地终端灌入 10.99 MB（103 字符宽 × 100k 行），macOS GUI E2E
+是阻塞门禁。
 
 判据刻意避开了「跑完没崩」——那几乎总是真的，且对背压只字未提。三条同时成立才算过：
 
@@ -124,6 +125,20 @@ PTY_BACKPRESSURE_IN_REAL_WEBVIEW   = PASS（macOS，真实 WebView）
 「穿插 Ctrl+C / 切 Tab / 切 Pane / 滚动 / Resize / 关 Dock」这些并发操作——本 case
 只测了灌入与之后的输入恢复。
 
+### 负载为什么按字节而不是按行
+
+第一版发 300k 条短行（每条约 32 B）。同一个 spec 的两次 Windows 运行：快的 63.9 秒
+跑完，慢的 **120 秒超时时还停在第 215522 行**——截图里输出正在正常推进，说明产品在
+消费、是 runner 慢。PowerShell 的每次迭代开销（脚本块调用 + 格式化）**按行计费**，
+所以按行定价的负载让这个 case 的耗时跟着 runner 走，而不是跟着产品走。
+
+这个 case 真正需要的是两个数，都不是 300k 行：**字节**要越过 1 MiB 暂停水位（否则
+背压根本不触发），**行数**要超过 10 000 行 scrollback（否则淘汰不可观测）。103 字符宽
+× 100k 行 = 10.99 MB、10 万行——与 Rust 侧测试同一个字节量级，是 scrollback 的十倍，
+迭代数只有原来的三分之一。
+
+行宽刻意压在 120 列以内：折行会一行占多行，行数算术就会依赖窗口宽度。
+
 ---
 
 ## RC18 — 长时间资源稳定性
@@ -137,8 +152,49 @@ PTY_BACKPRESSURE_IN_REAL_WEBVIEW   = PASS（macOS，真实 WebView）
 这需要真实 GUI 长时间运行。**没有捷径**：单元测试里的计数器不构成资源曲线。
 
 ```
-RESOURCE_CURVE_100_ROUNDS          = NOT_RUN（需要 GUI 与长时间运行）
+RESOURCE_CURVE_100_ROUNDS          = PASS（真实 GUI，100 轮，进程外采样）
 ```
+
+**已补齐**：`e2e/gui/specs/e2e-09-resource-curve.e2e.mjs` 在真实 Tauri WebView 里跑 100 轮
+（打开命令面板 → Escape → 读终端快照），每轮从**进程外部**采一次样。
+
+### 为什么采样必须在进程外
+
+`fixtures/process-sampler.mjs` 读 `ps` / `lsof` / `/proc`。应用自己记的计数器是被测对象
+产出的测量：插桩有 bug 数字就变，崩溃序列就没了，计数器停止更新则读成一条完美直线。
+操作系统没有这些动机。
+
+### 实测（本机，macOS）
+
+| 资源 | 起点 → 终点 | 判定 |
+| --- | --- | --- |
+| RSS | 50.3 MB → 29.0 MB（−20.28 MiB） | `NO_LEAK_DETECTED` |
+| 描述符 | 103 → 104 | `NO_LEAK_DETECTED` |
+| 线程 | 30–35 | 记录 |
+
+101 个采样点。RSS 下降而不是上升——启动期分配在结束时已经释放。
+
+### 判读规则
+
+`fixtures/resource-curve.mjs` 是纯函数，11 项测试用合成序列覆盖三种形态。判据是
+**后半段的 floor 是否还在爬**，不是「末值比初值高」：
+
+- 只比首末，锯齿波会被判成泄漏（末值碰巧落在高位）；
+- 比整段 floor，热身会被判成泄漏——写这个模块时实测过，合成平台期被判「floor rose 1100%」。
+
+**用真实序列做变异**：实测的 101 点 → `NO_LEAK_DETECTED`；同一序列每轮 +3 MiB →
+`LEAK_SUSPECTED`；热身到 60 MiB 后持平 → `NO_LEAK_DETECTED`。规则在真实数据上工作，
+不是只在合成数据上。
+
+### 它不声称什么
+
+单台 runner 上的曲线是关于那台 runner 的假设。任务要的是形状，不是合并门禁，所以
+`LEAK_SUSPECTED` 记进证据而不是抛错——抛错会让共享 runner 的噪声阻塞无关工作，
+`ssh-soak.yml` 同样拒绝这么做。
+
+**未覆盖**：Linux / Windows（本 case 只在 macOS GUI E2E 的阻塞门禁里跑；两平台的 job
+是 informational）；以及任务书点名的 SFTP / Snippet / Inspector 各阶段——本 case 的每轮
+是命令面板的开关，这是三平台上唯一行为一致的控件。
 
 ### 一项可以在无 GUI 条件下做的替代
 
@@ -152,13 +208,20 @@ R07 里用「重复 N 轮」的方式验证过（那几项本来就跑在 Node �
 
 ```
 RC15  SSH_RETRY_BUDGET_IMPLEMENTED        PASS
-RC15  SSH_RETRY_SERVER_SIDE_COUNT         NOT_RUN
+RC15  SSH_RETRY_SERVER_SIDE_COUNT         PASS   （真实 sshd 的 Failed publickey 计数）
 RC16  JUMP_TWO_HOP_CREDENTIALS            PASS   （Phase 10.3 真实 sshd）
-RC16  JUMP_DISCONNECT_MATRIX              NOT_RUN
+RC16  JUMP_DISCONNECT_MATRIX              PARTIAL（跳板腿有，目标腿结构上测不到）
 RC17  PTY_BACKPRESSURE_10MIB              PASS   （Rust）
-RC17  PTY_BACKPRESSURE_REAL_WEBVIEW       NOT_RUN
-RC18  RESOURCE_CURVE_100_ROUNDS           NOT_RUN
+RC17  PTY_BACKPRESSURE_REAL_WEBVIEW       PASS   （macOS，阻塞门禁）
+RC18  RESOURCE_CURVE_100_ROUNDS           PASS   （macOS，进程外采样）
 ```
 
-三项 NOT_RUN 的原因相同：**需要真实 GUI 会话或双跳 fixture，而本轮按用户要求不
-启动应用窗口**。这不是「没时间做」，是「没有可以诚实地声称做了的条件」。
+这份汇总此前停在最早的版本：正文逐条更新后，代码块里还留着三项 `NOT_RUN`——一份
+文档内部自相矛盾，读者会挑任意一半相信。现在按正文的实际结论对齐。
+
+剩下没有闭合的两项都不是「没时间做」：
+
+- `JUMP_DISCONNECT_MATRIX` 的目标腿**结构上测不到**：跳板不直连目标，`PermitOpen`
+  只放行真实端口，故障整形到不了那一腿（见 F12 与 `33-rc16-jump-attribution-gap.md`）。
+- Linux / Windows 的 GUI E2E 仍是 informational job，两个 `e2e` 在这两平台上没有
+  阻塞门禁的地位，也没有被当作通过。

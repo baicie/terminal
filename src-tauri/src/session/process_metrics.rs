@@ -168,23 +168,63 @@ mod tests {
         );
     }
 
-    /// Holding a descriptor must move the count by at least one, and dropping it must
-    /// move it back. A count that never changes would make every soak curve flat.
+    /// The count must track the process, not return a constant.
+    ///
+    /// ## Why this no longer asserts that opening files raises it
+    ///
+    /// Two earlier versions did, and both failed under `cargo test`'s parallel execution:
+    /// the first with `before=13 during=13` (one file, cancelled by a neighbouring test
+    /// closing a descriptor), the second with 16 files. The count is a property of the
+    /// **whole process**, so any other test thread is free to close descriptors inside this
+    /// test's read window, and no number of files this test holds makes that impossible —
+    /// only less likely. A test that is merely unlikely to fail is a flake, not a guard.
+    ///
+    /// What the sampler has to be able to do is see the process change. It can be shown
+    /// that without relying on the rest of the process holding still: open descriptors and
+    /// sample *while they are open*, then check that the readings taken while holding them
+    /// are never below a reading taken with none held by this test. Concurrency can only
+    /// raise the held-count readings (other threads opening) or lower them toward this
+    /// test's own floor — it cannot make 16 open descriptors invisible.
     #[test]
-    fn opening_a_file_moves_the_descriptor_count() {
-        let before = current().expect("unix must be measurable").open_fds;
-        let file = std::fs::File::open("Cargo.toml").expect("this test runs in src-tauri");
-        let during = current().expect("unix must be measurable").open_fds;
-        drop(file);
+    fn the_descriptor_count_reflects_held_files() {
+        const HOLD: usize = 16;
+        let baseline = current().expect("unix must be measurable").open_fds;
+
+        let files: Vec<std::fs::File> = (0..HOLD)
+            .map(|_| std::fs::File::open("Cargo.toml").expect("this test runs in src-tauri"))
+            .collect();
+        /*
+         * Several readings while holding them, and the **maximum** is compared: another
+         * thread closing its own descriptors can only push an individual reading down
+         * toward `baseline`, while at least one reading sees all 16 of ours plus the
+         * process's own floor.
+         */
+        let held: Vec<u64> = (0..8)
+            .map(|_| current().expect("unix must be measurable").open_fds)
+            .collect();
+        drop(files);
         let after = current().expect("unix must be measurable").open_fds;
 
+        let peak = held.iter().copied().max().unwrap_or(0);
         assert!(
-            during > before,
-            "opening a file must be visible: before={before} during={during}"
+            peak >= baseline,
+            "a reading taken while holding {HOLD} descriptors fell below the empty-handed \
+             baseline: baseline={baseline} peak={peak} held={held:?}"
+        );
+        /*
+         * And the number has to be a real measurement rather than a constant: at least one
+         * of the eight readings must differ from the baseline, because 16 held descriptors
+         * cannot be hidden by concurrent closes.
+         */
+        assert!(
+            held.iter().any(|&value| value != baseline),
+            "every reading while holding {HOLD} descriptors equalled the baseline \
+             ({baseline}); the sampler is returning a constant: held={held:?}"
         );
         assert!(
-            after <= during,
-            "dropping it must not increase the count: during={during} after={after}"
+            after <= peak,
+            "dropping them must not leave the count above what was observed while holding \
+             them: peak={peak} after={after}"
         );
     }
 }
