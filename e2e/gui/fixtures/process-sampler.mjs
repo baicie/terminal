@@ -23,6 +23,8 @@
 
 import { execFileSync } from 'node:child_process'
 import { readFileSync, readdirSync } from 'node:fs'
+import path from 'node:path'
+import { sampleWindows } from './process-sampler-windows.mjs'
 
 /**
  * One sample. Every field is `null` when this platform could not answer it — never zero.
@@ -44,7 +46,33 @@ import { readFileSync, readdirSync } from 'node:fs'
  * cumulative readings is exact, while integrating a rate is not.
  */
 export function emptySample() {
-  return { rssBytes: null, openFds: null, threads: null, cpuTimeMs: null, unavailable: {} }
+  return {
+    rssBytes: null,
+    openFds: null,
+    threads: null,
+    cpuTimeMs: null,
+    /*
+     * Windows-only, and deliberately their own fields: `handleCount` counts kernel
+     * handles (files, registry keys, events, mutexes) while `openFds` counts entries in
+     * `/proc/<pid>/fd`. Writing one into the other to share a chart would compare
+     * quantities that are not comparable. `null` on the other two platforms, which is
+     * the honest answer — they do not have this counter.
+     */
+    handleCount: null,
+    privateBytes: null,
+    unavailable: {},
+  }
+}
+
+/**
+ * Quote a string for PowerShell as a single-quoted literal.
+ *
+ * PowerShell escapes a quote by doubling it, and nothing else — a backslash is literal.
+ * Getting this wrong is how a Windows path with a space or an apostrophe silently matches
+ * nothing, which reads as "the app is not running".
+ */
+function quotePs(value) {
+  return `'${String(value).replace(/'/g, "''")}'`
 }
 
 function run(command, args) {
@@ -186,13 +214,19 @@ export function platformCapabilities(platform = process.platform) {
   }
   if (platform === 'win32') {
     return {
-      supported: false,
-      availableMetrics: [],
-      processIdentityMethod: null,
+      supported: true,
+      /*
+       * `openFds` is deliberately absent: Windows has no equivalent quantity, and
+       * `handleCount` is a different one (kernel handles, not file descriptors). Listing
+       * it here would let a consumer ask for a metric that cannot be filled and get a
+       * silent null where a value was expected.
+       */
+      availableMetrics: ['rssBytes', 'handleCount', 'threads', 'cpuTimeMs'],
+      processIdentityMethod: 'PowerShell Get-Process, pid cross-checked against the answer',
+      // `privateBytes` is Windows' commit charge; macOS/Linux have no exact counterpart,
+      // so it is recorded and read but not compared across platforms.
       openDescriptorsMeaning: null,
-      unsupportedReason:
-        'no sampler is implemented for win32 yet; a zero would read as a measured flat ' +
-        'line, so the run is recorded as NOT_RUN instead (DDQ05)',
+      unsupportedReason: null,
     }
   }
   return {
@@ -317,7 +351,71 @@ export function sampleProcess(pid, platform = process.platform) {
   }
   if (platform === 'linux') return sampleLinux(pid)
   if (platform === 'darwin') return sampleDarwin(pid)
+  if (platform === 'win32') return sampleWin32(pid)
   return null
+}
+
+/**
+ * Windows: one PowerShell invocation per sample, with a hard deadline.
+ *
+ * ## Why the reason is carried, not just the nulls
+ *
+ * `sampleWindows` distinguishes "the process exited", "the sampler timed out" and "the
+ * output could not be parsed". Collapsing them into a sample of nulls loses the only
+ * information a reader could act on, so the reason goes into `unavailable` and travels
+ * into the artifact with the series.
+ *
+ * `handleCount` is a Windows-only field; it is **not** written into `openFds`. The two
+ * count different things — kernel handles versus file descriptors — and a chart that
+ * treated them as one number would be comparing quantities that are not comparable.
+ */
+function sampleWin32(pid) {
+  const sample = emptySample()
+  const outcome = sampleWindows(pid, { exec: execWithTimeout })
+  if (outcome.sample === null) {
+    // Every metric is unavailable for the same reason; recording it once per field would
+    // triple the artifact for one fact.
+    for (const metric of ['rssBytes', 'openFds', 'threads', 'cpuTimeMs']) {
+      sample.unavailable[metric] = outcome.reason
+    }
+    return sample
+  }
+  sample.rssBytes = outcome.sample.rssBytes
+  sample.threads = outcome.sample.threads
+  sample.cpuTimeMs = outcome.sample.cpuTimeMs
+  sample.handleCount = outcome.sample.handleCount
+  sample.privateBytes = outcome.sample.privateBytes
+  sample.unavailable.openFds = 'Windows has no file-descriptor count; see handleCount'
+  return sample
+}
+
+/**
+ * Run a command with a deadline and report the outcome rather than throwing.
+ *
+ * `execFileSync` has no `timeout` option of its own in the shape the sampler needs — it
+ * has one, but it kills the child with a signal whose arrival is indistinguishable from
+ * a non-zero exit in the caught error. This wrapper separates the two so a timeout can be
+ * recorded as a timeout.
+ */
+function execWithTimeout(file, args, { timeoutMs = 15_000 } = {}) {
+  try {
+    const stdout = execFileSync(file, args, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: timeoutMs,
+      windowsHide: true,
+    })
+    return { ok: true, stdout }
+  } catch (error) {
+    const timedOut = error?.code === 'ETIMEDOUT' || error?.signal === 'SIGTERM'
+    return {
+      ok: false,
+      timedOut,
+      reason: timedOut
+        ? `${file} did not answer within ${timeoutMs} ms`
+        : String(error?.stderr ?? error?.message ?? error).trim().slice(0, 200),
+    }
+  }
 }
 
 /**
@@ -338,13 +436,35 @@ export function sampleProcess(pid, platform = process.platform) {
 export function findAppPid(executablePath, platform = process.platform) {
   if (typeof executablePath !== 'string' || executablePath === '') return null
   if (platform === 'win32') {
-    const output = run('wmic', ['process', 'get', 'ProcessId,ExecutablePath', '/format:csv'])
-    if (output === null) return null
-    for (const line of output.split('\n')) {
-      const match = /,(?<path>[^,]+),(\d+)\s*$/.exec(line.trim())
-      if (match && match.groups?.path === executablePath) return Number(match[2])
-    }
-    return null
+    /*
+     * ## `wmic` is gone, and it was never the right tool
+     *
+     * Measured on the `windows-latest` runner: `wmic` is not on `PATH`, so this branch
+     * returned `null` and `e2e-09` reported "could not find the app process" — a
+     * capability gap wearing the shape of a harness defect. `wmic` is deprecated and has
+     * been removed from current images; it must not come back.
+     *
+     * `Get-CimInstance Win32_Process` answers the same question through PowerShell, and
+     * `ExecutablePath` is the field that corresponds to `argv[0]` — the same identity the
+     * POSIX branch matches, so the "first token only" rule holds on both.
+     */
+    const script = [
+      '$ErrorActionPreference = "SilentlyContinue"',
+      `Get-CimInstance Win32_Process -Filter "Name = '${path.basename(executablePath).replace(/'/g, "''")}'" |`,
+      '  Where-Object { $_.ExecutablePath -eq ' + quotePs(executablePath) + ' } |',
+      '  Select-Object -First 1 -ExpandProperty ProcessId',
+    ].join('\n')
+    const output = execWithTimeout('powershell.exe', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-Command',
+      script,
+    ])
+    if (!output.ok) return null
+    const pid = Number(output.stdout.trim())
+    return Number.isSafeInteger(pid) && pid > 0 ? pid : null
   }
   const output = run('ps', ['-eo', 'pid=,args='])
   if (output === null) return null
