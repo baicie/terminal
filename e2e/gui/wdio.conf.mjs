@@ -236,6 +236,47 @@ export const config = {
       }
     })
     console.log('[gui-e2e] baseline reset ' + JSON.stringify(reset))
+    /*
+     * ## Poll for the route to *hold*, instead of sleeping 600 ms
+     *
+     * Measured on run 45937332982: the `pushState` above lands, and then the app's own
+     * bootstrap settles on `/` on macOS — every spec from the third onward logged
+     * `baseline reset {"pathname":"/"}` and ran against the Hosts route. Linux and Windows
+     * on the same commit stayed on `/terminal` for all twelve specs.
+     *
+     * A fixed 600 ms sleep cannot distinguish "the app has finished deciding" from "the
+     * app has not decided yet". Nor can a single poll: the interesting failure is the
+     * route being correct now and wrong 300 ms later, so the condition is **the same
+     * correct answer on several consecutive polls**. The push is re-applied on every poll
+     * so a late `navigate('/')` is corrected rather than merely observed.
+     *
+     * Bounded, and it does not hide a defect: a route that never holds is logged, and each
+     * spec's own readiness wait is still what decides its verdict.
+     */
+    let consecutive = 0
+    try {
+      await browser.waitUntil(
+        async () => {
+          const path = await browser.execute(() => {
+            if (window.location.pathname !== '/terminal') {
+              window.history.pushState({}, '', '/terminal')
+              window.dispatchEvent(new PopStateEvent('popstate'))
+            }
+            return window.location.pathname
+          })
+          consecutive = path === '/terminal' ? consecutive + 1 : 0
+          return consecutive >= 6
+        },
+        { timeout: 15_000, interval: 250 },
+      )
+    } catch {
+      console.warn(
+        '[gui-e2e] the app did not stay on /terminal; the previous 600 ms settle is what ' +
+          'each spec now gets, and its own readiness wait decides the verdict',
+      )
+    }
+    // A short settle after the route holds, so the next spec's first read sees the DOM
+    // that route renders rather than the one it replaced.
     await browser.pause(600)
   },
 }
