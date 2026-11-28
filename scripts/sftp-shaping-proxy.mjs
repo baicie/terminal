@@ -63,6 +63,15 @@ export async function startShapingProxy({
     upBytes: 0,
     downBytes: 0,
     closed: 0,
+    /*
+     * DDQ11 — bytes and connections held while the proxy is paused.
+     *
+     * These are the proof that a pause actually interrupted something: a spec that
+     * pauses a proxy nothing is using, and then asserts "the session noticed", would
+     * pass on a healthy connection too.
+     */
+    pausedConnections: 0,
+    droppedWhilePaused: 0,
   }
   const sockets = new Set()
 
@@ -84,6 +93,22 @@ export async function startShapingProxy({
 
     from.on('data', async chunk => {
       from.pause()
+      /*
+       * ## Paused: hold the bytes, do not deliver them
+       *
+       * `pause()`/`resume()` on the *proxy* models a network that stops carrying
+       * traffic while both ends stay connected — which is what a user's Wi-Fi dropping
+       * looks like, and what distinguishes it from the server being down. The chunks
+       * that arrive while paused are **dropped**, not queued: TCP would eventually
+       * retransmit, but a queue here would let the transfer complete after a resume
+       * that lasted longer than the client's own deadline, which is the opposite of
+       * what the case needs to observe.
+       */
+      if (paused) {
+        stats.droppedWhilePaused += chunk.length
+        from.resume()
+        return
+      }
       try {
         if (cutAt > 0 && sent + chunk.length > cutAt) {
           // Deliver only up to the cut point, then destroy both sides: the receiver
@@ -118,6 +143,9 @@ export async function startShapingProxy({
       if (!to.destroyed) to.destroy()
     })
   }
+
+  /** Whether this proxy is currently carrying traffic. See `pause()` below. */
+  let paused = false
 
   const server = createServer(client => {
     stats.accepted += 1
@@ -194,6 +222,28 @@ export async function startShapingProxy({
   return {
     port,
     stats,
+    /**
+     * Stop carrying traffic, keeping the connections open.
+     *
+     * Deliberately different from `close()`: closing refuses new connections and tears
+     * down existing ones, which models "the server went away". Pausing models "the path
+     * stopped working" and is what DDQ11 needs to test reconnection without disturbing
+     * the other host.
+     *
+     * `pausedConnections` counts the sockets that existed at the moment of the pause, so
+     * a caller can assert the interruption had something to interrupt.
+     */
+    pause() {
+      if (paused) return
+      paused = true
+      stats.pausedConnections = sockets.size
+    },
+    resume() {
+      paused = false
+    },
+    isPaused() {
+      return paused
+    },
     async close() {
       for (const socket of sockets) socket.destroy()
       sockets.clear()

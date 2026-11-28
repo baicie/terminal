@@ -57,6 +57,8 @@ interface ProbeTerminal {
   paste?(data: string): void
   /** The product's own selection API; `xterm` exposes `select`. */
   select?(column: number, row: number, length: number): void
+  /** The terminal's DOM node, when the caller had one to give. */
+  element?: Element
   buffer: {
     active: {
       length: number
@@ -77,6 +79,7 @@ interface ProbeWindow extends Window {
      * channel. `\r` submits, exactly as pressing Return does.
      */
     typeIntoActiveTerminal(text: string): boolean
+    focusActiveTerminal(): boolean
     /** The visible-buffer tail, so a spec can poll for its own echo. */
     readActiveTerminalTail(): string
     /** Select a string already on screen, returning what was actually selected. */
@@ -104,13 +107,17 @@ export function isGuiE2EEnabled(): boolean {
  * Returns a disposer so the caller can remove it on unmount — a lingering global
  * after the terminal is gone would report stale numbers.
  */
-export function installGuiE2EProbe(terminal: ProbeTerminal): () => void {
+export function installGuiE2EProbe(
+  terminal: ProbeTerminal,
+  /** The terminal's DOM node; xterm exposes none on its own type. */
+  element?: Element,
+): () => void {
   if (typeof window === 'undefined') return () => undefined
   if (!isGuiE2EEnabled()) return () => undefined
 
   /** The visible buffer as lines, trailing blanks trimmed. */
-  const bufferLines = (): string[] => {
-    const buffer = terminal.buffer.active
+  const bufferLines = (which: ProbeTerminal = activeTerminal()): string[] => {
+    const buffer = which.buffer.active
     const lines: string[] = []
     for (let i = 0; i < buffer.length; i += 1) {
       const line = buffer.getLine(i)
@@ -121,7 +128,42 @@ export function installGuiE2EProbe(terminal: ProbeTerminal): () => void {
     return lines
   }
 
+  /*
+   * Probes are kept per terminal and the global resolves the **visible** one. The old
+   * code assigned `window.__terminalGuiE2E` outright, so with two tabs the last mounted
+   * terminal won and every read described that one — measured on DDQ11, where a command
+   * typed into host A was read back from B. Invisible with a single tab, which is why
+   * `e2e-01`..`e2e-08` never caught it.
+   */
   const target = window as ProbeWindow
+  const registry: ProbeTerminal[] = (target as unknown as { __terminalGuiE2EProbes?: ProbeTerminal[] })
+    .__terminalGuiE2EProbes ?? []
+  ;(target as unknown as { __terminalGuiE2EProbes?: ProbeTerminal[] }).__terminalGuiE2EProbes =
+    registry
+  if (element !== undefined) {
+    ;(terminal as unknown as { element?: Element }).element = element
+  }
+  registry.push(terminal)
+
+  /** Newest registered terminal outside an `.invisible` ancestor; falls back to newest. */
+  const activeTerminal = (): ProbeTerminal => {
+    // `.xterm` nodes appear in mount order = registry order, so position pairs them.
+    // (Passing an element through the installer was measured to stop it installing.)
+    const nodes = Array.from(document.querySelectorAll('.xterm'))
+    if (nodes.length === registry.length) {
+      for (let index = registry.length - 1; index >= 0; index -= 1) {
+        if (nodes[index].closest('.invisible') === null) return registry[index]
+      }
+    }
+    for (let index = registry.length - 1; index >= 0; index -= 1) {
+      const candidate = registry[index]
+      const node = candidate.element
+      if (!node || typeof node.closest !== 'function') continue
+      if (node.closest('.invisible') === null) return candidate
+    }
+    return registry[registry.length - 1] ?? terminal
+  }
+
   target.__terminalGuiE2E = {
     marker: GUI_E2E_PROBE_MARKER,
 
@@ -132,9 +174,18 @@ export function installGuiE2EProbe(terminal: ProbeTerminal): () => void {
      * should be able to say "this build cannot be driven" instead of failing with a
      * TypeError that looks like a product defect.
      */
+    /** Focus the terminal the user is looking at, as the product does on tab activate. */
+    focusActiveTerminal() {
+      const current = activeTerminal() as ProbeTerminal & { focus?: () => void }
+      if (typeof current.focus !== 'function') return false
+      current.focus()
+      return true
+    },
+
     typeIntoActiveTerminal(text: string) {
-      if (typeof terminal.paste !== 'function') return false
-      terminal.paste(text)
+      const current = activeTerminal()
+      if (typeof current.paste !== 'function') return false
+      current.paste(text)
       return true
     },
 
@@ -151,17 +202,18 @@ export function installGuiE2EProbe(terminal: ProbeTerminal): () => void {
      * one the product reads from, and would test the simulation.
      */
     selectTextInActiveTerminal(text: string) {
-      if (typeof terminal.select !== 'function') {
+      const current = activeTerminal()
+      if (typeof current.select !== 'function') {
         return { ok: false, reason: 'this terminal exposes no select()' }
       }
-      const buffer = terminal.buffer.active
+      const buffer = current.buffer.active
       for (let row = 0; row < buffer.length; row += 1) {
         const line = buffer.getLine(row)
         if (!line) continue
         const rendered = line.translateToString(true)
         const column = rendered.indexOf(text)
         if (column < 0) continue
-        terminal.select(column, row, text.length)
+        current.select(column, row, text.length)
         return { ok: true, selected: text }
       }
       return { ok: false, reason: `"${text}" is not in the buffer` }
@@ -223,16 +275,25 @@ export function installGuiE2EProbe(terminal: ProbeTerminal): () => void {
     snapshot() {
       const lines = bufferLines()
       return {
-        cols: terminal.cols,
-        rows: terminal.rows,
-        lines: terminal.buffer.active.length,
+        cols: activeTerminal().cols,
+        rows: activeTerminal().rows,
+        lines: activeTerminal().buffer.active.length,
         text: lines.join('\n'),
       }
     },
   }
 
   return () => {
-    if (target.__terminalGuiE2E?.marker === GUI_E2E_PROBE_MARKER) {
+    /*
+     * Remove **this** terminal from the registry, not the global.
+     *
+     * A closing tab must not blind the probe for the tabs that are still open — the old
+     * disposer deleted `window.__terminalGuiE2E` outright, so closing any one terminal
+     * made every later `readActiveTerminalTail()` return `''`.
+     */
+    const index = registry.indexOf(terminal)
+    if (index >= 0) registry.splice(index, 1)
+    if (registry.length === 0 && target.__terminalGuiE2E?.marker === GUI_E2E_PROBE_MARKER) {
       delete target.__terminalGuiE2E
     }
   }

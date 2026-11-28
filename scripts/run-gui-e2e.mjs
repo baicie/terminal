@@ -222,6 +222,82 @@ if (sshFixtureRequested) {
       log(`no second sshd: ${error.message}`)
     }
 
+    /*
+     * DDQ11 — a controllable proxy in front of the **first** host, so a spec can break
+     * that host's network and leave the other one alone.
+     *
+     * ## Why a proxy and not a firewall rule
+     *
+     * The property under test is isolation between two connections: A loses its network,
+     * B keeps working, A recovers. Turning the daemon off would test something different
+     * (the server is gone, not the path to it) and would also break the fixture for every
+     * later spec. A byte-forwarding proxy can be told "stop forwarding" and "start again"
+     * while both daemons stay healthy, which is exactly the shape of a user's Wi-Fi
+     * dropping.
+     *
+     * The proxy is `pause`d, not closed: closing would make the port refuse new
+     * connections, while a paused proxy accepts and holds — the shape that exercises the
+     * client's own deadline instead of the kernel's.
+     *
+     * Optional: a spec that needs it records NOT_RUN when it is absent, and every other
+     * spec keeps using `GUI_E2E_SSH_PORT` against the daemon directly.
+     */
+    try {
+      const { startShapingProxy } = await import('./sftp-shaping-proxy.mjs')
+      const { createServer } = await import('node:http')
+      const proxy = await startShapingProxy({ targetPort: fixture.port })
+      /*
+       * ## The control channel, and why it is a real one
+       *
+       * A spec runs in a WDIO worker — a different process from this one — so it cannot
+       * call `proxy.pause()` directly, and the in-page probe cannot either: the proxy
+       * lives in Node. The first design tried to expose a `pauseGatedProxy` method on the
+       * renderer probe, which would have been a function that does nothing, on a surface
+       * whose whole purpose is to be trustworthy.
+       *
+       * So the runner listens on loopback and the spec calls it with `fetch`. Bound to
+       * 127.0.0.1 with an ephemeral port, reachable only from this machine, and it
+       * disappears with this process. Two verbs only: pause and resume. It cannot read
+       * the profile, cannot reach a session, and returns the proxy's own counters so the
+       * spec can prove the interruption had something to interrupt.
+       */
+      const control = createServer((request, response) => {
+        const send = (status, body) => {
+          response.writeHead(status, { 'content-type': 'application/json' })
+          response.end(JSON.stringify(body))
+        }
+        if (request.url === '/pause') {
+          proxy.pause()
+          send(200, { ok: true, ...proxy.stats })
+          return
+        }
+        if (request.url === '/resume') {
+          proxy.resume()
+          send(200, { ok: true, ...proxy.stats })
+          return
+        }
+        if (request.url === '/stats') {
+          send(200, { ok: true, paused: proxy.isPaused(), ...proxy.stats })
+          return
+        }
+        send(404, { ok: false, reason: `no such control ${request.url}` })
+      })
+      await new Promise((resolve, reject) => {
+        control.once('error', reject)
+        control.listen(0, '127.0.0.1', resolve)
+      })
+      const controlPort = control.address().port
+      fixture.gated = proxy
+      fixture.control = control
+      fixture.controlPort = controlPort
+      log(
+        `pausable proxy for the first host on 127.0.0.1:${proxy.port}, ` +
+          `control on 127.0.0.1:${controlPort}`,
+      )
+    } catch (error) {
+      log(`no pausable proxy: ${error.message}`)
+    }
+
   } catch (error) {
     // A missing daemon is not a failed suite. It is a missing precondition, and it
     // is reported as one — the specs then record NOT_RUN for the cases that need it
@@ -355,6 +431,27 @@ if (fixture !== null && specFiles.length > 0) {
       })
     }
     /*
+     * DDQ11 — a third row whose port is the **pausable proxy** in front of the first
+     * daemon.
+     *
+     * A distinct row rather than repointing `E2E Local`: a spec that rewrote another
+     * host's port would be a second write path into the profile, and every later spec
+     * would then depend on the proxy still working. This row exists only for the
+     * isolation case, and its host key is the first daemon's — the proxy is transparent,
+     * so the key the app pins is the real one.
+     */
+    if (fixture.gated) {
+      await seedSftpHost({
+        home: specHome,
+        configDir,
+        privateKeyPath: fixture.userKeyPath,
+        port: fixture.gated.port,
+        username: fixture.username,
+        label: 'E2E Gated',
+        hostId: 'e2e-sftp-host-gated',
+      })
+    }
+    /*
      * Each profile is a separate `HOME`, so each needs the host key trusted too.
      *
      * The app refuses an unknown host key. Without this the seeded host connects and
@@ -462,6 +559,16 @@ const run = runSpecs(specFiles, {
   GUI_E2E_HOME: home,
   GUI_E2E_SSH_PORT: fixture ? String(fixture.port) : '',
   /*
+   * DDQ11 — the first host's port *through a pausable proxy*.
+   *
+   * A spec connects the same seeded host through this port instead, so it can stop
+   * forwarding and resume it mid-session. Empty when the proxy could not start; the
+   * isolation case then records NOT_RUN with the reason.
+   */
+  GUI_E2E_SSH_GATED_PORT: fixture?.gated ? String(fixture.gated.port) : '',
+  /** DDQ11 — loopback control for the pausable proxy. Empty when it did not start. */
+  GUI_E2E_PROXY_CONTROL: fixture?.controlPort ? `http://127.0.0.1:${fixture.controlPort}` : '',
+  /*
    * The only directory a spec may write to over SFTP.
    *
    * The fixture's sshd runs as the developer's account, so the pane can reach their
@@ -488,6 +595,20 @@ const run = runSpecs(specFiles, {
 })
 
 if (fixture !== null) {
+  /*
+   * The control channel and the proxy are separate from the daemon: `stop()` closes the
+   * sshd, and neither of these would be released by it. A leaked listener on a random
+   * loopback port is small but permanent for the rest of this process's life, and the
+   * proxy would hold its upstream socket open.
+   */
+  if (fixture.control) {
+    await new Promise(resolve => fixture.control.close(resolve))
+    fixture.control = null
+  }
+  if (fixture.gated) {
+    await fixture.gated.close()
+    fixture.gated = null
+  }
   await fixture.stop()
   log('stopped the ssh fixture')
 }
