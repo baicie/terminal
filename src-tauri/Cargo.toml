@@ -23,6 +23,16 @@ tauri-build = { version = "2", features = ["codegen"] }
 [features]
 # Test-only Vault acceptance probe; the command is a no-op without it.
 smoke-vault-probe = []
+# Test-only IPC surface: the terminal smoke harness, the physical-keyboard input probe,
+# the raw-input probe, the remote shell-prompt probe and the shell probe.
+#
+# Off by default, and **absent** rather than disabled when off: `generate_handler!`
+# re-emits `#[cfg]` on each arm, so a feature-off build has no handler for these names.
+# Before this feature existed they were registered unconditionally, and
+# `TerminalSmokeState::from_env()` read `TERMINAL_SMOKE` in every build — so a production
+# binary started with that variable entered smoke mode and wrote to a caller-supplied
+# path with the app's own privileges. Measured by the DDQ14 audit.
+smoke-probe = []
 # Test-only updater runtime: check, download, verify and install from a loopback
 # endpoint. Absent from every production build.
 smoke-updater = []

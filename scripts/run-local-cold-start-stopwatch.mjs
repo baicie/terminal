@@ -164,7 +164,7 @@ export function probeBuildHint(message) {
   return (
     '\nThe probe never wrote its result. A common cause is a binary built ' +
     'without the probe UI:\n' +
-    '  VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --no-bundle -- --features custom-protocol\n' +
+    '  VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --no-bundle -- --features custom-protocol,smoke-probe\n' +
     '`loadShellProbeRoot` throws when that flag is absent, and the throw is ' +
     'swallowed into the readiness timeout above.'
   )

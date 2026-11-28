@@ -54,10 +54,23 @@ const MANIFEST_FILE = 'evidence-manifest.json'
 const DEBUG_BINARY = 'src-tauri/target/debug/terminal'
 const RELEASE_BINARY = 'src-tauri/target/release/terminal'
 
+/*
+ * ## Two flags, two halves of the same thing
+ *
+ * `VITE_TERMINAL_SMOKE_BUILD=1` compiles the smoke **frontend** entry points in.
+ * `--features smoke-probe` compiles the **Rust** commands they call. Before the feature
+ * existed the commands were registered unconditionally, so only the frontend flag was
+ * needed; now a build with one and not the other gets a UI that calls commands the binary
+ * does not have — every probe would fail with "command not found" and the runners would
+ * report the product as broken.
+ *
+ * They are kept on the same line so a future edit cannot add one and forget the other
+ * without the diff looking odd.
+ */
 const DEBUG_BUILD_COMMAND =
-  'VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle'
+  'VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle --features smoke-probe'
 const RELEASE_BUILD_COMMAND =
-  'VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --no-bundle'
+  'VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --no-bundle --features smoke-probe'
 
 const MAX_READY_MS = 10_000
 const LOCAL_COLD_START_RUNS = 3

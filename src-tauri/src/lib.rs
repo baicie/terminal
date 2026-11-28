@@ -11,12 +11,15 @@ mod commands;
 mod db_import;
 mod db_recovery;
 mod errors;
+#[cfg(feature = "smoke-probe")]
 mod input_probe;
 #[cfg(test)]
 mod inspector_probe_e2e_tests;
 mod path_lock;
 mod port_forward;
+#[cfg(feature = "smoke-probe")]
 mod raw_input_probe;
+#[cfg(feature = "smoke-probe")]
 mod remote_prompt_probe;
 mod serial;
 mod sftp;
@@ -31,12 +34,14 @@ mod sftp_download_tests;
 #[cfg(all(test, feature = "gui-e2e"))]
 mod sftp_ipc_e2e_tests;
 mod sftp_upload;
+#[cfg(feature = "smoke-probe")]
 mod shell_interaction_probe;
 mod shutdown;
 mod ssh_host_key;
 mod startup_trace;
 mod state;
 mod storage;
+#[cfg(feature = "smoke-probe")]
 mod terminal_smoke;
 mod tray;
 #[cfg(feature = "smoke-updater")]
@@ -64,12 +69,15 @@ use db_import::{backup_database_before_migration, import_backup_data};
 use db_recovery::{
     database_migration_completed, db_recovery_retry, db_recovery_status, runtime_instance_lock_held,
 };
+#[cfg(feature = "smoke-probe")]
 use input_probe::{
     input_probe_config, input_probe_diag, input_probe_focus, input_probe_ready, input_probe_result,
     InputProbeState,
 };
 use port_forward::{port_forward_list, port_forward_start, port_forward_stop};
+#[cfg(feature = "smoke-probe")]
 use raw_input_probe::{raw_input_probe_config, raw_input_probe_result, RawInputProbeState};
+#[cfg(feature = "smoke-probe")]
 use remote_prompt_probe::{
     remote_prompt_probe_config, remote_prompt_probe_observed, RemotePromptProbeState,
 };
@@ -81,6 +89,7 @@ use sftp::{
     sftp_cancel_transfer, sftp_connect, sftp_delete, sftp_download, sftp_list, sftp_local_checksum,
     sftp_mkdir, sftp_remote_checksum, sftp_rename, sftp_resolve_path, sftp_upload,
 };
+#[cfg(feature = "smoke-probe")]
 use shell_interaction_probe::{shell_probe_config, shell_probe_result, ShellProbeState};
 use ssh_host_key::{ssh_host_key_learn, ssh_host_key_probe, ssh_host_key_probe_via_jump};
 use state::create_shared_state;
@@ -89,6 +98,7 @@ use storage::{
     storage_upload,
 };
 use tauri::Manager;
+#[cfg(feature = "smoke-probe")]
 use terminal_smoke::{
     terminal_smoke_complete, terminal_smoke_config, terminal_smoke_connected,
     terminal_smoke_emit_stale_output, terminal_smoke_host_wake, terminal_smoke_reconnect_policy,
@@ -257,10 +267,29 @@ pub fn run() {
     let shared_state = create_shared_state();
     crate::sftp::register_registry_lifecycle(&shared_state);
     let storage_manager = std::sync::Arc::new(crate::storage::StorageManager::new());
+    /*
+     * ## Test-only state, behind a feature
+     *
+     * Measured by the DDQ14 audit: these five `from_env()` calls ran in **every** build,
+     * and `TerminalSmokeState::from_env()` reads `TERMINAL_SMOKE`. So a production binary
+     * started with that variable entered "smoke" mode, took a caller-supplied result path
+     * and wrote files with the app's own privileges. The commands that drive it were
+     * registered unconditionally too — 20 of them.
+     *
+     * Gated on `smoke-probe`, the same shape `ai` and `smoke-vault-probe` already use:
+     * `generate_handler!` re-emits the attribute on each arm, so a feature-off build has
+     * no arm for these names rather than a stub that refuses. The environment variable
+     * then has nothing to switch on, because the code that reads it is not there.
+     */
+    #[cfg(feature = "smoke-probe")]
     let terminal_smoke_state = TerminalSmokeState::from_env();
+    #[cfg(feature = "smoke-probe")]
     let input_probe_state = InputProbeState::from_env();
+    #[cfg(feature = "smoke-probe")]
     let raw_input_probe_state = RawInputProbeState::from_env();
+    #[cfg(feature = "smoke-probe")]
     let remote_prompt_probe_state = RemotePromptProbeState::from_env();
+    #[cfg(feature = "smoke-probe")]
     let shell_probe_state = ShellProbeState::from_env();
     // One registry of in-flight AI runs: `ai_cancel` addresses a request id rather
     // than a global flag, so two surfaces cannot cancel each other and a late cancel
@@ -276,7 +305,9 @@ pub fn run() {
             activate_main_window(app);
         }))
         .manage(std::sync::Arc::clone(&shared_state))
-        .manage(storage_manager)
+        .manage(storage_manager);
+    #[cfg(feature = "smoke-probe")]
+    let app = app
         .manage(terminal_smoke_state)
         .manage(input_probe_state)
         .manage(raw_input_probe_state)
@@ -349,7 +380,17 @@ pub fn run() {
                 updater_probe::record_boot(app.handle());
                 updater_probe::maybe_start(app.handle());
             }
-            if !terminal_smoke::setup(app) {
+            /*
+             * `terminal_smoke::setup` returns true when a smoke run has taken over the
+             * app (its own window, no tray). Without the `smoke-probe` feature there is
+             * no smoke mode at all, so the tray is always built — the same behaviour a
+             * production build had, expressed without the module that no longer exists.
+             */
+            #[cfg(feature = "smoke-probe")]
+            let smoke_active = terminal_smoke::setup(app);
+            #[cfg(not(feature = "smoke-probe"))]
+            let smoke_active = false;
+            if !smoke_active {
                 if let Err(e) = tray::build_tray(app.handle()) {
                     tracing::error!(error = %e, "failed to build tray icon");
                 }
@@ -463,27 +504,47 @@ pub fn run() {
             hide_main_window,
             is_main_window_focused,
             // Explicitly gated local terminal reliability smoke
+            #[cfg(feature = "smoke-probe")]
             terminal_smoke_config,
+            #[cfg(feature = "smoke-probe")]
             terminal_smoke_reconnect_policy,
+            #[cfg(feature = "smoke-probe")]
             terminal_smoke_renderer_heartbeat_config,
+            #[cfg(feature = "smoke-probe")]
             terminal_smoke_connected,
+            #[cfg(feature = "smoke-probe")]
             terminal_smoke_resources,
+            #[cfg(feature = "smoke-probe")]
             terminal_smoke_reconnect_requested,
+            #[cfg(feature = "smoke-probe")]
             terminal_smoke_host_wake,
+            #[cfg(feature = "smoke-probe")]
             terminal_smoke_emit_stale_output,
+            #[cfg(feature = "smoke-probe")]
             terminal_smoke_complete,
             // Explicitly gated physical keyboard input probe
+            #[cfg(feature = "smoke-probe")]
             input_probe_config,
+            #[cfg(feature = "smoke-probe")]
             input_probe_diag,
+            #[cfg(feature = "smoke-probe")]
             input_probe_focus,
+            #[cfg(feature = "smoke-probe")]
             input_probe_ready,
+            #[cfg(feature = "smoke-probe")]
             input_probe_result,
+            #[cfg(feature = "smoke-probe")]
             raw_input_probe_config,
+            #[cfg(feature = "smoke-probe")]
             raw_input_probe_result,
             // Explicitly gated remote shell prompt round-trip probe
+            #[cfg(feature = "smoke-probe")]
             remote_prompt_probe_config,
+            #[cfg(feature = "smoke-probe")]
             remote_prompt_probe_observed,
+            #[cfg(feature = "smoke-probe")]
             shell_probe_config,
+            #[cfg(feature = "smoke-probe")]
             shell_probe_result,
         ])
         .build(tauri::tauri_build_context!())
