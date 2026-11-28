@@ -33,14 +33,15 @@ use super::{
 };
 use std::sync::Arc;
 
-struct Fixture {
-    bastion_port: u16,
-    target_port: u16,
-    user: String,
-    bastion_key: String,
-    target_key: String,
-    target_host_key: String,
-    bastion_host_key: String,
+pub(super) struct Fixture {
+    pub(super) bastion_port: u16,
+    #[allow(dead_code)]
+    pub(super) target_port: u16,
+    pub(super) user: String,
+    pub(super) bastion_key: String,
+    pub(super) target_key: String,
+    pub(super) target_host_key: String,
+    pub(super) bastion_host_key: String,
     /// F11 — a second bastion and target, for the isolation matrix.
     ///
     /// `None` when the harness did not start them. The single-bastion cases above must
@@ -88,7 +89,7 @@ struct SecondFixture {
 ///
 /// A missing fixture and a malformed fixture are different problems for the person
 /// running this, and the harness needs to tell them apart from the test's own output.
-enum FixtureLookup {
+pub(super) enum FixtureLookup {
     /*
      * Boxed because `Fixture` grew when F11/F12 added `second` and `proxies`: the other
      * two variants are unit-sized, and `clippy::large_enum_variant` refuses the resulting
@@ -102,7 +103,7 @@ enum FixtureLookup {
     Broken(String),
 }
 
-fn fixture() -> FixtureLookup {
+pub(super) fn fixture() -> FixtureLookup {
     const REQUIRED: &[&str] = &[
         "SSH_JUMP_E2E_BASTION_PORT",
         "SSH_JUMP_E2E_TARGET_PORT",
@@ -947,7 +948,7 @@ async fn two_sessions_through_one_bastion_do_not_share_a_transport() {
 }
 
 /// Reads a public key from the fixture's `.pub` text.
-fn public_key(value: &str) -> russh::keys::PublicKey {
+pub(super) fn public_key(value: &str) -> russh::keys::PublicKey {
     russh::keys::PublicKey::from_openssh(value.trim())
         .expect("the fixture writes a valid OpenSSH public key")
 }
