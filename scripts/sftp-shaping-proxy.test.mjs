@@ -91,6 +91,21 @@ function roundTrip(port, payload, { timeoutMs = 30_000, expectBytes = null } = {
   })
 }
 
+/** Resolve once `predicate` is true, or reject after `timeoutMs`. */
+async function waitFor(predicate, timeoutMs, label) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (predicate()) return
+    await sleep(25)
+  }
+  throw new Error(`timed out waiting for ${label}`)
+}
+
+/** A sleep that keeps the test readable; the proxy's own code uses the same idiom. */
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
 /** Deterministic, incompressible-ish bytes of a given size. */
 function payload(size) {
   const buffer = Buffer.alloc(size)
@@ -194,6 +209,80 @@ describe('sftp shaping proxy', () => {
 
     assert.ok(elapsed < 3_000, 'the reset should not wait for the round trip timeout')
     assert.equal(result.ended, false, 'a reset must not look like a clean end')
+  })
+
+  it('a pause stops carrying traffic on a live connection, and resume restores it', async () => {
+    /*
+     * DDQ11 — the difference between "the path stopped working" and "the server went
+     * away" is the whole point of the pause: a reconnection case has to distinguish
+     * them, because the product must not treat a network blip as a server failure.
+     *
+     * The assertions run on **one** connection, because that is the shape being tested:
+     * a session that is already established, loses its path, and recovers. Opening a new
+     * socket while paused would test the listener instead.
+     *
+     *   1. bytes sent while paused never arrive — otherwise "paused" means "slower", and
+     *      a case expecting a timeout would instead see its data;
+     *   2. the connection is not ended by the pause — a FIN would make the product treat
+     *      it as a clean close, which is a different (and wrong) recovery path;
+     *   3. after `resume()` the same connection carries bytes again — without this, a
+     *      proxy that paused permanently would pass by being indistinguishable from a
+     *      `close()`.
+     */
+    // `setup()` registers both closes with the shared `cleanup` list.
+    const { proxy } = await setup()
+    {
+      const socket = connect(proxy.port, '127.0.0.1')
+      const received = []
+      let ended = false
+      socket.on('data', chunk => received.push(chunk))
+      socket.on('end', () => {
+        ended = true
+      })
+      // The echo server resets on cut; without this the error escapes the event loop.
+      socket.on('error', () => {})
+      await new Promise(resolve => socket.on('connect', resolve))
+
+      // Round 1: healthy, so the baseline is real.
+      const first = payload(512)
+      socket.write(first)
+      await waitFor(() => Buffer.concat(received).length >= first.length, 5000, 'first echo')
+
+      proxy.pause()
+      assert.equal(proxy.isPaused(), true)
+      assert.ok(
+        proxy.stats.pausedConnections >= 1,
+        `a pause must see the live socket, saw ${proxy.stats.pausedConnections}`,
+      )
+
+      // Round 2: sent while paused — must be dropped, and must be *counted* as dropped.
+      const during = payload(1024)
+      const beforeDuring = Buffer.concat(received).length
+      socket.write(during)
+      await sleep(400)
+      assert.equal(
+        Buffer.concat(received).length,
+        beforeDuring,
+        'bytes sent while paused must not arrive',
+      )
+      assert.ok(
+        proxy.stats.droppedWhilePaused > 0,
+        'the paused proxy must report the bytes it dropped, or "nothing arrived" is ' +
+          'indistinguishable from "nothing was sent"',
+      )
+      assert.equal(ended, false, 'a pause must not end the connection')
+
+      // Round 3: resume on the same socket.
+      proxy.resume()
+      const after = payload(512)
+      socket.write(after)
+      await waitFor(
+        () => Buffer.concat(received).length >= beforeDuring + after.length,
+        5000,
+        'echo after resume',
+      )
+      socket.destroy()
+    }
   })
 
   it('counts what it forwarded, per direction', async () => {
