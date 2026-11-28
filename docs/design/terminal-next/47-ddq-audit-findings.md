@@ -122,3 +122,57 @@
 3. DDQ15 的七天试用文档如果照做**会丢数据**。
 
 每一条都需要单独处理，不能合并成一个"文档修正"。
+
+
+---
+
+## 后续：两个修复尝试的结果
+
+### 已修 —— Vault probe 门禁（PR #183 → `17c8a26`）
+
+`ci.yml` 里那条门禁 grep 的是 `packages/frontend/dist`，而 vite 的 `outDir` 是
+`'../../dist'`。路径不存在 → `grep` 非零 → `if` 读成「没有匹配」→ 门禁从写下那天起
+每次都通过。
+
+已改成 `dist` 并加 `test -d dist ||` 前置。两条测试钉住（路径从 `outDir` 反推、
+必须有 `test -d`），两条变异各自变红。
+
+### 已关闭 —— 20 个测试 command 的 feature 门控（PR #184，未合并）
+
+审计说的缺陷是真的：`generate_handler!` 无条件注册 20 个测试专用命令，且
+`TerminalSmokeState::from_env()` 在每次构建都读 `TERMINAL_SMOKE`。
+
+我加了 `smoke-probe` feature 并门控了命令、state、模块与 `setup()`。本地三种配置
+（默认 / `--features smoke-probe` / `--all-features`）都编译通过，497 项 Rust 测试
+通过，5 条守卫全绿、三条变异全红。
+
+**但 CI 上三个平台的 Tauri build 全部失败**，失败点是安装链 `verify-install-macos.sh`：
+
+```
+[FAIL] db-exists condition not reached within 180s after 167 probe(s)
+[FAIL] the app never created … /terminal.db inside the isolated HOME within 180s
+```
+
+应用日志停在 `main.tsx evaluated` —— 前端启动了，数据库从未被创建。main（`c800d0e`）
+的同一步骤通过。
+
+**本地无法复现**：裸 `cargo build --release` 的二进制在隔离 HOME 下同样不建 DB，
+main 的二进制也一样——那是本机 headless 环境的限制，不是这次改动的证据。所以既没有
+确证根因，也没有排除它。
+
+PR 已关闭，没有带着一个会让安装链失败的改动继续。
+
+**下次要回答的问题**：为什么 feature-off 构建会让前端在 `main.tsx evaluated` 之后
+停住。三个方向：
+
+1. 某个前端启动路径在非 smoke 构建下仍会调用被门控的命令，而失败被吞掉了；
+2. `terminal_smoke::setup()` 的替换改变了 `setup` 闭包的返回值语义；
+3. 与门控无关——那次 runner 的问题，而本地恰好也无法验证。
+
+第 3 条不能靠猜排除：需要在**能创建 DB 的环境**（有 GUI 会话的机器或 CI）上跑一次
+feature-off 构建，才能把「我的改动」与「环境」分开。
+
+### 未修 —— e2e-02 在 Linux 上的列数滞后
+
+见 `48-e2e02-linux-column-lag.md`：两次修法（连续读数一致、几何交叉核对）都失败，
+已回退，未放宽断言。
