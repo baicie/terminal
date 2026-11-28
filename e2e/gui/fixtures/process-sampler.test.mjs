@@ -7,7 +7,15 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { canSample, emptySample, findAppPid, sampleProcess } from './process-sampler.mjs'
+import {
+  MEASUREMENT_SCOPE,
+  canSample,
+  emptySample,
+  findAppPid,
+  parsePsCpuTime,
+  platformCapabilities,
+  sampleProcess,
+} from './process-sampler.mjs'
 
 describe('RC18 — sampling a real process', () => {
   it('reads the current process', () => {
@@ -52,7 +60,98 @@ describe('RC18 — sampling a real process', () => {
   })
 
   it('every field of an empty sample is null', () => {
-    assert.deepEqual(emptySample(), { rssBytes: null, openFds: null, threads: null })
+    /*
+     * `cpuTimeMs` joined this set for DDQ04: RC18's task names CPU, and `emptySample`
+     * previously had no field for it, so the metric could not be recorded at all. It is a
+     * null like the others — a zero would be a claim that the process used no CPU.
+     */
+    assert.deepEqual(emptySample(), {
+      rssBytes: null,
+      openFds: null,
+      threads: null,
+      cpuTimeMs: null,
+      unavailable: {},
+    })
+  })
+
+  it('records CPU time as a cumulative quantity, not a utilisation', () => {
+    /*
+     * The distinction is not cosmetic: a cumulative series is monotonic and its slope is
+     * the interesting part, while a utilisation is already a rate. Mixing them in one
+     * column makes "the last sample is higher than the first" meaningless.
+     */
+    const first = sampleProcess(process.pid)
+    assert.ok(
+      typeof first.cpuTimeMs === 'number' && first.cpuTimeMs >= 0,
+      `cpuTimeMs: ${first.cpuTimeMs}`,
+    )
+    // Burn a little CPU so the second reading has something to be larger than.
+    const until = Date.now() + 30
+    let sink = 0
+    while (Date.now() < until) sink += Math.sqrt(sink + 1)
+    const second = sampleProcess(process.pid)
+    assert.ok(
+      second.cpuTimeMs >= first.cpuTimeMs,
+      `cumulative CPU time must not go down: ${first.cpuTimeMs} → ${second.cpuTimeMs} ` +
+        `(sink=${sink > 0})`,
+    )
+  })
+
+  it('parses every shape BSD ps prints for cumulative time', () => {
+    /*
+     * Measured on this host: `ps -o time=` prints `mm:ss.cc` for young processes and grows
+     * an hours field, then a days field. A two-field parser returns null for exactly the
+     * long-lived processes a soak is about.
+     */
+    assert.equal(parsePsCpuTime('0:00.02'), 20)
+    assert.equal(parsePsCpuTime('9:51.49'), 591_490)
+    assert.equal(parsePsCpuTime('1:02:03.50'), 3_723_500)
+    assert.equal(parsePsCpuTime('2-01:02:03.04'), 176_523_040)
+    // Not a time: refuse rather than guess.
+    assert.equal(parsePsCpuTime('garbage'), null)
+    assert.equal(parsePsCpuTime(''), null)
+  })
+
+  it('answers whether the platform can be sampled at all', () => {
+    /*
+     * The two answers have to agree: `canSample` is only useful if it predicts what
+     * `sampleProcess` will do. A caller asks the cheap question first, so a disagreement
+     * sends it down the wrong path — which is exactly what happened on the Windows GUI
+     * job, where the pid lookup was asked before this question existed and threw.
+     */
+    for (const platform of ['linux', 'darwin', 'win32']) {
+      assert.equal(
+        canSample(platform),
+        sampleProcess(process.pid, platform) !== null,
+        `canSample(${platform}) disagrees with sampleProcess`,
+      )
+    }
+  })
+
+  it('describes the platform instead of only saying yes or no', () => {
+    /*
+     * A capability gap and a sampling failure are different problems. `supported: false`
+     * with a reason is a statement about the platform; `supported: true` with a metric
+     * missing is a statement about this run. Collapsing them files a real failure as
+     * "that platform cannot do this" and it never gets looked at again.
+     */
+    const mac = platformCapabilities('darwin')
+    assert.equal(mac.supported, true)
+    assert.ok(mac.availableMetrics.includes('cpuTimeMs'))
+    // The descriptor count is a proxy here and must say so.
+    assert.match(mac.openDescriptorsMeaning, /lsof/)
+
+    const win = platformCapabilities('win32')
+    assert.equal(win.supported, false)
+    assert.equal(win.availableMetrics.length, 0)
+    assert.match(win.unsupportedReason, /win32/)
+  })
+
+  it('states the measurement scope rather than implying the whole app', () => {
+    // A single Tauri process's RSS is not the application's memory; calling it that
+    // overstates the claim in every artifact that quotes the number.
+    assert.match(MEASUREMENT_SCOPE.MAIN_PROCESS, /excludes WebView/)
+    assert.match(MEASUREMENT_SCOPE.OWNED_PROCESS_TREE, /not measured/)
   })
 })
 

@@ -192,11 +192,63 @@ describe('E2E-08 large output through a real WebView', () => {
      */
     this.timeout(360_000)
 
+    /*
+     * ## Wait for the terminal layer to exist before concluding it does not
+     *
+     * Measured on run 45937332982 (macOS): this spec recorded
+     * `NOT_RUN  no local terminal tab in this run (tabs: 0)` while the **same runner, same
+     * build** ran e2e-09 for 100 rounds afterwards and read `lines: 35` from the terminal
+     * the whole time. The screenshot at the moment of the NOT_RUN shows a top bar with only
+     * a `+` button and no tab strip at all.
+     *
+     * The mechanism is a startup race, not a platform difference. The harness's
+     * `beforeSuite` pushes `/terminal` once and waits 600 ms; on macOS the app's own
+     * bootstrap then settles on `/` (the Hosts route), so every spec from the third onward
+     * logged `baseline reset {"pathname":"/"}`. The terminal tab strip is only rendered
+     * when the app has at least one tab, and the first tab on a fresh profile comes from
+     * the product's own startup fallback — `app-startup-recovery.ts` opens a local tab
+     * after `STARTUP_TERMINAL_FALLBACK_MS` (2 s). This case read the tab strip **once**,
+     * before that timer had fired, and reported the absence as a product result.
+     *
+     * `e2e-01` had already solved exactly this: it polls for `[role="tab"]` to appear
+     * (20 s) — run 44268976548 recorded the same `tabs: 0` shape on Linux and the poll is
+     * what makes the difference. This case skipped that step because on Linux and Windows
+     * the harness's navigation happened to land first.
+     *
+     * So: poll, do not sleep longer, and keep the timeout bounded. A run where no tab ever
+     * appears still ends in NOT_RUN — with a reason that says the wait expired rather than
+     * implying the product has no terminal.
+     */
+    let tabsAppeared = true
+    try {
+      await browser.waitUntil(
+        async () => (await browser.$$('[role="tab"]')).length > 0,
+        {
+          timeout: 20_000,
+          interval: 250,
+          timeoutMsg: 'no tab ever appeared in the tab strip',
+        },
+      )
+    } catch {
+      tabsAppeared = false
+    }
+
     const activated = await activeLocalTab()
     if (!activated.ok) {
-      // No local tab means there is nothing to flood. Say so; do not invent a pass.
+      /*
+       * No local tab means there is nothing to flood. Say so; do not invent a pass.
+       *
+       * The two reasons are kept apart because they call for different work: no tab strip
+       * at all after a 20 s wait is a startup-fallback problem, while a strip with tabs but
+       * none of type `local` is a state problem (the profile restored only remote
+       * sessions). Folding them into one sentence is how the 45937332982 NOT_RUN read as a
+       * product fault when it was a 600 ms race.
+       */
       measured.notRun = 'NOT_RUN'
-      measured.note = `no local terminal tab in this run (tabs: ${activated.tabs})`
+      measured.note = tabsAppeared
+        ? `the tab strip has ${activated.tabs} tab(s) but none of type "local"`
+        : 'no tab appeared within 20 s of the suite starting; the startup fallback that ' +
+          'opens the first local tab did not fire'
       return
     }
     if (!activated.wasActive) {
