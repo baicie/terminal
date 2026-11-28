@@ -30,11 +30,19 @@ describe('RC18 — sampling a real process', () => {
 
   it('returns null on a platform it cannot measure, not zeros', () => {
     /*
-     * Windows is the case that matters: the F17 module returns `None` there for the same
-     * reason. A finite zero would be summarised as a flat curve for a resource nobody
-     * measured.
+     * Windows used to be this case; DDQ05 implemented it, so the platform that cannot be
+     * sampled is now one that does not exist. A finite zero would still be summarised as
+     * a flat curve for a resource nobody measured, so the rule is kept and pointed at an
+     * unknown platform.
      */
-    assert.equal(sampleProcess(process.pid, 'win32'), null)
+    assert.equal(sampleProcess(process.pid, 'freebsd'), null)
+    // Windows is samplable now. On a non-Windows host the PowerShell call fails and the
+    // result is a sample of nulls *with a reason*, not `null` — the capability exists and
+    // the failure is this run's.
+    const win = sampleProcess(process.pid, 'win32')
+    assert.ok(win !== null, 'win32 is a supported platform since DDQ05')
+    assert.equal(win.rssBytes, null)
+    assert.ok(Object.keys(win.unavailable).length > 0, 'the failure reason must be recorded')
   })
 
   it('answers whether the platform can be sampled at all', () => {
@@ -70,6 +78,9 @@ describe('RC18 — sampling a real process', () => {
       openFds: null,
       threads: null,
       cpuTimeMs: null,
+      // Windows-only metrics, null on every platform that does not have the counter.
+      handleCount: null,
+      privateBytes: null,
       unavailable: {},
     })
   })
@@ -141,10 +152,18 @@ describe('RC18 — sampling a real process', () => {
     // The descriptor count is a proxy here and must say so.
     assert.match(mac.openDescriptorsMeaning, /lsof/)
 
+    /*
+     * DDQ05 — Windows is supported now, and its capability list has to say what it can and
+     * cannot answer. `openFds` is absent on purpose: Windows counts kernel handles, not
+     * file descriptors, and listing a metric that cannot be filled would produce a silent
+     * null where a value was expected.
+     */
     const win = platformCapabilities('win32')
-    assert.equal(win.supported, false)
-    assert.equal(win.availableMetrics.length, 0)
-    assert.match(win.unsupportedReason, /win32/)
+    assert.equal(win.supported, true)
+    assert.ok(win.availableMetrics.includes('handleCount'))
+    assert.ok(win.availableMetrics.includes('cpuTimeMs'))
+    assert.ok(!win.availableMetrics.includes('openFds'), 'openFds has no Windows equivalent')
+    assert.equal(win.openDescriptorsMeaning, null, 'there is no descriptor count to describe')
   })
 
   it('states the measurement scope rather than implying the whole app', () => {

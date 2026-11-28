@@ -153,7 +153,21 @@ describe('E2E-09 resource curve across repeated GUI work', () => {
      * round produced nothing), and `completenessProblems` runs first. A run that is not
      * complete cannot be a curve however healthy its trend looks.
      */
-    const series = buildSeries(samples, ['rssBytes', 'openFds', 'threads'], {
+    /*
+     * ## The descriptor metric is platform-specific, and that is not a hack
+     *
+     * POSIX has a file-descriptor count: `/proc/<pid>/fd` on Linux, `lsof` rows on macOS.
+     * Windows does not — it has a **kernel handle** count, which includes registry keys,
+     * events and mutexes alongside files. DDQ05 records that as `handleCount` under its
+     * own name rather than writing it into `openFds`.
+     *
+     * So the second curve is whichever of the two this platform can produce. Requiring
+     * `openFds` everywhere would make every Windows run INSUFFICIENT_DATA for a metric
+     * that platform was never able to provide, which is the same mistake as requiring a
+     * capability the platform lacks.
+     */
+    const descriptorMetric = process.platform === 'win32' ? 'handleCount' : 'openFds'
+    const series = buildSeries(samples, ['rssBytes', descriptorMetric, 'threads'], {
       expectedSamples: ROUNDS,
     })
     /*
@@ -162,7 +176,7 @@ describe('E2E-09 resource curve across repeated GUI work', () => {
      * hiding that was the defect this replaces.
      */
     const rss = series.values.rssBytes
-    const fds = series.values.openFds
+    const fds = series.values[descriptorMetric]
     const rssCurve = summariseSeries(rss, LIMITS)
     const fdCurve = summariseSeries(fds, FD_LIMITS)
     const completeness = completenessProblems(series, DEFAULT_COMPLETENESS)
@@ -284,6 +298,7 @@ describe('E2E-09 resource curve across repeated GUI work', () => {
         fdsBaseline: series.baseline?.openFds ?? null,
         rssFirst: rss[0] ?? null,
         rssLast: rss[rss.length - 1] ?? null,
+        descriptorMetric,
         fdFirst: fds[0] ?? null,
         fdLast: fds[fds.length - 1] ?? null,
         threadMin: threadValues.length > 0 ? Math.min(...threadValues) : null,
