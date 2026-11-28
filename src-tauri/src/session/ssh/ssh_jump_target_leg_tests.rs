@@ -42,7 +42,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::session::ssh::{
-    interactive_ssh_config, ConnectionHop, JumpHostConfig, JumpTarget, SessionError, SshSession,
+    interactive_ssh_config, ConnectionHop, ConnectionStage, JumpHostConfig, JumpTarget,
+    SessionError, SshSession,
 };
 
 use super::ssh_jump_e2e_tests::{fixture, public_key, FixtureLookup};
@@ -241,9 +242,111 @@ async fn a_target_leg_fault_reaches_the_product_and_is_bounded() {
                 failure.error
             );
         }
+        /*
+         * DDQ10 — the remaining four shapes the task book names.
+         *
+         * All of them share one property worth asserting together: the bastion authenticated
+         * and forwarded successfully, so **none** of them may be reported as a bastion
+         * problem. Beyond that they differ in what the product can honestly know, and the
+         * differences are the point:
+         *
+         *   · `target-refused` — the kernel refused the connect. This is the most
+         *     attributable failure in the set: the client asked for a specific address and
+         *     was told no. It is still not a credential problem.
+         *   · `target-reset-handshake` — no credential was sent, so an auth rejection would
+         *     be a fabrication.
+         *   · `target-reset-auth` — a credential WAS offered, so an auth-class error is
+         *     explicable; what must not happen is blaming the bastion.
+         *   · `target-break-after-connect` / `target-break-during-output` — the session
+         *     worked and then died. These are the shapes a user reports as "it dropped".
+         */
+        "target-refused" => {
+            let outcome = result.expect("a refused connect must resolve, not hang");
+            let Err(failure) = outcome else {
+                panic!("a port with no listener cannot produce a working session")
+            };
+            assert!(
+                !matches!(failure.error, SessionError::AuthenticationRejected(_)),
+                "a refused TCP connect is not a credential refusal: {}",
+                failure.error
+            );
+            /*
+             * ## `hop == Bastion` is the product's documented answer here, not a defect
+             *
+             * This assertion started as `assert_ne!(hop, Bastion)` — "the bastion was fine,
+             * so it cannot be the bastion's fault" — and it failed on the first run:
+             *
+             *   stage=Some(TunnelOpen)
+             *   error=channel error: open jump host tunnel failed: Failed to open channel
+             *         (ConnectFailed)
+             *   hop=Some(Bastion)
+             *
+             * The product is right and the assertion was wrong. `ssh.rs` states the contract
+             * at the site that produces this failure: "`Bastion` names the connection that
+             * *holds* the channel, not where the physical fault is: the bastion may refuse
+             * forwarding, or the target address may be unreachable from it. This API does
+             * not distinguish those."
+             *
+             * A `direct-tcpip` open failure arrives at the client as one refusal; the client
+             * cannot tell "the bastion's PermitOpen said no" from "the bastion dialled and
+             * the kernel said no". What it *can* say is which stage failed. So the
+             * assertion is on the stage, and `Bastion` is accepted — this test pins the
+             * documented behaviour rather than an opinion about attribution.
+             */
+            assert_eq!(
+                failure.stage,
+                Some(ConnectionStage::TunnelOpen),
+                "a refused connect fails while opening the tunnel, not later: hop={:?} \
+                 error={}",
+                failure.hop,
+                failure.error
+            );
+        }
+        "target-reset-handshake" => {
+            let outcome = result.expect("a reset must resolve, not hang");
+            let Err(failure) = outcome else {
+                panic!("a connection cut inside the handshake cannot succeed")
+            };
+            assert!(
+                !matches!(failure.error, SessionError::AuthenticationRejected(_)),
+                "the cut fired before any credential was sent, so this cannot be a \
+                 credential refusal: {}",
+                failure.error
+            );
+            assert_ne!(
+                failure.hop,
+                Some(ConnectionHop::Bastion),
+                "the bastion completed its own handshake before forwarding: hop={:?} \
+                 stage={:?} error={}",
+                failure.hop,
+                failure.stage,
+                failure.error
+            );
+        }
+        "target-reset-auth" => {
+            let outcome = result.expect("a reset must resolve, not hang");
+            let Err(failure) = outcome else {
+                panic!("a connection cut during authentication cannot succeed")
+            };
+            /*
+             * Deliberately *not* asserting the error class: a stream that dies mid-userauth
+             * may legitimately surface as a connection error or as an auth failure the
+             * client cannot distinguish. What is not negotiable is the attribution.
+             */
+            assert_ne!(
+                failure.hop,
+                Some(ConnectionHop::Bastion),
+                "a break during the target's usertransport is not the bastion's: hop={:?} \
+                 stage={:?} error={}",
+                failure.hop,
+                failure.stage,
+                failure.error
+            );
+        }
         other => panic!(
             "unknown target-leg scenario {other:?}; the harness and this case must agree on \
-             the names (healthy, target-blackhole, target-reset)"
+             the names (healthy, target-blackhole, target-refused, target-reset-handshake, \
+             target-reset-auth)"
         ),
     }
 
