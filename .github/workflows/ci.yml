@@ -209,9 +209,17 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
       - run: pnpm --filter=@terminal/frontend build:budget
+      # The path is `dist/` at the repository root: `packages/frontend/vite.config.ts`
+      # sets `outDir: '../../dist'`. This step used to grep `packages/frontend/dist`,
+      # which **does not exist** — `grep` returns non-zero for a missing path, `if` read
+      # that as "no match", and the gate passed for every build since it was written.
+      #
+      # `test -d dist` first, so a missing output is an error instead of a pass: a gate
+      # that cannot find what it is supposed to scan has not cleared it.
       - name: Vault probe is absent from the production bundle
         run: |
-          if grep -r "phase9.7-vault-one-time" packages/frontend/dist; then
+          test -d dist || { echo "dist/ is missing, so this gate scanned nothing" >&2; exit 1; }
+          if grep -r "phase9.7-vault-one-time" dist; then
             echo "smoke-only Vault probe leaked into the production build" >&2
             exit 1
           fi

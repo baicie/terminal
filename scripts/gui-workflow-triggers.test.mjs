@@ -233,3 +233,39 @@ test('a spec that resizes below the breakpoint does not require the status bar',
     'every narrow width must take the terminal-geometry path instead of reading the bar',
   )
 })
+
+// DDQ14 — the production-bundle gate must scan a directory that exists.
+//
+// ## The defect, measured by the audit
+//
+// `ci.yml` grepped `packages/frontend/dist` for the smoke-only Vault probe marker. That
+// path **does not exist** — `packages/frontend/vite.config.ts` sets `outDir: '../../dist'`,
+// so the build lands at the repository root. `grep` returns non-zero for a missing path,
+// `if` reads that as "no match", and the gate passed for every build since it was written.
+//
+// A gate that cannot find what it is supposed to scan has not cleared it.
+const ciYaml = readFileSync(path.join(ROOT, '.github/workflows/ci.yml'), 'utf8')
+const viteConfig = readFileSync(path.join(ROOT, 'packages/frontend/vite.config.ts'), 'utf8')
+
+test('the Vault-probe gate greps the directory vite actually writes', () => {
+  const outDir = /outDir:\s*'([^']+)'/.exec(viteConfig)
+  assert.ok(outDir, 'vite.config.ts must declare an outDir')
+  const resolved = path.normalize(path.join('packages/frontend', outDir[1])).replace(/\/$/, '')
+  assert.equal(resolved, 'dist', `the build writes to ${resolved}, so the gate must scan it`)
+  assert.ok(
+    ciYaml.includes('grep -r "phase9.7-vault-one-time" dist'),
+    'the gate must grep that directory',
+  )
+})
+
+test('the Vault-probe gate fails when it cannot find the directory', () => {
+  /*
+   * The old shape was `if grep …; then fail; fi` — a missing path makes `grep` non-zero
+   * and the `if` treats it as "clean". The fix asserts the directory first.
+   */
+  assert.match(
+    ciYaml,
+    /test -d dist \|\|/,
+    'the gate must refuse to pass when dist/ is absent, or it silently scans nothing',
+  )
+})
