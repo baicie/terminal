@@ -60,6 +60,10 @@ rssSeries: 100 | fdSeries: 100 | roundLines: 100
 
 ### 5. 是否同一进程
 
+> **更新（PR #179 之后）**：CI run `46138104551` 的 macOS 100 轮证据已经带上了
+> 这个字段——`sameProcess: true`、`pidChanges: []`、`pidLookupFailures: 0`。
+> 下面记录的是归档时那份证据的状态，作为缺口曾经存在的凭证保留。
+
 **归档的证据答不了这一问。**
 
 `extra` 里没有 `sameProcess` / `pidChanges` 字段。原因是真实的：spec 在测试体里
@@ -161,8 +165,10 @@ rss steady 后半 floor: 217,030,656        ← 在爬，但
 
 ## 剩余限制
 
-- **归档的 100 轮证据没有 `sameProcess` 字段**（跑在本次改动之前）。第 5 问的答案
-  要么等下一次 CI，要么接受"代码现在会记录它"。本文件不把后者当成前者的替代。
+- **归档的 100 轮证据没有 `sameProcess` 字段**（跑在本次改动之前）。PR #179 合并后
+  的 CI（run `46138104551`）已经产出带该字段的证据：`sameProcess: true`、
+  `pidChanges: []`、`pidLookupFailures: 0`。**归档那份仍然没有**——本文件保留它的
+  原状，不回溯改写。
 - 曲线只覆盖命令面板路径（第 6 问）。
 - 三个平台的曲线都来自**一台** runner 的一次 100 轮，是关于那台 runner 的假设。
 - `roundLines` 只记录行数，不记录内容——"终端没变"是从行数恒定推断的，
