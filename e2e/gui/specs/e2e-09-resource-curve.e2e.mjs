@@ -203,12 +203,24 @@ describe('E2E-09 resource curve across repeated GUI work', () => {
      * a pass: it means this run cannot answer the question. Only a complete run becomes a
      * PASS.
      */
+    /*
+     * ## One process, or it is not this curve
+     *
+     * A series stitched together from two processes describes neither: the second
+     * process's baseline is not the first's, so a rise across the join is an artefact of
+     * the restart. `sameProcess` is the DDQ07 question — "did every sample come from the
+     * same pid" — and a false answer is INSUFFICIENT_DATA, not PASS.
+     *
+     * This runs before the completeness check's PASS branch because a complete series
+     * from two processes is *more* misleading than a holey one from a single process.
+     */
+    const identityLost = measured.sameProcess === false
     let verdict
     if (caseFailures.length > 0) {
       verdict = 'FAIL'
     } else if (measured.notRun === 'NOT_RUN') {
       verdict = 'NOT_RUN'
-    } else if (completeness.length > 0) {
+    } else if (identityLost || completeness.length > 0) {
       verdict = 'INSUFFICIENT_DATA'
     } else {
       verdict = 'PASS'
@@ -246,6 +258,11 @@ describe('E2E-09 resource curve across repeated GUI work', () => {
           ? {
               notes:
                 `${series.observedSamples} of ${series.expectedSamples} rounds sampled; ` +
+                (identityLost
+                  ? `the samples are not all from one process ` +
+                    `(${measured.pidChanges.length} pid change(s), ` +
+                    `${measured.pidLookupFailures} lookup failure(s)); `
+                  : '') +
                 completeness.map(p => `${p.metric}: ${p.detail}`).join('; '),
             }
           : {
@@ -259,6 +276,18 @@ describe('E2E-09 resource curve across repeated GUI work', () => {
       extra: {
         rounds: ROUNDS,
         sampleCount: samples.length,
+        /*
+         * DDQ07 asks "did every sample come from the same process" by name. `sameProcess`
+         * is that question answered; the two counts beside it are what makes a `false`
+         * actionable — a restart and a lost lookup are different problems.
+         *
+         * Measured: the first version computed these in the case body and read them in
+         * `after()`, but never copied them into `extra`, so the artifact could not answer
+         * the question it was computing. The value existed and was thrown away.
+         */
+        sameProcess: measured.sameProcess ?? null,
+        pidChanges: measured.pidChanges ?? null,
+        pidLookupFailures: measured.pidLookupFailures ?? null,
         /*
          * The two fields the task's DDQ03 asks for by name. `perMetricValidSamples` is
          * what makes "100 rounds, three metrics, <5% missing" checkable from the artifact
@@ -383,11 +412,26 @@ describe('E2E-09 resource curve across repeated GUI work', () => {
     samples.push({ round: -1, ...baseline })
     measured.baseline = { round: -1, ...baseline }
 
+    /*
+     * ## The identity check DDQ07 asks for, recorded either way
+     *
+     * "Are all samples from the same process?" needs an answer in the artifact, and the
+     * first version only wrote `pidChanges` when a change happened — so a clean run
+     * carried no field at all and a reader could not tell "no change" from "not checked".
+     *
+     * `pidLost` is the case that matters more than a change: if the lookup starts failing
+     * mid-run, the loop goes on sampling a number that may have been recycled. That is not
+     * a restart, it is a sampler that stopped knowing what it was measuring, and it has to
+     * be visible.
+     */
     const pidChanges = []
+    let pidLost = 0
     for (let round = 0; round < ROUNDS; round += 1) {
       roundResults.push(await runRound(round))
       const current = findAppPid(appBinaryPath(ROOT))
-      if (current !== null && current !== pid) {
+      if (current === null) {
+        pidLost += 1
+      } else if (current !== pid) {
         pidChanges.push({ round, from: pid, to: current })
       }
       const sample = sampleProcess(pid)
@@ -409,11 +453,21 @@ describe('E2E-09 resource curve across repeated GUI work', () => {
       }
       samples.push({ round, ...sample })
     }
+    /*
+     * Recorded unconditionally. `sameProcess` is the DDQ07 question stated as a value:
+     * true only when the pid never changed **and** the lookup never lost it.
+     */
     measured.pidChanges = pidChanges
+    measured.pidLookupFailures = pidLost
+    measured.sameProcess = pidChanges.length === 0 && pidLost === 0
     if (pidChanges.length > 0) {
       // A restart mid-run is not a sampling defect; it is a fact about the run that every
       // number after it has to be read in light of.
       measured.note = `the app's pid changed ${pidChanges.length} time(s) during the run`
+    } else if (pidLost > 0) {
+      measured.note =
+        `the pid lookup failed on ${pidLost} round(s); sampling continued against pid ${pid}, ` +
+        'which may have been reused'
     }
 
     /*

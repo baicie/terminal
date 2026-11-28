@@ -110,6 +110,56 @@ describe('DDQ03 — the curve judge is not fed a compacted array', () => {
     }
   })
 
+  it('records whether every sample came from the same process', () => {
+    /*
+     * DDQ07 asks this by name, and the first version of the spec could not answer it: the
+     * `pidChanges` field was only written when a change **happened**, so a clean run
+     * carried no field and a reader could not tell "no change" from "not checked".
+     *
+     * The field has to be unconditional, and a false answer has to keep the run out of
+     * PASS — a series stitched from two processes describes neither, because the second
+     * process's baseline is not the first's.
+     */
+    // The assignment, not a read: `measured.sameProcess === false` also matches the loose
+    // form, and a guard satisfied by a read is satisfied by the code that fails without it.
+    assert.match(
+      specCode,
+      /measured\.sameProcess\s*=[^=]/,
+      'sameProcess must be assigned every run',
+    )
+    /*
+     * And it has to reach the artifact. Measured while writing this: the value was
+     * computed in the case body and read in `after()`, but never copied into `extra`, so
+     * the evidence file could not answer the question the spec had already answered for
+     * itself. A field that is computed and dropped is the same as one never computed —
+     * from the reader's side they are indistinguishable.
+     */
+    assert.match(
+      specCode,
+      /sameProcess: measured\.sameProcess/,
+      'sameProcess must be copied into the evidence, not only computed',
+    )
+    /*
+     * The verdict branch has to *use* it. `identityLost` alone is satisfied by the
+     * declaration, so the check is that the variable appears inside the `INSUFFICIENT_DATA`
+     * condition — measured: the first version of this guard passed with the assignment
+     * deleted, because the declaration was still there.
+     */
+    const verdictStart = specCode.indexOf('let verdict')
+    assert.ok(verdictStart > -1, 'could not find the verdict decision')
+    const verdictBlock = specCode.slice(verdictStart, verdictStart + 600)
+    assert.match(
+      verdictBlock,
+      /identityLost/,
+      'identityLost must appear in the verdict decision, not only in a declaration',
+    )
+    assert.match(
+      verdictBlock,
+      /INSUFFICIENT_DATA/,
+      'a run whose samples cross a pid change must be INSUFFICIENT_DATA',
+    )
+  })
+
   it('every metric the spec reads is one it asked buildSeries for', () => {
     /*
      * Measured on a local 15-round run of the first version: `after()` read
