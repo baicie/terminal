@@ -79,9 +79,9 @@ RC06 都不变红。已在源码注释写明它是防御性的，以及它在什
 | RC13 | **VERIFIED** | 1440px 的 +224 异常**已消失**：`896 = 1440−46−182−300−16` |
 | RC14 | PARTIAL | 100 次 resize 有界、双 Pane 各自 fit、dispose 隔离；共享节流的变异是行为等价，见下 |
 | RC15 | **VERIFIED** | 重试预算实现完整且有测试；**服务器侧计数已补上**：凭证被拒时跳板/目标 sshd 的 `Failed publickey` 记到 **1 次**（不是 5 次），证明 `authentication_rejected` 是终态、没有消耗重试预算。变异（把它从 `NON_RETRYABLE_KINDS` 移除）后同一场景记到 **4 次**拒绝，检查确实会长红 |
-| RC16 | **PARTIAL（归因已 PASS）** | 跳板/目标的认证拒绝与 host-key 不符各有真实用例断言 `hop`（6 个，CI 阻塞），`JUMP_ERROR_ATTRIBUTION` 由 NOT_RUN 改为 **PASS**——`SessionFailure { error, hop, stage }` 解决了当时 `SessionError` 序列化边界挡住的那个改动。断连矩阵保持 PARTIAL：跳板腿三场景已有（F12），**目标腿缺**——跳板不直连目标，`PermitOpen` 只放行真实端口，故障整形不到那一腿 |
-| RC17 | **VERIFIED** | Rust 侧 10 MiB 背压 PASS；**真实 WebView 已补上**：`e2e-08` 在 macOS GUI E2E（阻塞门禁）里灌入 10.99 MB（103 字符 × 100k 行），缓冲区 43→10043 行（恰为 43 + scrollback 10000），停止后输入仍可用。变异把 scrollback 提到 100000 后在有界断言变红（21009 > 12000）。未覆盖 Linux/Windows 与并发操作穿插 |
-| RC18 | **VERIFIED（macOS，100 轮）** | `e2e-09` 在真实 WebView 里跑 100 轮，每轮从**进程外部**（`ps`/`lsof`/`/proc`）采样。实测 RSS 50.3→29.0 MB、FD 103→104、线程 30–35，`NO_LEAK_DETECTED`。判读是纯函数，11 项测试覆盖平台期/锯齿/泄漏三形态；用实测序列做变异（每轮 +3 MiB）会判 `LEAK_SUSPECTED`。未覆盖 Linux/Windows 与 SFTP/Snippet/Inspector 分阶段 |
+| RC16 | **PARTIAL → 目标腿已补（DDQ09/DDQ10）** | 跳板/目标的认证拒绝与 host-key 不符各有真实用例断言 `hop`（6 个，CI 阻塞）。断连矩阵此前只有跳板腿（F12）——因为 `PermitOpen` 只放行**真实 target 端口**，target proxy 从未承载流量。**DDQ09 改了拓扑**：专用 bastion 只放行 proxy 端口，形成 `product → bastion → proxy → target`，`healthy` 场景实测 proxy 双向承载 2554/2786 B。**DDQ10 在此之上注入四种形状**：TCP 拒绝、握手期 RST、认证期 RST、通道打开失败，全部 PASS 且每场景 `accepted=1`。两处实测推翻了我的初版：「已连接后中断」与「Shell 输出中中断」在本 Rust 测试里结构上做不到（`connect_via_jump` 返回后测试 drop handle，之后再无流量，65536 与 3000 两档阈值都是 `cut=0`），归入 DDQ12 |
+| RC17 | **VERIFIED** | Rust 侧 10 MiB 背压 PASS；**真实 WebView 已补上**：`e2e-08` 在 macOS GUI E2E（阻塞门禁）里灌入 10.99 MB（103 字符 × 100k 行），缓冲区 43→10043 行（恰为 43 + scrollback 10000），停止后输入仍可用。变异把 scrollback 提到 100000 后在有界断言变红（21009 > 12000）。**PR #173 修了一个真实的假绿**：macOS 上它长期 `NOT_RUN`（`tabs: 0`），根因是 harness 的 600 ms 固定等待短于产品 2 s 的 startup fallback；修复后 CI 实测 `PASS`（35 → 10035 行）。未覆盖 Windows 与并发操作穿插 |
+| RC18 | **VERIFIED（macOS + Linux，各 100 轮）** | `e2e-09` 在真实 WebView 里跑 100 轮，每轮从**进程外部**采样。**PR #173 修了一个更严重的假绿**：原实现先 `filter(v => v !== null)` 再判曲线，而 `resource-curve.mjs` 本来拒收带洞序列——守卫被调用方绕开，且 filter 销毁了时间索引（100 轮里只读到 12 次的 RSS 变成 12 元素数组，而 `minimumSamples` 正是 12）。新增 `resource-series.mjs`：序列按 `expectedSamples` 铺开、洞保留为 null，完整性先判，不足记 `INSUFFICIENT_DATA`。CI 实测 macOS 与 Linux 各 `100 of 100 rounds`、三指标各 100 个有效样本。CPU 已纳入（累计值，非利用率）；证据写 `processScope=MAIN_PROCESS`。未覆盖 Windows（DDQ05）与 SFTP/Snippet/Inspector 分阶段（DDQ08） |
 
 RC14 有一条要说清楚：我想用「节流状态模块级共享」模拟双 Pane 干扰，**四次都没能让
 变异变红**，最后查明它是**行为等价**的——`requestFit` 在节流窗口内会 `setTimeout`，
@@ -90,8 +90,13 @@ RC14 有一条要说清楚：我想用「节流状态模块级共享」模拟双
 RC15–RC18 在早期轮次里都因为「需要真实 GUI 会话或双跳 fixture、而本轮不启动应用窗口」
 记为 NOT_RUN。**这四项后来全部闭合**，靠的是三类不同的环境而不是启动更多窗口：
 允许密码认证的隔离 fixture（RC15 的服务端计数）、既有 sshd fixture 的双跳场景
-（RC16 归因）、以及 macOS GUI E2E 的阻塞门禁（RC17/RC18）。只有 RC16 的断连矩阵
-目标腿留在 PARTIAL，理由是结构上测不到，不是没做。
+（RC16 归因）、以及 macOS GUI E2E 的阻塞门禁（RC17/RC18）。
+
+RC16 的断连矩阵**曾经**以「目标腿结构上测不到」为由留在 PARTIAL。那句话当时是对的
+观察、错误的结论：目标腿不是测不了，是 fixture 的 `PermitOpen` 指着真实 target 端口，
+proxy 从未在路径上。DDQ09 改了拓扑（专用 bastion 只放行 proxy 端口），DDQ10 在其上
+注入了四种形状。**现在只剩两种没法在这个 Rust 测试里做**——「已连接后中断」与
+「Shell 输出中中断」，因为它们需要会话保持打开并读写，归 DDQ12。
 
 ### 两个 GUI job 在 PR #171 上暴露的失败，都不是产品缺陷
 
@@ -188,9 +193,9 @@ EVIDENCE_FINGERPRINT_CURRENT = NO   （需重采，见 §六）
 | --- | --- | --- |
 | 六份验收证据重采 | `real-machine-matrix` 工作流在当前 HEAD 跑一次，提交产物 | 已完成 |
 | RC15 服务端重试计数 | 允许密码认证的隔离 fixture + sshd 日志解析 | **已完成**（跳板 `Failed publickey` 计数 1 次） |
-| RC16 断连矩阵 | 两个隔离 sshd + 可控断连 | **目标腿结构上测不到**（`PermitOpen` 只放行真实端口） |
-| RC17 真实 WebView 大输出 | 启动 GUI | **已完成**（macOS 阻塞门禁） |
-| RC18 100 轮资源曲线 | 启动 GUI 并长时间运行 | **已完成**（macOS，进程外采样） |
+| RC16 断连矩阵 | 两个隔离 sshd + 可控断连 | **跳板腿 PASS（F12）；目标腿 PASS（DDQ09/10，四种形状）**。剩「已连接后中断」与「Shell 输出中中断」需保持会话打开，归 DDQ12 |
+| RC17 真实 WebView 大输出 | 启动 GUI | **已完成**（macOS + Linux 阻塞/信息门禁） |
+| RC18 100 轮资源曲线 | 启动 GUI 并长时间运行 | **已完成**，含完整性门槛（macOS + Linux，进程外采样） |
 | RC19 真实截图 | 启动 GUI | 已完成 |
 | RC20 真人键盘 | 用户本人 | 未执行 |
 | RC21 Windows NSIS | 一次性 profile 或 VM | BLOCKED_EXTERNAL |
@@ -292,7 +297,7 @@ SIGNED_PUBLIC_RELEASE_READY = NO  （签名/公证/updater 密钥 BLOCKED_EXTERN
 | 项 | 状态 | 需要什么 |
 | --- | --- | --- |
 | `e2e-07` GUI 失败诊断 | **PASS（macOS + Linux）** | 四轮才通过。前三轮的失败都是真结论：两轮是用例写错（没进 Hosts 路由；等「页面里有错误字样」，1.6 秒被主机列表本身满足），第三轮对上了产品——连接被拒被说成「无法验证 SSH 主机密钥」，且内部调用栈直出。`9f9e3bd` 上 macOS（阻塞）与 Linux 两条 case 全 ✓、`notRunCount: 0`。**这一行是矩阵里唯一达到 `NATIVE_GUI_VERIFIED` 的** |
-| F12 断连注入 | **PASS（bastion 腿，三场景；CI 已可核对）** | 逐场景驱动（`an_injected_fault_names_its_own_leg_and_no_more`）断言**归因**而不只是「失败了」。**这条判定花了四轮**，每轮都是真结论：① run 45758649504 三场景全失败而 job 报绿——`finish('FAIL')` 不设退出码（`#164` 修）；② 同一轮三场景死于 `gobject-sys`，根因是 job 从未装 Tauri 系统库（`#164` 修）；③ run 45786015950 真绿了，但**从任何产物都核不了**：`ci.yml` 从未设 `SSH_JUMP_E2E_REPORT`，报告从不写盘，upload 自加入起一直空转；通过场景在日志里也静默（`#165` 修，`if-no-files-found` 改 `error`）；④ 报告接上后，第一份 artifact 自己暴露了它只列 10 条而实际跑了 12 条——`--nocapture` 把测试自己的 stderr 插进 `test <name> ... ` 之后，`ok` 被挤到下一行，正则漏掉，且漏的恰是故障注入用例本身（`#165` 修）。**现在可核对**：run 45790480314 的 artifact 里 `verdict: PASS`、12 条用例、三场景 `cut` 分别为 0/0/1。**只覆盖 bastion 腿**——跳板连接不直连目标，`PermitOpen` 只放行目标真实端口，目标腿无法整形 |
+| F12 断连注入 | **PASS（bastion 腿，三场景；CI 已可核对）** | 逐场景驱动（`an_injected_fault_names_its_own_leg_and_no_more`）断言**归因**而不只是「失败了」。**这条判定花了四轮**，每轮都是真结论：① run 45758649504 三场景全失败而 job 报绿——`finish('FAIL')` 不设退出码（`#164` 修）；② 同一轮三场景死于 `gobject-sys`，根因是 job 从未装 Tauri 系统库（`#164` 修）；③ run 45786015950 真绿了，但**从任何产物都核不了**：`ci.yml` 从未设 `SSH_JUMP_E2E_REPORT`，报告从不写盘，upload 自加入起一直空转；通过场景在日志里也静默（`#165` 修，`if-no-files-found` 改 `error`）；④ 报告接上后，第一份 artifact 自己暴露了它只列 10 条而实际跑了 12 条——`--nocapture` 把测试自己的 stderr 插进 `test <name> ... ` 之后，`ok` 被挤到下一行，正则漏掉，且漏的恰是故障注入用例本身（`#165` 修）。**现在可核对**：run 45790480314 的 artifact 里 `verdict: PASS`、12 条用例、三场景 `cut` 分别为 0/0/1。**原先只覆盖 bastion 腿**——跳板连接不直连目标，`PermitOpen` 只放行目标真实端口，目标腿无法整形。**DDQ09 改了拓扑**（专用 bastion 只放行 target-leg proxy 的端口），**DDQ10 在目标腿注入四种形状**并全部 PASS；两种需要保持会话打开的形状归 DDQ12 |
 | F13 自定义策略真实执行 | **PASS（真实 sshd，服务器侧计数）** | `terminalSessionManager` 是 `new TerminalSessionManager()`，从不传参，所以自定义策略到不了后端。现在：设置里可存 `reconnectBaseDelayMs`/`reconnectMaxAttempts`，启动时 `applyReconnectSettings` 应用到单例，管理器新增 `reconnectPolicy()`/`setReconnectPolicy()`（策略持有在 `terminal-reconnect-policy-holder`）。**证据来自服务器而不是客户端**：`run-terminal-smoke.mjs --reconnect-attempts N` 经 Rust 命令注入，`TUNNEL_OPEN_FAILED` 场景读跳板 sshd 的 `Connection from` 行计数。实测 `maxAttempts` 1/2/3 → 拨号 3/4/5（`maxAttempts + 2`：初始 1 次 + 阶梯 N 次 + 隧道路径重建跳板 1 次），`baseDelayMs` 100→2000 使整轮 865→6885 ms 而拨号数不变。**反证**：去掉注入接线后同一命令记录到 7 次拨号（默认 5），证明链路真的是新增的。**未覆盖**：Windows 与 GUI 内的手动改设置（只测了启动应用） |
 | F14 100 轮 soak | **PASS（本机 + CI 各 100 轮）** | 本机：RSS 15.63→15.96 MB、FD 恒 9、`NO_LEAK_DETECTED`。**CI 上第一次真跑**（run `45827098364`，macOS runner，100/100 轮）：RSS 23,232,512→23,543,808 B（21.16→22.45 MiB，终值即峰值）、FD 恒 12、`NO_LEAK_DETECTED`。两次的绝对值不同是因为平台与构建不同，判据是**形状**不是绝对数。与 F12 共用同一 artifact：`verdict: PASS`、12 条用例、三场景 `cut` 0/0/1。12 轮的快速回归仍在每个 PR 上跑。**发现并修掉一个 workflow 缺陷**：该 workflow 从未派发过，首次派发死在写死的 pnpm `10.18.3`（与 `packageManager: 10.34.3` 冲突），见第 8 节「第五种形态」 |
 | F17 RSS/FD 曲线 | **PASS（Unix，采集+判读）** | `session::process_metrics` 真实测量（macOS `proc_pidinfo`、Linux `/proc/self`），soak 每轮采样，判读是纯函数 `scripts/ssh-soak-curve.mjs`（13 项测试）。**Windows 返回 `None` 而非 0**——0 会进曲线并伪装成完美平坦。判读规则被测试改过一次：只看相对比例会漏掉大基线上的真实泄漏（2 GiB 涨 156 MiB = 7.6%），已加持续性判据 |
