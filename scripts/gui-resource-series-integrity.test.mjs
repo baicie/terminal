@@ -239,3 +239,40 @@ describe('DDQ03 — completeness is a first-class result', () => {
     )
   })
 })
+
+
+describe('DDQ12 — an echo assertion must prove the shell ran the command', () => {
+  /*
+   * ## The defect, measured by the audit
+   *
+   * `e2e-08` asserted `tail.includes(token)`. The terminal echoes the typed line the
+   * instant the keystrokes arrive, so that substring is present **before** the shell has
+   * executed anything — a command that was typed and never run passes.
+   *
+   * `e2e-01` has the right shape: split the tail into lines and require one whose trimmed
+   * content **is** the token. The echo line is `echo <token>` and does not match.
+   *
+   * This is a source-level guard because the defect is invisible in a run: both forms
+   * pass on a healthy terminal, and only the blocked path distinguishes them.
+   */
+  const readSpec = name => readFileSync(path.join(ROOT, 'e2e/gui/specs', name), 'utf8')
+  const strip = source =>
+    source
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n')
+      .filter(line => !/^\s*\/\//.test(line))
+      .join('\n')
+
+  for (const spec of ['e2e-08-large-output.e2e.mjs', 'ddq12-interaction-during-output.e2e.mjs']) {
+    it(`${spec} does not accept a substring match as "the shell answered"`, () => {
+      const code = strip(readSpec(spec))
+      const weak = /\.includes\(\s*(token|duringNonce|afterNonce|echoToken)\s*\)/
+      assert.ok(
+        !weak.test(code),
+        'a substring match is satisfied by the echo of the typed command line, before ' +
+          'the shell runs anything — split the tail into lines and require one whose ' +
+          'trimmed content equals the token',
+      )
+    })
+  }
+})

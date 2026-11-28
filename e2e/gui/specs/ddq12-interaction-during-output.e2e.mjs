@@ -40,6 +40,26 @@ const FLOOD = process.platform === 'win32' ? FLOOD_POWERSHELL : FLOOD_POSIX
 /** Approximate bytes the flood produces: line width × count. Recorded, not asserted. */
 const FLOOD_BYTES = (PAD.length + 6) * LINES
 
+/**
+ * Whether the shell **ran** `echo <token>` — not merely echoed the typed line.
+ *
+ * ## The defect this replaces, and where it was measured
+ *
+ * The first version used `tail.includes(token)`. That is satisfied by the shell's own
+ * echo of the command line: the terminal shows `echo during123` the instant the
+ * keystrokes arrive, before the shell has executed anything. So the assertion passed for
+ * a command that was typed and never run — which is exactly the state a blocked output
+ * path produces.
+ *
+ * `e2e-01` already solved this: the output is the line whose trimmed content is **exactly**
+ * the token, while the echo line is `echo <token>`. A run that echoed but did not execute
+ * has no such line.
+ */
+function ranEcho(text, token) {
+  const lines = String(text).split('\n').map(line => line.trim())
+  return lines.some(line => line === token)
+}
+
 async function snapshot() {
   return browser.execute(() => globalThis.__terminalGuiE2E?.snapshot?.() ?? null)
 }
@@ -256,7 +276,7 @@ describe('DDQ12 — working while output arrives', () => {
     if (typedDuring) {
       try {
         await browser.waitUntil(
-          async () => (await tail()).includes(duringNonce),
+          async () => ranEcho(await tail(), duringNonce),
           { timeout: 20_000, interval: 400 },
         )
         echoedDuring = true
@@ -288,7 +308,7 @@ describe('DDQ12 — working while output arrives', () => {
     if (typedAfter) {
       try {
         await browser.waitUntil(
-          async () => (await tail()).includes(afterNonce),
+          async () => ranEcho(await tail(), afterNonce),
           { timeout: 30_000, interval: 500 },
         )
         echoedAfter = true

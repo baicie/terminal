@@ -405,7 +405,19 @@ describe('E2E-08 large output through a real WebView', () => {
         const tail = await browser.execute(
           () => globalThis.__terminalGuiE2E?.readActiveTerminalTail?.() ?? '',
         )
-        return typeof tail === 'string' && tail.includes(token)
+        /*
+         * ## `includes(token)` would be satisfied by the echo of the typed command
+         *
+         * The terminal shows `echo guie2e08…` the moment the keystrokes arrive, before
+         * the shell has run anything — so a substring search passes for a command that
+         * was typed and never executed, which is exactly the state a blocked output path
+         * produces. `e2e-01` already solved this: the *output* line is the token alone,
+         * the echo line is `echo <token>`.
+         */
+        return (
+          typeof tail === 'string' &&
+          tail.split('\n').some(line => line.trim() === token)
+        )
       },
       {
         timeout: 30_000,
