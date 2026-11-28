@@ -213,6 +213,25 @@ async function main() {
       bastion: { port: bastionProxy.port },
     }
 
+    /*
+     * The topology note for the target-leg matrix, which starts its own bastion per
+     * scenario (a fresh proxy gets a new ephemeral port, so one bastion cannot serve all
+     * three):
+     *
+     *   product → bastion daemon → target-leg proxy → real target
+     *
+     * with `PermitOpen` naming the proxy's port and nothing else. The target daemon, its
+     * host key and the host-key pin are unchanged — a proxy that terminated the SSH
+     * handshake itself would fail the pin, which is what keeps this a test of the product
+     * rather than of the proxy.
+     *
+     * The old topology had the proxy *behind* the real target port while `PermitOpen`
+     * named the real target port, so the product never sent the target leg's bytes near
+     * it. `FixtureProxies` in `ssh_jump_e2e_tests.rs` records the measured symptom of the
+     * naive fix (point the product at the proxy without telling the bastion):
+     * `AdministrativelyProhibited` — correct bastion behaviour, wrong fixture.
+     */
+
     console.log(`[ssh12] env: bastion=${bastion.port} target=${target.port} key=${String(bastion.privateKey).slice(0, 24)}...`)
     /*
      * One source for the fixture environment, because the disconnect matrix below runs
@@ -400,6 +419,262 @@ async function main() {
       }
     }
 
+    /*
+     * DDQ09 — the target leg's own matrix.
+     *
+     * Every scenario above breaks the **bastion** transport. This one breaks the path
+     * *behind* the bastion, which no case could reach before: see the topology note where
+     * `targetLegBastion` is started.
+     *
+     * `healthy` is not optional. Without it, a target proxy that refused everything would
+     * make both fault scenarios fail for a reason that has nothing to do with the product
+     * — the same false-green shape the bastion matrix's control case exists to prevent.
+     *
+     * Each scenario gets a **fresh** proxy: one that already cut a connection cannot be
+     * reused for the next, and a shared proxy would make `cut` in the report unattributable
+     * to the scenario it is printed beside.
+     */
+    report.targetLegMatrix = []
+    const targetLegScenarios = [
+      { name: 'healthy', proxy: {} },
+      /*
+       * ## The six shapes DDQ10 names, mapped onto what a transparent proxy can do
+       *
+       * The task book lists: TCP refusal, RST during the SSH handshake, RST during
+       * authentication, channel-open failure, break after connected, and break while a
+       * shell is producing output. A byte-forwarding proxy cannot tell "handshake" from
+       * "authentication" by name — it sees bytes — so the map below uses **byte
+       * position**, and the Rust side asserts which stage the product reports. That
+       * pairing is what makes the distinction real rather than a label on the scenario.
+       *
+       * | task-book shape            | injection                          |
+       * |----------------------------|------------------------------------|
+       * | TCP refusal                | a closed port (no proxy at all)    |
+       * | RST during handshake       | `cutAfterBytes` 512/512            |
+       * | RST during authentication  | `cutAfterBytes` 4096/2048          |
+       * | channel-open failure       | `blackhole` (accept, forward none) |
+       * | break after connected      | `cutAfterBytes` 65536/65536        |
+       * | break during shell output  | `cutAfterBytes` 262144/262144      |
+       *
+       * The byte thresholds are **measured, not guessed** — see the comment on each.
+       */
+      // TCP refusal needs no proxy: the port is closed. Handled separately below.
+      { name: 'target-refused', proxy: null },
+      // Accept the connection and forward nothing: the client's own deadline is the only
+      // thing that can end it. This is "the channel opened and then produced nothing",
+      // which is the closest a transparent proxy gets to a channel-open failure.
+      { name: 'target-blackhole', proxy: { blackhole: true } },
+      /*
+       * Cut inside the key exchange.
+       *
+       * Measured on the healthy case above: one whole two-hop connection moves 2562 bytes
+       * up / 2893 down, so 512 each way lands well inside the handshake. The Rust side
+       * asserts the failure is not an authentication rejection — no credential was ever
+       * sent.
+       */
+      { name: 'target-reset-handshake', proxy: { cutAfterBytes: { up: 512, down: 512 } } },
+      /*
+       * Cut later, once userauth has started.
+       *
+       * 4096 up is past the version exchange and the KEX, and the asymmetry (more up than
+       * down) reflects that the client sends keys and signatures while the server has
+       * already sent its KEXINIT. The assertion here is the opposite of the handshake
+       * case's: a credential WAS offered, so an `AuthenticationRejected` would be
+       * explicable — what must not happen is the failure being reported as a *bastion*
+       * problem, because the bastion was fine.
+       */
+      { name: 'target-reset-auth', proxy: { cutAfterBytes: { up: 4096, down: 2048 } } },
+      /*
+       * ## The two "keep the session open" shapes are NOT in this matrix
+       *
+       * The task book lists "break after connected" and "break while a shell is producing
+       * output". Measured twice, they cannot be produced here:
+       *
+       *   threshold 65536/65536  → cut=0, up=2562 down=2893
+       *   threshold  3000/3000   → cut=0, up=2562 down=2893
+       *
+       * The byte counts are identical across both attempts and across every healthy run,
+       * which says the connection carries ~5.5 KiB and then stops. That is not a runner
+       * quirk: `connect_via_jump` authenticates both legs, hands back the handles, and this
+       * test **drops them**. Nothing writes to the channel afterwards, so there is no
+       * traffic for a higher threshold to wait for.
+       *
+       * A scenario whose injection cannot fire is not a weak pass — the `cut: 0` rule now
+       * fails it, which is how this was caught rather than shipped. Driving a live session
+       * (open, write, observe, cut) needs a case that holds the session open and reads from
+       * it; that is DDQ12's job through the product's own terminal, not this Rust test's.
+       *
+       * The transport-level half of those two shapes is still covered above: a cut at any
+       * byte position must produce a bounded, non-credential, non-bastion failure, and
+       * `target-reset-handshake` / `target-reset-auth` prove exactly that at two different
+       * positions.
+       */
+    ]
+    /** One line describing a scenario's proxy counters, or the absence of a proxy. */
+    const describeProxy = proxy =>
+      proxy === null
+        ? '(no proxy: the target port is closed, so the connect is refused by the kernel)'
+        : `(accepted=${proxy.stats.accepted}, cut=${proxy.stats.cut}, ` +
+          `upBytes=${proxy.stats.upBytes}, downBytes=${proxy.stats.downBytes})`
+
+    const runTargetLegScenario = async scenario => {
+      /*
+       * `proxy: null` is the TCP-refusal shape: there is no listener at all, so the
+       * bastion's `direct-tcpip` connect is refused by the kernel. That needs a real
+       * closed port rather than a proxy configured to mimic one — a proxy that accepts
+       * and closes is a *reset*, not a refusal, and the product reports them differently.
+       *
+       * The port is taken from a listener that was just closed, which is the standard way
+       * to get a port nothing is bound to (as opposed to guessing one that might be in
+       * use).
+       */
+      let closedPort = null
+      if (scenario.proxy === null) {
+        const probe = await startShapingProxy({ targetPort: target.port })
+        closedPort = probe.port
+        await probe.close()
+      }
+      const proxy =
+        scenario.proxy === null
+          ? null
+          : await startShapingProxy({ targetPort: target.port, ...scenario.proxy })
+      if (proxy !== null) proxies.push(proxy)
+      /*
+       * The bastion was configured for the *first* proxy's port. A fresh proxy gets a new
+       * ephemeral port, so the bastion has to be started per scenario, not once — the
+       * first version of this loop reused one bastion and the forwarded connection was
+       * refused for a port nobody had permitted.
+       *
+       * The refusal scenario points the bastion at the closed port for the same reason:
+       * `PermitOpen` has to name the address being dialled, or the bastion refuses before
+       * any TCP connect happens and the case measures the bastion instead of the refusal.
+       */
+      const targetLegPort = proxy === null ? closedPort : proxy.port
+      const bastionForProxy = await startTerminalSmokeSshd({
+        runDirectory: path.join(runDirectory, `bastion-tl-${scenario.name}`),
+        mode: 'key',
+        role: 'jump',
+        shell: 'sh',
+        targetPort: targetLegPort,
+      })
+      daemons.push(bastionForProxy)
+      try {
+        const run = launchProcess(
+          'cargo',
+          [
+            'test',
+            '--lib',
+            'a_target_leg_fault_reaches_the_product_and_is_bounded',
+            '--',
+            '--ignored',
+            '--nocapture',
+            '--test-threads=1',
+          ],
+          {
+            cwd: path.join(PROJECT_ROOT, 'src-tauri'),
+            detached: true,
+            env: {
+              ...process.env,
+              ...fixtureEnvironment,
+              SSH_JUMP_E2E_BASTION_PORT: String(bastionForProxy.port),
+              SSH_JUMP_E2E_BASTION_KEY: bastionForProxy.privateKey,
+              SSH_JUMP_E2E_BASTION_HOST_KEY: bastionForProxy.expectedHostKey
+                ? bastionForProxy.expectedHostKey.toString()
+                : '',
+              SSH_JUMP_E2E_TARGET_LEG_PROXY_PORT: String(targetLegPort),
+              SSH_JUMP_E2E_TARGET_LEG_SCENARIO: scenario.name,
+            },
+          },
+        )
+        const outcome = await waitForTests(
+          run,
+          Number(process.env.SSH_JUMP_E2E_SCENARIO_TIMEOUT_MS ?? 120_000),
+        )
+        const ok = /test result: ok\. 1 passed/.test(outcome.stdout)
+        if (!ok) {
+          process.stdout.write(
+            `[ssh12] target-leg scenario ${scenario.name} output:\n${outcome.stdout}`,
+          )
+          if (outcome.stderr.trim() !== '') process.stderr.write(outcome.stderr)
+        } else {
+          /*
+           * `accepted` is the injection's own proof, and for the target leg it is also
+           * the proof that the topology works: a proxy that received nothing means the
+           * bastion forwarded nowhere near it, whatever the verdict says.
+           */
+          process.stdout.write(
+            `[ssh12] target-leg scenario ${scenario.name} passed ${describeProxy(proxy)}\n`,
+          )
+        }
+        /*
+         * ## `cut: 0` on a cut scenario means the injection never fired
+         *
+         * A `cutAfterBytes` scenario whose threshold was never reached reports
+         * `cut: 0` and its case may still "pass" — a connection that completed normally
+         * satisfies "not an auth rejection". That is the same false green the bastion
+         * matrix guards against, so a cut scenario with `cut === 0` counts as a failed
+         * scenario, not a weak pass.
+         *
+         * The refusal scenario has no proxy at all, so it is exempt from both the
+         * `accepted` and `cut` rules: a closed port accepts nothing **by construction**,
+         * and requiring `accepted >= 1` there would be requiring the opposite of the
+         * scenario.
+         */
+        const wantsCut = /\.cutAfterBytes$|^target-break-|^target-reset-/.test(scenario.name)
+        const stats = proxy === null ? { accepted: null, cut: null, upBytes: null, downBytes: null } : proxy.stats
+        const injectionFired =
+          scenario.proxy === null ? true : wantsCut ? stats.cut > 0 : true
+        const effective = ok && injectionFired
+        report.targetLegMatrix.push({
+          scenario: scenario.name,
+          proxyPort: targetLegPort,
+          bastionPort: bastionForProxy.port,
+          passed: effective,
+          accepted: stats.accepted,
+          cut: stats.cut,
+          upBytes: stats.upBytes,
+          downBytes: stats.downBytes,
+          note: effective
+            ? null
+            : !ok
+              ? (outcome.timedOut ? 'TIMEOUT' : 'the case failed')
+              : 'INJECTION_NEVER_FIRED: the cut threshold was not reached, so the case ' +
+                'ran against a healthy path',
+        })
+        if (!effective) {
+          report.notes.push(
+            ok
+              ? `TARGET_LEG_MATRIX: scenario ${scenario.name} — INJECTION_NEVER_FIRED (cut=0)`
+              : `TARGET_LEG_MATRIX: scenario ${scenario.name} failed`,
+          )
+        }
+        return effective
+      } finally {
+        if (proxy !== null) await proxy.close()
+      }
+    }
+    for (const scenario of targetLegScenarios) {
+      await runTargetLegScenario(scenario)
+    }
+    /*
+     * A proxy that never received a byte means the fault was injected somewhere the
+     * product never went. That is a harness result, not a product one, and it must be
+     * loud — an `accepted: 0` row beside a passing scenario is exactly the "injected
+     * fault that was never on the path" shape this whole task book is about.
+     */
+    for (const entry of report.targetLegMatrix) {
+      /*
+       * Only the scenarios that are *supposed* to be reached through a proxy. The refusal
+       * scenario has `accepted: null` on purpose — nothing listens, so nothing can accept.
+       */
+      if (entry.accepted === 0) {
+        report.notes.push(
+          `TARGET_LEG_NOT_ON_PATH: scenario ${entry.scenario} ran with accepted=0 — ` +
+            'the proxy received no connection, so the fault was not on the forwarded path',
+        )
+      }
+    }
+
 
 
     /*
@@ -423,6 +698,15 @@ async function main() {
        * cargo invocations: their exit codes never reach `failed` above, so without this
        * line a scenario that reported the wrong hop would be recorded in the report and
        * still finish PASS. A recorded-but-ignored result is worse than no matrix.
+       */
+      finish('FAIL')
+    } else if (report.targetLegMatrix.some(entry => !entry.passed || entry.accepted === 0)) {
+      /*
+       * DDQ09 — same rule for the target leg, plus `accepted === 0`.
+       *
+       * A scenario whose proxy saw no connection is not a weak pass; it is a run in which
+       * the fault was injected somewhere the product never went. Counting that as PASS
+       * would let the whole target-leg matrix be decorative.
        */
       finish('FAIL')
     } else if (passed === 0) {

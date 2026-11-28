@@ -4162,3 +4162,6 @@ mod tests {
 
 #[cfg(test)]
 mod ssh_jump_e2e_tests;
+
+#[cfg(test)]
+mod ssh_jump_target_leg_tests;
