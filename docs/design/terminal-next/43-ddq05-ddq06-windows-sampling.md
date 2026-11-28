@@ -1,7 +1,36 @@
 # DDQ05 / DDQ06 — Windows 原生资源采样
 
-**DDQ05 判定：Sampler IMPLEMENTED + UNIT_VERIFIED。真实 GUI 验收待 Windows CI 实跑。**
-**DDQ06 判定：UNIT_VERIFIED（受控进程 + 异常矩阵），真实 Windows runner 待 CI。**
+**DDQ05 判定：PASS（真实 Windows runner，100 轮）。**
+**DDQ06 判定：UNIT_VERIFIED（受控进程 + 异常矩阵）。**
+
+## 真实 Windows runner 实测（run `46124241301`，PR #177）
+
+```
+Windows e2e-09 → PASS
+notes: 100 of 100 rounds sampled; RSS NO_LEAK_DETECTED, descriptors NO_LEAK_DETECTED, threads 24–28
+descriptorMetric: handleCount
+expected/observed: 100 / 100
+perMetric: { rssBytes: 100, handleCount: 100, threads: 100 }
+rss: 46,395,392 → 45,801,472 B   （44.25 → 43.68 MiB，−0.56 MiB）
+```
+
+这是 Windows 资源采样第一次产出真实曲线。此前该平台是 `NOT_RUN`（`wmic` 不在
+runner 上），现在是 `100 of 100 rounds`、三个指标各 100 个有效样本。
+
+证据里的能力表也确认了实现走的是预期路径：
+
+```json
+{"supported": true,
+ "availableMetrics": ["rssBytes","handleCount","threads","cpuTimeMs"],
+ "processIdentityMethod": "PowerShell Get-Process, pid cross-checked against the answer"}
+```
+
+同一次运行的 Windows e2e-08 也是 `PASS`（40 → 10040 行）。
+
+**注意**：同一次运行的 Linux GUI E2E 报了 e2e-02 失败，重跑后通过。原因是陈旧列数
+读数（1440 与 1280 都读到 142、1024 与 900 都读到 60），`rafObserved` 只证明 rAF 跑过、
+不证明 resize 后的列数已更新。这是既有的 flake，与本次采样器改动无关——
+本次没有触碰布局或 xterm。
 
 ---
 
@@ -182,11 +211,11 @@ const descriptorMetric = process.platform === 'win32' ? 'handleCount' : 'openFds
 
 ## 剩余限制
 
-- **真实 Windows runner 尚未跑过这套采样器。** 本文件全部是本机（macOS）与桩的组合：
-  PowerShell 的**输出格式**由 `parseWindowsSample` 的测试覆盖，但 `Get-Process` 在
-  runner 上的实际返回、`powershell.exe` 的真实启动耗时，只有 CI 能回答。
-  在 Windows GUI E2E 实跑出 `PASS` 或 `INSUFFICIENT_DATA` **之前**，
-  `WINDOWS_RESOURCE_SAMPLING = UNIT_VERIFIED`，不是 PASS。
+- ~~真实 Windows runner 尚未跑过~~ —— **已跑过**，见文件顶部：`100 of 100 rounds`、PASS。
+  仍需注意：这是**一台** runner 上的一次 100 轮；曲线是关于那台 runner 的假设，
+  不是"Windows 上没有泄漏"的结论。
+- `powershell.exe` 的真实启动耗时没有被单独测量。100 轮在 CI 上完成，
+  但那个开销落在测量窗口内这件事只是推断，没有数字。
 - `privateBytes` 在证据里记录，但没有曲线判读——macOS/Linux 没有对应量。
 - `startTime` 采样了但没有用于归属判定：进程树归属（`OWNED_PROCESS_TREE`）仍未做，
   测量范围仍是 `MAIN_PROCESS`。
